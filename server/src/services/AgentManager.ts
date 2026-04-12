@@ -43,16 +43,39 @@ export class AgentManager extends EventEmitter {
     this.slackNotifier = slackNotifier || new SlackNotifier();
     this.feishuNotifier = feishuNotifier || new FeishuNotifier('', '');
 
-    // On startup, mark any monitor-owned agents that were left in running/waiting_input as
-    // stopped — their processes died when the server restarted.
-    // External agents are handled by ExternalAgentScanner (it checks if PID is still alive).
+    // On startup, collect monitor-owned agents that were left running when the server
+    // restarted.  External agents are handled by ExternalAgentScanner.
+    const agentsToResume: Agent[] = [];
     for (const agent of this.store.getAllAgents()) {
       if (agent.source === 'external') continue;
       if (agent.status === 'running' || agent.status === 'waiting_input') {
-        agent.status = 'stopped';
         agent.pid = undefined;
+        if (agent.sessionId) {
+          // Has a session — we can resume it automatically.
+          agentsToResume.push(agent);
+          agent.status = 'stopped';          // temporarily mark stopped until resume kicks in
+        } else {
+          agent.status = 'stopped';
+        }
         this.store.saveAgent(agent);
       }
+    }
+
+    // Auto-resume interrupted agents after a short delay so the rest of the
+    // server (routes, sockets) has time to initialise.
+    if (agentsToResume.length > 0) {
+      setTimeout(() => {
+        for (const agent of agentsToResume) {
+          console.log(`[AgentManager] Auto-resuming interrupted agent ${agent.id} (session: ${agent.sessionId})`);
+          agent.messages.push({
+            id: uuid(),
+            role: 'system',
+            content: 'Server restarted — automatically resuming session.',
+            timestamp: Date.now(),
+          });
+          this.resumeAgent(agent, 'The server was restarted while you were working. Continue where you left off.');
+        }
+      }, 3000);
     }
 
     // Periodically check for stuck agents (sent user message but no response)
