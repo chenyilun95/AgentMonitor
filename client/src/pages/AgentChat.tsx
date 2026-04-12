@@ -1,4 +1,4 @@
-import { useState, useEffect, useRef, useCallback } from 'react';
+import React, { useState, useEffect, useRef, useCallback } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import { api, type Agent, type RuntimeCapabilities } from '../api/client';
 import { getSocket, joinAgent, leaveAgent } from '../api/socket';
@@ -72,6 +72,18 @@ export function getToolMessageDetails(msg: ChatMessage): ToolMessageDetails | nu
     output: toolResult,
     details,
   };
+}
+
+function extractPlanContent(msg: ChatMessage): string | null {
+  if (msg.toolName !== 'ExitPlanMode' || !msg.toolInput) return null;
+  try {
+    const parsed = JSON.parse(msg.toolInput);
+    if (parsed.plan && typeof parsed.plan === 'string') return parsed.plan;
+  } catch { /* not JSON or no plan field */ }
+  // Fallback: if toolInput itself looks like plan content (not just "{}")
+  const trimmed = msg.toolInput.trim();
+  if (trimmed && trimmed !== '{}') return trimmed;
+  return null;
 }
 
 function toggleTheme() {
@@ -1044,8 +1056,12 @@ export function AgentChat() {
           const toolDetails = getToolMessageDetails(msg);
           const isToolMsg = !!toolDetails;
           const isExpanded = expandedTools.has(msg.id);
+          const planContent = extractPlanContent(msg);
+          const planKey = `${msg.id}-plan`;
+          const isPlanExpanded = !expandedTools.has(planKey); // default expanded; toggle collapses
           return (
-            <div key={msg.id} className={`chat-message ${msg.role}`}>
+            <React.Fragment key={msg.id}>
+            <div className={`chat-message ${msg.role}`}>
               {isToolMsg ? (
                 <>
                   <div
@@ -1089,6 +1105,31 @@ export function AgentChat() {
                   : msg.content
               )}
             </div>
+            {planContent && (
+              <div className="chat-message assistant plan-block">
+                <div
+                  className="tool-header"
+                  onClick={() => setExpandedTools(prev => {
+                    const next = new Set(prev);
+                    if (next.has(planKey)) next.delete(planKey);
+                    else next.add(planKey);
+                    return next;
+                  })}
+                >
+                  <span className="tool-toggle">{isPlanExpanded ? '\u25BC' : '\u25B6'}</span>
+                  <span className="tool-name">{'\uD83D\uDCCB'} Plan</span>
+                </div>
+                {isPlanExpanded && (
+                  <div className="plan-content">
+                    {renderMarkdown
+                      ? <ReactMarkdown remarkPlugins={[remarkGfm]}>{planContent}</ReactMarkdown>
+                      : <pre className="tool-content">{planContent}</pre>
+                    }
+                  </div>
+                )}
+              </div>
+            )}
+            </React.Fragment>
           );
         })}
         {localMessages.map((msg) => (
