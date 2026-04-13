@@ -4,7 +4,7 @@ import { randomUUID } from 'crypto';
 import { config } from '../config.js';
 import type { Agent } from '../models/Agent.js';
 import type { Template } from '../models/Template.js';
-import type { PipelineTask, MetaAgentConfig } from '../models/Task.js';
+import type { PipelineTask, AgentManagerConfig, MetaAgentConfig } from '../models/Task.js';
 
 export interface ServerSettings {
   agentRetentionMs: number; // default 86400000 (24h), 0 = disabled
@@ -58,7 +58,7 @@ export class AgentStore {
   private agents: Map<string, Agent> = new Map();
   private templates: Map<string, Template> = new Map();
   private tasks: Map<string, PipelineTask> = new Map();
-  private metaConfig: MetaAgentConfig | null = null;
+  private metaConfig: AgentManagerConfig | null = null;
   private settings: ServerSettings = { ...DEFAULT_SETTINGS };
   private agentsFile: string;
   private templatesFile: string;
@@ -253,12 +253,12 @@ export class AgentStore {
     this.saveTasks();
   }
 
-  // Meta agent config methods
-  getMetaConfig(): MetaAgentConfig | null {
+  // Agent Manager config methods
+  getMetaConfig(): AgentManagerConfig | null {
     return this.metaConfig;
   }
 
-  saveMetaAgentConfig(cfg: MetaAgentConfig): void {
+  saveMetaAgentConfig(cfg: AgentManagerConfig): void {
     this.metaConfig = cfg;
     this.saveMetaConfig();
   }

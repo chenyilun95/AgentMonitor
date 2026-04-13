@@ -4,9 +4,10 @@ import type { AgentManager } from './AgentManager.js';
 import type { EmailNotifier } from './EmailNotifier.js';
 import type { WhatsAppNotifier } from './WhatsAppNotifier.js';
 import type { SlackNotifier } from './SlackNotifier.js';
-import type { PipelineTask, MetaAgentConfig } from '../models/Task.js';
+import type { PipelineTask, AgentManagerConfig, MetaAgentConfig } from '../models/Task.js';
 import type { AgentProvider } from '../models/Agent.js';
 import { FeishuNotifier } from './FeishuNotifier.js';
+import type { HarnessOrchestrator } from './HarnessOrchestrator.js';
 
 const DEFAULT_CLAUDE_MD = `# Agent Manager Instructions
 
@@ -27,6 +28,7 @@ export class MetaAgentManager extends EventEmitter {
   private feishuNotifier: FeishuNotifier | null;
   private pollTimer: ReturnType<typeof setInterval> | null = null;
   private running = false;
+  private harnessOrchestrator: HarnessOrchestrator | null = null;
 
   constructor(
     store: AgentStore,
@@ -43,6 +45,10 @@ export class MetaAgentManager extends EventEmitter {
     this.whatsappNotifier = whatsappNotifier || null;
     this.slackNotifier = slackNotifier || null;
     this.feishuNotifier = feishuNotifier || null;
+  }
+
+  setHarnessOrchestrator(orchestrator: HarnessOrchestrator): void {
+    this.harnessOrchestrator = orchestrator;
   }
 
   getConfig(): MetaAgentConfig {
@@ -76,7 +82,7 @@ export class MetaAgentManager extends EventEmitter {
     this.store.saveMetaAgentConfig({ ...cfg, running: true });
 
     this.emit('status', 'running');
-    console.log('[MetaAgent] Started - polling every', cfg.pollIntervalMs, 'ms');
+    console.log('[AgentManager] Started - polling every', cfg.pollIntervalMs, 'ms');
 
     // Run immediately, then on interval
     this.tick();
@@ -96,7 +102,7 @@ export class MetaAgentManager extends EventEmitter {
     this.store.saveMetaAgentConfig({ ...cfg, running: false });
 
     this.emit('status', 'stopped');
-    console.log('[MetaAgent] Stopped');
+    console.log('[AgentManager] Stopped');
   }
 
   isRunning(): boolean {
@@ -118,7 +124,7 @@ export class MetaAgentManager extends EventEmitter {
 
       // Find the current order group to process
       const pendingTasks = updatedTasks.filter(t => t.status === 'pending');
-      const runningTasks = updatedTasks.filter(t => t.status === 'running');
+      const runningTasks = updatedTasks.filter(t => t.status === 'running' || t.status === 'evaluating' || t.status === 'revision');
       const failedTasks = updatedTasks.filter(t => t.status === 'failed');
 
       if (pendingTasks.length === 0 && runningTasks.length === 0) {
@@ -140,20 +146,20 @@ export class MetaAgentManager extends EventEmitter {
         const lowerOrderFailed = failedTasks.some(t => t.order < nextOrder);
         if (lowerOrderFailed) {
           // Pipeline blocked - a previous step failed
-          console.log('[MetaAgent] Pipeline blocked: previous step has failed tasks');
+          console.log('[AgentManager] Pipeline blocked: previous step has failed tasks');
           return;
         }
 
         const tasksToStart = pendingTasks.filter(t => t.order === nextOrder);
 
-        console.log(`[MetaAgent] Starting ${tasksToStart.length} task(s) at order ${nextOrder}`);
+        console.log(`[AgentManager] Starting ${tasksToStart.length} task(s) at order ${nextOrder}`);
 
         for (const task of tasksToStart) {
           await this.startTask(task);
         }
       }
     } catch (err) {
-      console.error('[MetaAgent] tick error:', err);
+      console.error('[AgentManager] tick error:', err);
     }
   }
 
@@ -176,18 +182,28 @@ export class MetaAgentManager extends EventEmitter {
       }
 
       if (agent.status === 'stopped') {
-        task.status = 'completed';
-        task.completedAt = Date.now();
-        this.store.saveTask(task);
-        this.emit('task:update', task);
-        console.log(`[MetaAgent] Task "${task.name}" completed`);
+        // If this is a harness task, delegate to the orchestrator
+        if (this.harnessOrchestrator && task.role) {
+          task.status = 'completed';
+          task.completedAt = Date.now();
+          this.store.saveTask(task);
+          this.emit('task:update', task);
+          this.harnessOrchestrator.onTaskComplete(task);
+          console.log(`[AgentManager] Harness task "${task.name}" completed, delegated to orchestrator`);
+        } else {
+          task.status = 'completed';
+          task.completedAt = Date.now();
+          this.store.saveTask(task);
+          this.emit('task:update', task);
+          console.log(`[AgentManager] Task "${task.name}" completed`);
+        }
       } else if (agent.status === 'error') {
         task.status = 'failed';
         task.error = 'Agent exited with error';
         task.completedAt = Date.now();
         this.store.saveTask(task);
         this.emit('task:update', task);
-        console.log(`[MetaAgent] Task "${task.name}" failed`);
+        console.log(`[AgentManager] Task "${task.name}" failed`);
         await this.notifyTaskFailed(task);
       } else if (agent.status === 'waiting_input') {
         // Stuck agent detection: check how long it's been waiting
@@ -195,7 +211,7 @@ export class MetaAgentManager extends EventEmitter {
         if (waitingDuration > stuckTimeout) {
           // Only notify if we haven't already (or last notification was > stuckTimeout ago)
           if (!task.notifiedAt || (Date.now() - task.notifiedAt) > stuckTimeout) {
-            console.log(`[MetaAgent] Task "${task.name}" agent stuck in waiting_input for ${Math.round(waitingDuration / 1000)}s`);
+            console.log(`[AgentManager] Task "${task.name}" agent stuck in waiting_input for ${Math.round(waitingDuration / 1000)}s`);
             await this.notifyStuckAgent(task, agent.name, waitingDuration);
             task.notifiedAt = Date.now();
             this.store.saveTask(task);
@@ -208,7 +224,7 @@ export class MetaAgentManager extends EventEmitter {
 
   private async onPipelineComplete(allTasks: PipelineTask[], failedTasks: PipelineTask[]): Promise<void> {
     const completedTasks = allTasks.filter(t => t.status === 'completed');
-    console.log(`[MetaAgent] All tasks done: ${completedTasks.length} completed, ${failedTasks.length} failed`);
+    console.log(`[AgentManager] All tasks done: ${completedTasks.length} completed, ${failedTasks.length} failed`);
 
     // Send pipeline-complete notification
     await this.notifyPipelineComplete(completedTasks.length, failedTasks.length);
@@ -308,14 +324,14 @@ export class MetaAgentManager extends EventEmitter {
       this.store.saveTask(task);
       this.emit('task:update', task);
 
-      console.log(`[MetaAgent] Started task "${task.name}" -> agent ${agent.id}`);
+      console.log(`[AgentManager] Started task "${task.name}" -> agent ${agent.id}`);
     } catch (err) {
       task.status = 'failed';
       task.error = String(err);
       task.completedAt = Date.now();
       this.store.saveTask(task);
       this.emit('task:update', task);
-      console.error(`[MetaAgent] Failed to start task "${task.name}":`, err);
+      console.error(`[AgentManager] Failed to start task "${task.name}":`, err);
       await this.notifyTaskFailed(task);
     }
   }

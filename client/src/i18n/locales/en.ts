@@ -2,7 +2,7 @@ export const en: Record<string, string> = {
     // Nav
     'nav.brand': 'Agent Monitor',
     'nav.dashboard': 'Dashboard',
-    'nav.pipeline': 'Meta Agent',
+    'nav.pipeline': 'Agent Manager',
     'nav.newAgent': 'New Agent',
     'nav.templates': 'Templates',
     'nav.help': 'Docs',
@@ -186,7 +186,7 @@ export const en: Record<string, string> = {
     'templates.empty': 'No templates yet. Create one to get started.',
 
     // Pipeline
-    'pipeline.title': 'Meta Agent',
+    'pipeline.title': 'Agent Manager',
     'pipeline.manager': 'Manager:',
     'pipeline.running': 'Running',
     'pipeline.stopped': 'Stopped',
@@ -234,4 +234,29 @@ export const en: Record<string, string> = {
     'pipeline.slackWebhookPlaceholder': 'https://hooks.slack.com/services/...',
     'pipeline.stuckTimeout': 'Stuck Agent Timeout (minutes)',
     'pipeline.saveConfig': 'Save Configuration',
+
+    // Harness mode
+    'pipeline.modeSimple': 'Simple Pipeline',
+    'pipeline.modeHarness': 'Harness Mode',
+    'pipeline.harnessGoal': 'Goal',
+    'pipeline.harnessGoalPlaceholder': 'Describe the high-level goal for the agent harness...',
+    'pipeline.harnessEvalCriteria': 'Evaluation Criteria (optional)',
+    'pipeline.harnessEvalCriteriaPlaceholder': 'Custom rubric for evaluating task quality...',
+    'pipeline.harnessMaxRevisions': 'Max Revisions per Task',
+    'pipeline.harnessStart': 'Start Harness',
+    'pipeline.harnessStop': 'Stop Harness',
+    'pipeline.harnessStatus': 'Harness Status',
+    'pipeline.harnessPlanning': 'Planning',
+    'pipeline.harnessGenerating': 'Generating',
+    'pipeline.harnessEvaluating': 'Evaluating',
+    'pipeline.harnessComplete': 'Complete',
+    'pipeline.harnessFailed': 'Failed',
+    'pipeline.harnessIdle': 'Idle',
+    'pipeline.rolePlanner': 'Planner',
+    'pipeline.roleGenerator': 'Generator',
+    'pipeline.roleEvaluator': 'Evaluator',
+    'pipeline.evalPass': 'Pass',
+    'pipeline.evalFail': 'Fail',
+    'pipeline.revision': 'Revision',
+    'pipeline.revisionCount': 'Revisions',
 };

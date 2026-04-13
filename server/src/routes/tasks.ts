@@ -3,25 +3,16 @@ import { v4 as uuid } from 'uuid';
 import type { AgentStore } from '../store/AgentStore.js';
 import type { MetaAgentManager } from '../services/MetaAgentManager.js';
 import type { AgentManager } from '../services/AgentManager.js';
+import type { HarnessOrchestrator } from '../services/HarnessOrchestrator.js';
 import type { PipelineTask } from '../models/Task.js';
 
-export function taskRoutes(store: AgentStore, metaAgent: MetaAgentManager, agentManager?: AgentManager): Router {
+export function taskRoutes(store: AgentStore, agentManagerPipeline: MetaAgentManager, agentManager?: AgentManager, harnessOrchestrator?: HarnessOrchestrator): Router {
   const router = Router();
 
   // List all tasks
   router.get('/', (_req, res) => {
     const tasks = store.getAllTasks();
     res.json(tasks);
-  });
-
-  // Get single task
-  router.get('/:id', (req, res) => {
-    const task = store.getTask(req.params.id);
-    if (!task) {
-      res.status(404).json({ error: 'Task not found' });
-      return;
-    }
-    res.json(task);
   });
 
   // Create task
@@ -58,6 +49,93 @@ export function taskRoutes(store: AgentStore, metaAgent: MetaAgentManager, agent
 
     store.saveTask(task);
     res.status(201).json(task);
+  });
+
+  // Clear completed/failed tasks
+  router.post('/actions/clear-completed', (_req, res) => {
+    store.clearCompletedTasks();
+    res.json({ ok: true });
+  });
+
+  // --- Agent Manager config routes (must be before /:id) ---
+  router.get('/meta/config', (_req, res) => {
+    const cfg = agentManagerPipeline.getConfig();
+    res.json(cfg);
+  });
+
+  router.put('/meta/config', (req, res) => {
+    const cfg = agentManagerPipeline.updateConfig(req.body);
+    res.json(cfg);
+  });
+
+  router.post('/meta/start', (_req, res) => {
+    const tasks = store.getAllTasks();
+    const pendingTasks = tasks.filter(t => t.status === 'pending');
+    if (pendingTasks.length === 0) {
+      res.status(400).json({ error: 'No pending tasks to run' });
+      return;
+    }
+    agentManagerPipeline.start();
+    res.json({ ok: true, running: true });
+  });
+
+  router.post('/meta/stop', (_req, res) => {
+    agentManagerPipeline.stop();
+    res.json({ ok: true, running: false });
+  });
+
+  router.get('/meta/status', (_req, res) => {
+    res.json({ running: agentManagerPipeline.isRunning() });
+  });
+
+  // --- Harness mode routes (must be before /:id) ---
+  router.post('/harness/start', (req, res) => {
+    if (!harnessOrchestrator) {
+      res.status(500).json({ error: 'Harness orchestrator not available' });
+      return;
+    }
+    const { goal, evaluationCriteria, maxRevisions } = req.body;
+    if (!goal) {
+      res.status(400).json({ error: 'goal is required' });
+      return;
+    }
+
+    const cfg = agentManagerPipeline.getConfig();
+    agentManagerPipeline.updateConfig({ harnessMode: true, evaluationCriteria, maxRevisionsPerTask: maxRevisions });
+
+    const plannerTask = harnessOrchestrator.startHarness(goal, cfg);
+    agentManagerPipeline.start();
+    res.json({ ok: true, harnessId: plannerTask.harnessId, plannerTaskId: plannerTask.id });
+  });
+
+  router.post('/harness/stop', (_req, res) => {
+    if (!harnessOrchestrator) {
+      res.status(500).json({ error: 'Harness orchestrator not available' });
+      return;
+    }
+    harnessOrchestrator.stopHarness();
+    agentManagerPipeline.stop();
+    res.json({ ok: true });
+  });
+
+  router.get('/harness/status', (_req, res) => {
+    if (!harnessOrchestrator) {
+      res.json({ status: 'idle', harnessId: null, goal: null, plannerTaskId: null, totalGenerators: 0, completedGenerators: 0, failedGenerators: 0 });
+      return;
+    }
+    res.json(harnessOrchestrator.getState());
+  });
+
+  // --- Parameterized routes (must be after all static routes) ---
+
+  // Get single task
+  router.get('/:id', (req, res) => {
+    const task = store.getTask(req.params.id);
+    if (!task) {
+      res.status(404).json({ error: 'Task not found' });
+      return;
+    }
+    res.json(task);
   });
 
   // Update task
@@ -107,12 +185,6 @@ export function taskRoutes(store: AgentStore, metaAgent: MetaAgentManager, agent
     res.json({ ok: true });
   });
 
-  // Clear completed/failed tasks
-  router.post('/actions/clear-completed', (_req, res) => {
-    store.clearCompletedTasks();
-    res.json({ ok: true });
-  });
-
   // Reset a failed task back to pending
   router.post('/:id/reset', (req, res) => {
     const task = store.getTask(req.params.id);
@@ -130,37 +202,6 @@ export function taskRoutes(store: AgentStore, metaAgent: MetaAgentManager, agent
     task.error = undefined;
     store.saveTask(task);
     res.json(task);
-  });
-
-  // Meta agent routes
-  router.get('/meta/config', (_req, res) => {
-    const cfg = metaAgent.getConfig();
-    res.json(cfg);
-  });
-
-  router.put('/meta/config', (req, res) => {
-    const cfg = metaAgent.updateConfig(req.body);
-    res.json(cfg);
-  });
-
-  router.post('/meta/start', (_req, res) => {
-    const tasks = store.getAllTasks();
-    const pendingTasks = tasks.filter(t => t.status === 'pending');
-    if (pendingTasks.length === 0) {
-      res.status(400).json({ error: 'No pending tasks to run' });
-      return;
-    }
-    metaAgent.start();
-    res.json({ ok: true, running: true });
-  });
-
-  router.post('/meta/stop', (_req, res) => {
-    metaAgent.stop();
-    res.json({ ok: true, running: false });
-  });
-
-  router.get('/meta/status', (_req, res) => {
-    res.json({ running: metaAgent.isRunning() });
   });
 
   return router;

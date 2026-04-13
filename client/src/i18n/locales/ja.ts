@@ -2,7 +2,7 @@ export const ja: Record<string, string> = {
     // Nav
     'nav.brand': 'Agent Monitor',
     'nav.dashboard': 'ダッシュボード',
-    'nav.pipeline': 'メタエージェント',
+    'nav.pipeline': 'エージェントマネージャー',
     'nav.newAgent': '新規エージェント',
     'nav.templates': 'テンプレート',
     'nav.help': 'ドキュメント',
@@ -182,7 +182,7 @@ export const ja: Record<string, string> = {
     'templates.empty': 'テンプレートはまだありません。作成して始めましょう。',
 
     // Pipeline
-    'pipeline.title': 'メタエージェント',
+    'pipeline.title': 'エージェントマネージャー',
     'pipeline.manager': 'マネージャー:',
     'pipeline.running': '実行中',
     'pipeline.stopped': '停止',

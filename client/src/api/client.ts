@@ -119,15 +119,23 @@ export interface PipelineTask {
   model?: string;
   claudeMd?: string;
   flags?: Record<string, unknown>;
-  status: 'pending' | 'running' | 'completed' | 'failed';
+  status: 'pending' | 'running' | 'completed' | 'failed' | 'evaluating' | 'revision';
   agentId?: string;
   order: number;
   createdAt: number;
   completedAt?: number;
   error?: string;
+  // Harness fields
+  role?: 'planner' | 'generator' | 'evaluator';
+  harnessId?: string;
+  parentTaskId?: string;
+  evaluationResult?: 'pass' | 'fail';
+  evaluationFeedback?: string;
+  revisionCount?: number;
+  maxRevisions?: number;
 }
 
-export interface MetaAgentConfig {
+export interface AgentManagerConfig {
   running: boolean;
   agentId?: string;
   claudeMd: string;
@@ -138,6 +146,25 @@ export interface MetaAgentConfig {
   whatsappPhone?: string;
   slackWebhookUrl?: string;
   stuckTimeoutMs?: number;
+  // Harness mode fields
+  harnessMode?: boolean;
+  evaluationCriteria?: string;
+  maxRevisionsPerTask?: number;
+}
+
+/** @deprecated Use AgentManagerConfig instead */
+export type MetaAgentConfig = AgentManagerConfig;
+
+export type HarnessStatus = 'idle' | 'planning' | 'generating' | 'evaluating' | 'complete' | 'failed';
+
+export interface HarnessState {
+  status: HarnessStatus;
+  harnessId: string | null;
+  goal: string | null;
+  plannerTaskId: string | null;
+  totalGenerators: number;
+  completedGenerators: number;
+  failedGenerators: number;
 }
 
 export interface ServerSettings {
@@ -269,13 +296,19 @@ export const api = {
   resetTask: (id: string) => request<PipelineTask>(`/tasks/${id}/reset`, { method: 'POST' }),
   clearCompletedTasks: () => request('/tasks/actions/clear-completed', { method: 'POST' }),
 
-  // Meta Agent
-  getMetaConfig: () => request<MetaAgentConfig>('/tasks/meta/config'),
-  updateMetaConfig: (data: Partial<MetaAgentConfig>) =>
-    request<MetaAgentConfig>('/tasks/meta/config', { method: 'PUT', body: JSON.stringify(data) }),
+  // Agent Manager
+  getMetaConfig: () => request<AgentManagerConfig>('/tasks/meta/config'),
+  updateMetaConfig: (data: Partial<AgentManagerConfig>) =>
+    request<AgentManagerConfig>('/tasks/meta/config', { method: 'PUT', body: JSON.stringify(data) }),
   startMetaAgent: () => request('/tasks/meta/start', { method: 'POST' }),
   stopMetaAgent: () => request('/tasks/meta/stop', { method: 'POST' }),
   getMetaStatus: () => request<{ running: boolean }>('/tasks/meta/status'),
+
+  // Harness mode
+  startHarness: (data: { goal: string; evaluationCriteria?: string; maxRevisions?: number }) =>
+    request<{ ok: boolean; harnessId: string; plannerTaskId: string }>('/tasks/harness/start', { method: 'POST', body: JSON.stringify(data) }),
+  stopHarness: () => request('/tasks/harness/stop', { method: 'POST' }),
+  getHarnessStatus: () => request<HarnessState>('/tasks/harness/status'),
 
   // Server Settings
   getSettings: () => request<ServerSettings>('/settings'),

@@ -46,21 +46,21 @@ describe('Task Routes', () => {
   let tmpDir: string;
   let app: express.Express;
   let store: AgentStore;
-  let metaAgent: MetaAgentManager;
+  let pipeline: MetaAgentManager;
 
   beforeEach(() => {
     tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), 'taskroutes-test-'));
     store = new AgentStore(tmpDir);
     const agentManager = new AgentManager(store);
-    metaAgent = new MetaAgentManager(store, agentManager);
+    pipeline = new MetaAgentManager(store, agentManager);
 
     app = express();
     app.use(express.json());
-    app.use('/api/tasks', taskRoutes(store, metaAgent));
+    app.use('/api/tasks', taskRoutes(store, pipeline));
   });
 
   afterEach(() => {
-    metaAgent.stop();
+    pipeline.stop();
     fs.rmSync(tmpDir, { recursive: true, force: true });
   });
 
@@ -95,7 +95,7 @@ describe('Task Routes', () => {
     expect((list.body as unknown[]).length).toBe(0);
   });
 
-  it('gets meta agent config', async () => {
+  it('gets agent manager config', async () => {
     const res = await request(app, 'GET', '/api/tasks/meta/config');
     expect(res.status).toBe(200);
     const body = res.body as { claudeMd: string; running: boolean };
@@ -108,7 +108,7 @@ describe('Task Routes', () => {
     expect(res.status).toBe(400);
   });
 
-  it('starts and stops meta agent', async () => {
+  it('starts and stops agent manager', async () => {
     // Create a pending task so start is allowed
     await request(app, 'POST', '/api/tasks', { name: 'Test Task', prompt: 'Do something' });
 

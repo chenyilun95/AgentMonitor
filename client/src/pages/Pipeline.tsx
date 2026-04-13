@@ -1,12 +1,12 @@
 import { useState, useEffect, useCallback, useRef } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { api, type PipelineTask, type MetaAgentConfig, type AgentProvider, type Template } from '../api/client';
+import { api, type PipelineTask, type AgentManagerConfig, type AgentProvider, type Template, type HarnessState } from '../api/client';
 import { getSocket } from '../api/socket';
 import { useTranslation } from '../i18n';
 
 export function Pipeline() {
   const [tasks, setTasks] = useState<PipelineTask[]>([]);
-  const [metaConfig, setMetaConfig] = useState<MetaAgentConfig | null>(null);
+  const [metaConfig, setMetaConfig] = useState<AgentManagerConfig | null>(null);
   const [showAddTask, setShowAddTask] = useState(false);
   const [showConfig, setShowConfig] = useState(false);
   const [loading, setLoading] = useState(true);
@@ -47,18 +47,30 @@ export function Pipeline() {
   const [cfgSlackWebhook, setCfgSlackWebhook] = useState('');
   const [cfgStuckTimeout, setCfgStuckTimeout] = useState(300000);
 
+  // Harness mode state
+  const [mode, setMode] = useState<'simple' | 'harness'>('simple');
+  const [harnessState, setHarnessState] = useState<HarnessState | null>(null);
+  const [harnessGoal, setHarnessGoal] = useState('');
+  const [harnessEvalCriteria, setHarnessEvalCriteria] = useState('');
+  const [harnessMaxRevisions, setHarnessMaxRevisions] = useState(3);
+
   const fetchData = useCallback(async () => {
     try {
-      const [taskData, cfgData, tmplData, settings] = await Promise.all([
+      const [taskData, cfgData, tmplData, settings, harnessData] = await Promise.all([
         api.getTasks(),
         api.getMetaConfig(),
         api.getTemplates(),
         api.getSettings().catch(() => ({ pathHistory: {} })),
+        api.getHarnessStatus().catch(() => null),
       ]);
       setTasks(taskData);
       setMetaConfig(cfgData);
       setTemplates(tmplData);
       setPathHistory((settings as Record<string, unknown>).pathHistory as Record<string, string[]> || {});
+      if (harnessData) {
+        setHarnessState(harnessData);
+        if (harnessData.status !== 'idle') setMode('harness');
+      }
     } catch (err) {
       console.error('Failed to fetch pipeline data:', err);
     } finally {
@@ -74,12 +86,16 @@ export function Pipeline() {
     socket.on('pipeline:complete', () => fetchData());
     socket.on('meta:status', () => fetchData());
     socket.on('agent:status', () => fetchData());
+    socket.on('harness:complete', () => fetchData());
+    socket.on('harness:failed', () => fetchData());
 
     return () => {
       socket.off('task:update');
       socket.off('pipeline:complete');
       socket.off('meta:status');
       socket.off('agent:status');
+      socket.off('harness:complete');
+      socket.off('harness:failed');
     };
   }, [fetchData]);
 
@@ -154,6 +170,21 @@ export function Pipeline() {
     fetchData();
   };
 
+  const handleStartHarness = async () => {
+    if (!harnessGoal.trim()) return;
+    await api.startHarness({
+      goal: harnessGoal.trim(),
+      evaluationCriteria: harnessEvalCriteria.trim() || undefined,
+      maxRevisions: harnessMaxRevisions,
+    });
+    fetchData();
+  };
+
+  const handleStopHarness = async () => {
+    await api.stopHarness();
+    fetchData();
+  };
+
   const handleSaveConfig = async () => {
     await api.updateMetaConfig({
       claudeMd: cfgClaudeMd,
@@ -189,8 +220,33 @@ export function Pipeline() {
       case 'running': return 'var(--green)';
       case 'completed': return 'var(--primary)';
       case 'failed': return 'var(--red)';
+      case 'evaluating': return 'var(--yellow, #f59e0b)';
+      case 'revision': return 'var(--orange, #f97316)';
       default: return 'var(--text-muted)';
     }
+  };
+
+  const getRoleBadge = (role?: string) => {
+    if (!role) return null;
+    const colors: Record<string, string> = {
+      planner: 'var(--purple, #8b5cf6)',
+      generator: 'var(--blue, #3b82f6)',
+      evaluator: 'var(--yellow, #f59e0b)',
+    };
+    return (
+      <span style={{
+        fontSize: 10,
+        fontWeight: 700,
+        padding: '1px 6px',
+        borderRadius: 8,
+        background: colors[role] || 'var(--text-muted)',
+        color: 'white',
+        textTransform: 'uppercase',
+        marginLeft: 6,
+      }}>
+        {t(`pipeline.role${role.charAt(0).toUpperCase() + role.slice(1)}` as 'pipeline.rolePlanner')}
+      </span>
+    );
   };
 
   // Group tasks by order
@@ -210,30 +266,55 @@ export function Pipeline() {
       <div className="page-header">
         <h1 className="page-title">{t('pipeline.title')}</h1>
         <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
-          <button className="btn btn-sm" onClick={() => setShowAddTask(true)}>
-            {t('pipeline.addTask')}
-          </button>
-          <span
-            style={{
-              fontSize: 13,
-              padding: '4px 10px',
-              borderRadius: 12,
-              background: metaConfig?.running ? 'var(--green)' : 'var(--bg-input)',
-              color: metaConfig?.running ? 'white' : 'var(--text-muted)',
-              fontWeight: 600,
-            }}
-          >
-            {t('pipeline.manager')} {metaConfig?.running ? t('pipeline.running') : t('pipeline.stopped')}
-          </span>
-          {metaConfig?.running ? (
-            <button className="btn btn-danger btn-sm" onClick={handleStopMeta}>
-              {t('pipeline.stopManager')}
+          {/* Mode toggle */}
+          <div style={{ display: 'flex', borderRadius: 8, overflow: 'hidden', border: '1px solid var(--border)' }}>
+            <button
+              className={`btn btn-sm ${mode === 'simple' ? '' : 'btn-outline'}`}
+              style={{ borderRadius: 0, borderRight: 'none' }}
+              onClick={() => setMode('simple')}
+              disabled={harnessState?.status !== 'idle' && harnessState?.status !== undefined && harnessState?.status !== 'complete' && harnessState?.status !== 'failed'}
+            >
+              {t('pipeline.modeSimple')}
             </button>
-          ) : (
-            <button className="btn btn-sm" onClick={handleStartMeta}>
-              {t('pipeline.startManager')}
+            <button
+              className={`btn btn-sm ${mode === 'harness' ? '' : 'btn-outline'}`}
+              style={{ borderRadius: 0 }}
+              onClick={() => setMode('harness')}
+              disabled={metaConfig?.running && !metaConfig?.harnessMode}
+            >
+              {t('pipeline.modeHarness')}
             </button>
+          </div>
+
+          {mode === 'simple' && (
+            <>
+              <button className="btn btn-sm" onClick={() => setShowAddTask(true)}>
+                {t('pipeline.addTask')}
+              </button>
+              <span
+                style={{
+                  fontSize: 13,
+                  padding: '4px 10px',
+                  borderRadius: 12,
+                  background: metaConfig?.running ? 'var(--green)' : 'var(--bg-input)',
+                  color: metaConfig?.running ? 'white' : 'var(--text-muted)',
+                  fontWeight: 600,
+                }}
+              >
+                {t('pipeline.manager')} {metaConfig?.running ? t('pipeline.running') : t('pipeline.stopped')}
+              </span>
+              {metaConfig?.running ? (
+                <button className="btn btn-danger btn-sm" onClick={handleStopMeta}>
+                  {t('pipeline.stopManager')}
+                </button>
+              ) : (
+                <button className="btn btn-sm" onClick={handleStartMeta}>
+                  {t('pipeline.startManager')}
+                </button>
+              )}
+            </>
           )}
+
           <button className="btn btn-sm btn-outline" onClick={openConfig}>
             {t('pipeline.configure')}
           </button>
@@ -244,6 +325,69 @@ export function Pipeline() {
           )}
         </div>
       </div>
+
+      {/* Harness mode panel */}
+      {mode === 'harness' && (
+        <div style={{ marginBottom: 24, padding: 16, background: 'var(--bg-card)', borderRadius: 'var(--radius)', border: '1px solid var(--border)' }}>
+          {(!harnessState || harnessState.status === 'idle' || harnessState.status === 'complete' || harnessState.status === 'failed') ? (
+            <div>
+              <div className="form-group">
+                <label>{t('pipeline.harnessGoal')}</label>
+                <textarea
+                  value={harnessGoal}
+                  onChange={(e) => setHarnessGoal(e.target.value)}
+                  placeholder={t('pipeline.harnessGoalPlaceholder')}
+                  style={{ minHeight: 80 }}
+                />
+              </div>
+              <div className="form-group">
+                <label>{t('pipeline.harnessEvalCriteria')}</label>
+                <textarea
+                  value={harnessEvalCriteria}
+                  onChange={(e) => setHarnessEvalCriteria(e.target.value)}
+                  placeholder={t('pipeline.harnessEvalCriteriaPlaceholder')}
+                  style={{ minHeight: 60 }}
+                />
+              </div>
+              <div className="form-group">
+                <label>{t('pipeline.harnessMaxRevisions')}</label>
+                <input
+                  type="number"
+                  min={1}
+                  max={10}
+                  value={harnessMaxRevisions}
+                  onChange={(e) => setHarnessMaxRevisions(Number(e.target.value))}
+                />
+              </div>
+              <button className="btn" onClick={handleStartHarness} disabled={!harnessGoal.trim()}>
+                {t('pipeline.harnessStart')}
+              </button>
+            </div>
+          ) : (
+            <div style={{ display: 'flex', alignItems: 'center', gap: 16 }}>
+              <span style={{
+                fontSize: 13,
+                padding: '4px 10px',
+                borderRadius: 12,
+                background: 'var(--green)',
+                color: 'white',
+                fontWeight: 600,
+              }}>
+                {t('pipeline.harnessStatus')}: {t(`pipeline.harness${harnessState.status.charAt(0).toUpperCase() + harnessState.status.slice(1)}` as 'pipeline.harnessPlanning')}
+              </span>
+              {harnessState.totalGenerators > 0 && (
+                <span style={{ fontSize: 13, color: 'var(--text-muted)' }}>
+                  {harnessState.completedGenerators}/{harnessState.totalGenerators} tasks
+                  {harnessState.failedGenerators > 0 && ` (${harnessState.failedGenerators} failed)`}
+                </span>
+              )}
+              <button className="btn btn-danger btn-sm" onClick={handleStopHarness}>
+                {t('pipeline.harnessStop')}
+              </button>
+            </div>
+          )}
+        </div>
+      )}
 
       {tasks.length === 0 ? (
         <div style={{ textAlign: 'center', padding: 48, color: 'var(--text-muted)' }}>
@@ -272,7 +416,10 @@ export function Pipeline() {
                     {group.map((task) => (
                       <div key={task.id} className="pipeline-task-card">
                         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 6 }}>
-                          <span style={{ fontWeight: 600, fontSize: 14 }}>{task.name}</span>
+                          <span style={{ fontWeight: 600, fontSize: 14 }}>
+                            {task.name}
+                            {getRoleBadge(task.role)}
+                          </span>
                           <span
                             style={{
                               fontSize: 11,
@@ -302,6 +449,17 @@ export function Pipeline() {
                         {task.error && (
                           <div style={{ fontSize: 11, color: 'var(--red)', marginTop: 4 }}>
                             {t('pipeline.error')} {task.error}
+                          </div>
+                        )}
+                        {task.evaluationResult && (
+                          <div style={{ fontSize: 11, marginTop: 4, color: task.evaluationResult === 'pass' ? 'var(--green)' : 'var(--red)' }}>
+                            {t(task.evaluationResult === 'pass' ? 'pipeline.evalPass' : 'pipeline.evalFail')}
+                            {task.evaluationFeedback && ` — ${task.evaluationFeedback.slice(0, 100)}`}
+                          </div>
+                        )}
+                        {task.revisionCount !== undefined && task.revisionCount > 0 && (
+                          <div style={{ fontSize: 11, color: 'var(--text-muted)', marginTop: 2 }}>
+                            {t('pipeline.revisionCount')}: {task.revisionCount}/{task.maxRevisions || '?'}
                           </div>
                         )}
                         <div style={{ display: 'flex', gap: 6, marginTop: 8 }}>
