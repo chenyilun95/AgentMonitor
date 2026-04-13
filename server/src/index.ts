@@ -12,6 +12,8 @@ import { createAuthRoutes, requireAuth, verifyToken } from './auth.js';
 import { AgentStore } from './store/AgentStore.js';
 import { AgentManager } from './services/AgentManager.js';
 import { MetaAgentManager } from './services/MetaAgentManager.js';
+import { HarnessOrchestrator } from './services/HarnessOrchestrator.js';
+import { HandoffManager } from './services/HandoffManager.js';
 import { EmailNotifier } from './services/EmailNotifier.js';
 import { WhatsAppNotifier } from './services/WhatsAppNotifier.js';
 import { SlackNotifier } from './services/SlackNotifier.js';
@@ -71,7 +73,10 @@ export function createApp() {
     ? new FeishuNotifier(config.feishu.appId, config.feishu.appSecret)
     : undefined;
   const manager = new AgentManager(store, undefined, emailNotifier, whatsappNotifier, slackNotifier, feishuNotifier);
-  const metaAgent = new MetaAgentManager(store, manager, emailNotifier, whatsappNotifier, slackNotifier, feishuNotifier);
+  const agentManagerPipeline = new MetaAgentManager(store, manager, emailNotifier, whatsappNotifier, slackNotifier, feishuNotifier);
+  const handoffManager = new HandoffManager();
+  const harnessOrchestrator = new HarnessOrchestrator(store, manager, handoffManager);
+  agentManagerPipeline.setHarnessOrchestrator(harnessOrchestrator);
 
   // External agent scanner — discovers claude/codex processes not started by the monitor
   const externalScanner = new ExternalAgentScanner(
@@ -86,7 +91,7 @@ export function createApp() {
   app.use('/api/templates', templateRoutes(store));
   app.use('/api/sessions', sessionRoutes());
   app.use('/api/directories', directoryRoutes());
-  app.use('/api/tasks', taskRoutes(store, metaAgent, manager));
+  app.use('/api/tasks', taskRoutes(store, agentManagerPipeline, manager, harnessOrchestrator));
   app.use('/api/settings', settingsRoutes(store));
   app.use('/api/upload-image', uploadRoutes());
 
@@ -151,15 +156,26 @@ export function createApp() {
   const terminalService = new TerminalService();
   setupSocketHandlers(io, manager, terminalService, telegramService);
 
-  // Forward meta agent events to socket
-  metaAgent.on('task:update', (task) => {
+  // Forward agent manager pipeline events to socket
+  agentManagerPipeline.on('task:update', (task) => {
     io.emit('task:update', task);
   });
-  metaAgent.on('pipeline:complete', () => {
+  agentManagerPipeline.on('pipeline:complete', () => {
     io.emit('pipeline:complete');
   });
-  metaAgent.on('status', (status: string) => {
+  agentManagerPipeline.on('status', (status: string) => {
     io.emit('meta:status', { running: status === 'running' });
+  });
+
+  // Forward harness orchestrator events to socket
+  harnessOrchestrator.on('task:update', (task) => {
+    io.emit('task:update', task);
+  });
+  harnessOrchestrator.on('harness:complete', (data) => {
+    io.emit('harness:complete', data);
+  });
+  harnessOrchestrator.on('harness:failed', (data) => {
+    io.emit('harness:failed', data);
   });
 
   // External agent scanner — forward events to socket.io for live dashboard updates
@@ -217,12 +233,12 @@ export function createApp() {
   let tunnelClient: TunnelClient | null = null;
   if (config.relay.url && config.relay.token) {
     tunnelClient = new TunnelClient(config.relay.url, config.relay.token, config.port);
-    setupTunnelBridge(tunnelClient, manager, metaAgent, terminalService);
+    setupTunnelBridge(tunnelClient, manager, agentManagerPipeline, terminalService);
     tunnelClient.start();
     console.log(`[Server] Tunnel client connecting to ${config.relay.url}`);
   }
 
-  return { app, httpServer, io, store, manager, metaAgent, cleanupInterval, tunnelClient, feishuService, telegramService };
+  return { app, httpServer, io, store, manager, agentManagerPipeline, harnessOrchestrator, cleanupInterval, tunnelClient, feishuService, telegramService };
 }
 
 // Only start server if this is the main module

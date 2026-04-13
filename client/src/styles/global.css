@@ -1148,29 +1148,6 @@ body::after {
   border: 1px solid var(--border-subtle);
 }
 
-.plan-block {
-  border-left: 3px solid var(--primary);
-}
-
-.plan-block .tool-name {
-  font-size: 14px;
-}
-
-.plan-content {
-  padding: 10px 14px;
-  border-top: 1px solid var(--border-subtle);
-  font-size: 13px;
-  line-height: 1.6;
-  max-height: 600px;
-  overflow: auto;
-}
-
-.plan-content pre {
-  margin: 0;
-  white-space: pre-wrap;
-  word-break: break-word;
-}
-
 .chat-message.system {
   background: transparent;
   color: var(--text-muted);

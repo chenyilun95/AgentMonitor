@@ -2,7 +2,7 @@ export const zh: Record<string, string> = {
     // Nav
     'nav.brand': 'Agent Monitor',
     'nav.dashboard': '仪表盘',
-    'nav.pipeline': '元代理',
+    'nav.pipeline': '代理管理器',
     'nav.newAgent': '新建代理',
     'nav.templates': '模板',
     'nav.help': '文档',
@@ -186,7 +186,7 @@ export const zh: Record<string, string> = {
     'templates.empty': '暂无模板。创建一个开始使用。',
 
     // Pipeline
-    'pipeline.title': '元代理',
+    'pipeline.title': '代理管理器',
     'pipeline.manager': '管理器:',
     'pipeline.running': '运行中',
     'pipeline.stopped': '已停止',

@@ -4,7 +4,7 @@ import type { MetaAgentManager } from './MetaAgentManager.js';
 import type { TerminalService } from './TerminalService.js';
 
 /**
- * Bridges local AgentManager/MetaAgentManager events to the tunnel,
+ * Bridges local AgentManager/Pipeline events to the tunnel,
  * and handles incoming socket:c2s events from the relay.
  *
  * This mirrors the same event patterns in socket/handlers.ts and index.ts
@@ -13,7 +13,7 @@ import type { TerminalService } from './TerminalService.js';
 export function setupTunnelBridge(
   tunnel: TunnelClient,
   manager: AgentManager,
-  metaAgent: MetaAgentManager,
+  agentManagerPipeline: MetaAgentManager,
   terminalService?: TerminalService,
 ): void {
   // --- Local → Relay (via tunnel) ---
@@ -104,8 +104,8 @@ export function setupTunnelBridge(
     });
   }
 
-  // MetaAgent task updates → broadcast
-  metaAgent.on('task:update', (task: unknown) => {
+  // Agent Manager task updates → broadcast
+  agentManagerPipeline.on('task:update', (task: unknown) => {
     tunnel.send({
       type: 'socket:s2c',
       event: 'task:update',
@@ -113,7 +113,7 @@ export function setupTunnelBridge(
     });
   });
 
-  metaAgent.on('pipeline:complete', () => {
+  agentManagerPipeline.on('pipeline:complete', () => {
     tunnel.send({
       type: 'socket:s2c',
       event: 'pipeline:complete',
@@ -121,7 +121,7 @@ export function setupTunnelBridge(
     });
   });
 
-  metaAgent.on('status', (status: string) => {
+  agentManagerPipeline.on('status', (status: string) => {
     tunnel.send({
       type: 'socket:s2c',
       event: 'meta:status',

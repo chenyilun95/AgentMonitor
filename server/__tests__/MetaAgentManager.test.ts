@@ -7,64 +7,64 @@ import { AgentManager } from '../src/services/AgentManager.js';
 import { MetaAgentManager } from '../src/services/MetaAgentManager.js';
 import type { PipelineTask } from '../src/models/Task.js';
 
-describe('MetaAgentManager', () => {
+describe('AgentManager Pipeline (MetaAgentManager)', () => {
   let tmpDir: string;
   let store: AgentStore;
   let agentManager: AgentManager;
-  let metaAgent: MetaAgentManager;
+  let pipeline: MetaAgentManager;
 
   beforeEach(() => {
     tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), 'meta-test-'));
     store = new AgentStore(tmpDir);
     agentManager = new AgentManager(store);
-    metaAgent = new MetaAgentManager(store, agentManager);
+    pipeline = new MetaAgentManager(store, agentManager);
   });
 
   afterEach(() => {
-    metaAgent.stop();
+    pipeline.stop();
     fs.rmSync(tmpDir, { recursive: true, force: true });
   });
 
   it('starts and stops correctly', () => {
-    expect(metaAgent.isRunning()).toBe(false);
-    metaAgent.start();
-    expect(metaAgent.isRunning()).toBe(true);
-    metaAgent.stop();
-    expect(metaAgent.isRunning()).toBe(false);
+    expect(pipeline.isRunning()).toBe(false);
+    pipeline.start();
+    expect(pipeline.isRunning()).toBe(true);
+    pipeline.stop();
+    expect(pipeline.isRunning()).toBe(false);
   });
 
   it('returns default config when none saved', () => {
-    const cfg = metaAgent.getConfig();
+    const cfg = pipeline.getConfig();
     expect(cfg.claudeMd).toContain('Agent Manager');
     expect(cfg.running).toBe(false);
     expect(cfg.pollIntervalMs).toBe(5000);
   });
 
   it('updates config', () => {
-    metaAgent.updateConfig({
+    pipeline.updateConfig({
       defaultDirectory: '/new/dir',
       pollIntervalMs: 10000,
     });
-    const cfg = metaAgent.getConfig();
+    const cfg = pipeline.getConfig();
     expect(cfg.defaultDirectory).toBe('/new/dir');
     expect(cfg.pollIntervalMs).toBe(10000);
   });
 
   it('emits status events on start/stop', () => {
     const events: string[] = [];
-    metaAgent.on('status', (s: string) => events.push(s));
+    pipeline.on('status', (s: string) => events.push(s));
 
-    metaAgent.start();
-    metaAgent.stop();
+    pipeline.start();
+    pipeline.stop();
 
     expect(events).toEqual(['running', 'stopped']);
   });
 
   it('does not double-start', () => {
-    metaAgent.start();
-    const startCount = metaAgent.listenerCount('status');
-    metaAgent.start(); // should be a no-op
-    expect(metaAgent.listenerCount('status')).toBe(startCount);
-    metaAgent.stop();
+    pipeline.start();
+    const startCount = pipeline.listenerCount('status');
+    pipeline.start(); // should be a no-op
+    expect(pipeline.listenerCount('status')).toBe(startCount);
+    pipeline.stop();
   });
 });

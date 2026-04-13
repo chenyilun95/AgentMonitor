@@ -2,7 +2,7 @@ export const ko: Record<string, string> = {
     // Nav
     'nav.brand': 'Agent Monitor',
     'nav.dashboard': '대시보드',
-    'nav.pipeline': '메타 에이전트',
+    'nav.pipeline': '에이전트 매니저',
     'nav.newAgent': '새 에이전트',
     'nav.templates': '템플릿',
     'nav.help': '문서',
@@ -182,7 +182,7 @@ export const ko: Record<string, string> = {
     'templates.empty': '아직 템플릿이 없습니다. 하나를 생성하여 시작하세요.',
 
     // Pipeline
-    'pipeline.title': '메타 에이전트',
+    'pipeline.title': '에이전트 매니저',
     'pipeline.manager': '관리자:',
     'pipeline.running': '실행 중',
     'pipeline.stopped': '중지됨',

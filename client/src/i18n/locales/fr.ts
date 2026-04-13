@@ -2,7 +2,7 @@ export const fr: Record<string, string> = {
     // Nav
     'nav.brand': 'Agent Monitor',
     'nav.dashboard': 'Tableau de bord',
-    'nav.pipeline': 'Meta Agent',
+    'nav.pipeline': 'Gestionnaire d\'Agents',
     'nav.newAgent': 'Nouvel Agent',
     'nav.templates': 'Modèles',
     'nav.help': 'Documentation',
@@ -182,7 +182,7 @@ export const fr: Record<string, string> = {
     'templates.empty': 'Aucun modèle pour le moment. Créez-en un pour commencer.',
 
     // Pipeline
-    'pipeline.title': 'Meta Agent',
+    'pipeline.title': 'Gestionnaire d\'Agents',
     'pipeline.manager': 'Gestionnaire :',
     'pipeline.running': 'En cours',
     'pipeline.stopped': 'Arrêté',
