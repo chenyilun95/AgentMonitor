@@ -33,6 +33,8 @@ export const config = {
     url: process.env.RELAY_URL || '',
     /** Shared secret token for tunnel authentication */
     token: process.env.RELAY_TOKEN || '',
+    /** Enable AES-256-GCM encryption for tunnel messages (set RELAY_ENCRYPT=1 on both sides) */
+    encrypt: process.env.RELAY_ENCRYPT === '1',
   },
   /** Password for dashboard login (if empty, auth is disabled) */
   password: process.env.DASHBOARD_PASSWORD || '',

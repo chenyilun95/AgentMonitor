@@ -88,6 +88,8 @@ export interface Agent {
   sessionId?: string;
   originalPrompt?: string;
   source?: 'monitor' | 'external';
+  labels?: Record<string, string>;
+  structuredOutput?: unknown;
 }
 
 export interface Template {
@@ -210,6 +212,7 @@ export const api = {
     whatsappPhone?: string;
     slackWebhookUrl?: string;
     flags?: AgentFlags;
+    labels?: Record<string, string>;
   }) => request<Agent>('/agents', { method: 'POST', body: JSON.stringify(data) }),
   stopAgent: (id: string) =>
     request('/agents/' + id + '/stop', { method: 'POST' }),

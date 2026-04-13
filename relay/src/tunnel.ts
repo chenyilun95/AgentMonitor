@@ -1,6 +1,7 @@
 import { WebSocketServer, WebSocket } from 'ws';
 import type { Server as HttpServer } from 'http';
 import { relayConfig } from './config.js';
+import { encryptMessage, decryptMessage } from './lib/tunnelCrypto.js';
 
 export type TunnelMessage = Record<string, unknown> & { type: string };
 
@@ -54,7 +55,8 @@ export class TunnelManager {
 
   send(msg: TunnelMessage): void {
     if (this.tunnel && this.tunnel.readyState === WebSocket.OPEN) {
-      this.tunnel.send(JSON.stringify(msg));
+      const raw = JSON.stringify(msg);
+      this.tunnel.send(relayConfig.encrypt ? encryptMessage(raw, relayConfig.token) : raw);
     }
   }
 
@@ -96,7 +98,9 @@ export class TunnelManager {
     ws.once('message', (data) => {
       clearTimeout(authTimeout);
       try {
-        const msg = JSON.parse(data.toString());
+        const raw = data.toString();
+        const decrypted = relayConfig.encrypt ? decryptMessage(raw, relayConfig.token) : raw;
+        const msg = JSON.parse(decrypted);
         if (msg.type !== 'auth' || msg.token !== relayConfig.token) {
           ws.send(JSON.stringify({ type: 'auth:error', message: 'Invalid token' }));
           ws.close(4003, 'Invalid token');
@@ -110,7 +114,7 @@ export class TunnelManager {
         }
 
         this.tunnel = ws;
-        ws.send(JSON.stringify({ type: 'auth:ok' }));
+        this.send({ type: 'auth:ok' });
         console.log('[Relay] Tunnel connected');
 
         // Start keepalive pings
@@ -130,7 +134,9 @@ export class TunnelManager {
 
   private handleMessage(data: import('ws').RawData): void {
     try {
-      const msg: TunnelMessage = JSON.parse(data.toString());
+      const raw = data.toString();
+      const decrypted = relayConfig.encrypt ? decryptMessage(raw, relayConfig.token) : raw;
+      const msg: TunnelMessage = JSON.parse(decrypted);
 
       if (msg.type === 'pong') {
         return; // Keepalive response

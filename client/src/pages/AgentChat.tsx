@@ -1103,6 +1103,16 @@ export function AgentChat() {
             </span>
           </div>
         )}
+        {agent.structuredOutput != null && (agent.status === 'stopped' || agent.status === 'error') && (
+          <div style={{ margin: '12px 0', padding: 12, background: 'var(--bg-tertiary)', borderRadius: 8, border: '1px solid var(--border)' }}>
+            <div style={{ fontWeight: 600, marginBottom: 8, display: 'flex', alignItems: 'center', gap: 6 }}>
+              <span>📋</span> Structured Output
+            </div>
+            <pre style={{ margin: 0, whiteSpace: 'pre-wrap', fontSize: '0.85em', overflow: 'auto', maxHeight: 400 }}>
+              {JSON.stringify(agent.structuredOutput, null, 2)}
+            </pre>
+          </div>
+        )}
         <div ref={messagesEndRef} />
       </div>
 

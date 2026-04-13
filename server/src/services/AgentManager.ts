@@ -92,7 +92,7 @@ export class AgentManager extends EventEmitter {
     }
   }
 
-  async createAgent(name: string, agentConfig: AgentConfig): Promise<Agent> {
+  async createAgent(name: string, agentConfig: AgentConfig, labels?: Record<string, string>): Promise<Agent> {
     const id = uuid();
     const branchName = `agent-${id.slice(0, 8)}`;
 
@@ -174,6 +174,7 @@ export class AgentManager extends EventEmitter {
       mcpServers: this.parseMcpServers(agentConfig.flags.mcpConfig),
       currentTask: agentConfig.prompt.length > 120 ? agentConfig.prompt.slice(0, 120) + '...' : agentConfig.prompt,
       originalPrompt: agentConfig.prompt,
+      labels,
     };
 
     // Take initial code snapshot (before turn 0) so we can restore to clean state
@@ -241,6 +242,10 @@ export class AgentManager extends EventEmitter {
         }
         this.updateAgentStatus(agent.id, status);
       }
+      // Extract structured output if schema was provided
+      if (current) {
+        this.extractStructuredOutput(current);
+      }
       this.processes.delete(agent.id);
     });
 
@@ -284,24 +289,66 @@ export class AgentManager extends EventEmitter {
   }
 
   private composeProcessPrompt(agent: Agent): string {
+    let prompt = agent.config.prompt;
+
+    // Append structured output instruction if schema is provided
+    if (agent.config.flags.outputSchema) {
+      prompt += `\n\nIMPORTANT: When you have completed the task, output your final result as a JSON code block (wrapped in \`\`\`json ... \`\`\`) that conforms to this JSON Schema:\n${JSON.stringify(agent.config.flags.outputSchema, null, 2)}`;
+    }
+
     if (agent.config.provider !== 'codex') {
-      return agent.config.prompt;
+      return prompt;
     }
 
     const selectedModel = agent.config.flags.model?.trim();
     if (!selectedModel) {
-      return agent.config.prompt;
+      return prompt;
     }
 
-    const prompt = agent.config.prompt || '';
     const trimmedPrompt = prompt.trimStart();
     if (trimmedPrompt.startsWith('/model ')) {
       return prompt;
     }
 
-    // Codex CLI supports slash command model switching in-band.
-    // Prefix /model so the first turn always runs on the selected model.
     return `/model ${selectedModel}\n${prompt}`;
+  }
+
+  private extractStructuredOutput(agent: Agent): void {
+    if (!agent.config.flags.outputSchema) return;
+    // Search last 10 assistant messages for a ```json code block
+    const assistantMsgs = agent.messages
+      .filter(m => m.role === 'assistant')
+      .slice(-10);
+    let rawJson: string | null = null;
+    for (let i = assistantMsgs.length - 1; i >= 0; i--) {
+      const match = assistantMsgs[i].content.match(/```json\s*\n([\s\S]*?)\n```/);
+      if (match) { rawJson = match[1]; break; }
+    }
+    if (!rawJson) return;
+    try {
+      const parsed = JSON.parse(rawJson);
+      // Lazy-load Ajv to avoid import at top level
+      import('ajv').then(({ default: Ajv }) => {
+        const ajv = new Ajv();
+        const validate = ajv.compile(agent.config.flags.outputSchema!);
+        if (validate(parsed)) {
+          agent.structuredOutput = parsed;
+        } else {
+          agent.structuredOutput = { error: ajv.errorsText(validate.errors), raw: rawJson };
+        }
+        this.store.saveAgent(agent);
+        this.emit('agent:update', agent.id, agent);
+      }).catch(() => {
+        // ajv not available, store raw
+        agent.structuredOutput = parsed;
+        this.store.saveAgent(agent);
+        this.emit('agent:update', agent.id, agent);
+      });
+    } catch {
+      agent.structuredOutput = { error: 'Invalid JSON', raw: rawJson };
+      this.store.saveAgent(agent);
+      this.emit('agent:update', agent.id, agent);
+    }
   }
 
   private handleStreamMessage(agentId: string, msg: StreamMessage, provider: string): void {
@@ -862,6 +909,29 @@ export class AgentManager extends EventEmitter {
     if (proc) {
       proc.interrupt();
     }
+  }
+
+  waitForAgent(agentId: string, timeoutMs: number): Promise<{ status: string; timedOut: boolean }> {
+    return new Promise((resolve) => {
+      const agent = this.store.getAgent(agentId);
+      if (!agent || agent.status === 'stopped' || agent.status === 'error') {
+        resolve({ status: agent?.status || 'not_found', timedOut: false });
+        return;
+      }
+      const timer = setTimeout(() => {
+        this.removeListener('agent:status', listener);
+        resolve({ status: 'timeout', timedOut: true });
+      }, timeoutMs);
+      const listener = (id: string, status: string) => {
+        if (id !== agentId) return;
+        if (status === 'stopped' || status === 'error') {
+          clearTimeout(timer);
+          this.removeListener('agent:status', listener);
+          resolve({ status, timedOut: false });
+        }
+      };
+      this.on('agent:status', listener);
+    });
   }
 
   async stopAgent(agentId: string): Promise<void> {

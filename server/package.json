@@ -3,6 +3,9 @@
   "version": "1.0.0",
   "private": true,
   "type": "module",
+  "bin": {
+    "agentmonitor": "dist/cli.js"
+  },
   "scripts": {
     "dev": "tsx watch src/index.ts",
     "build": "tsc",
@@ -14,6 +17,8 @@
   "dependencies": {
     "@jackwener/opencli": "^1.6.1",
     "@larksuiteoapi/node-sdk": "^1.59.0",
+    "ajv": "^8.18.0",
+    "commander": "^14.0.3",
     "cookie": "^1.0.2",
     "cookie-parser": "^1.4.7",
     "cors": "^2.8.5",
@@ -39,7 +44,7 @@
     "@types/node-telegram-bot-api": "^0.64.14",
     "@types/nodemailer": "^6.4.17",
     "@types/uuid": "^10.0.0",
-    "@types/ws": "^8.5.14",
+    "@types/ws": "^8.18.1",
     "tsx": "^4.19.3",
     "typescript": "^5.7.3",
     "vitest": "^3.0.5"

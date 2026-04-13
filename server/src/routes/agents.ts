@@ -49,9 +49,24 @@ export function settingsRoutes(store: AgentStore): Router {
 export function agentRoutes(manager: AgentManager, store: AgentStore): Router {
   const router = Router();
 
-  // List all agents
-  router.get('/', (_req, res) => {
-    const agents = manager.getAllAgents();
+  // List all agents (supports ?label=key:value filtering)
+  router.get('/', (req, res) => {
+    let agents = manager.getAllAgents();
+    const labelFilter = req.query.label;
+    if (labelFilter) {
+      const filters = Array.isArray(labelFilter) ? labelFilter as string[] : [labelFilter as string];
+      agents = agents.filter(a =>
+        filters.every(f => {
+          const sep = f.indexOf(':');
+          if (sep < 0) return false;
+          return a.labels?.[f.slice(0, sep)] === f.slice(sep + 1);
+        })
+      );
+    }
+    const statusFilter = req.query.status as string | undefined;
+    if (statusFilter) {
+      agents = agents.filter(a => a.status === statusFilter);
+    }
     res.json(agents.map(sanitizeAgentSnapshot));
   });
 
@@ -68,7 +83,7 @@ export function agentRoutes(manager: AgentManager, store: AgentStore): Router {
   // Create agent
   router.post('/', async (req, res) => {
     try {
-      const { name, directory, prompt, claudeMd, adminEmail, whatsappPhone, slackWebhookUrl, flags, provider } = req.body;
+      const { name, directory, prompt, claudeMd, adminEmail, whatsappPhone, slackWebhookUrl, flags, provider, labels } = req.body;
       const nextProvider: AgentProvider = provider === 'codex' ? 'codex' : 'claude';
       const reasoningEffort = flags?.reasoningEffort;
 
@@ -91,7 +106,7 @@ export function agentRoutes(manager: AgentManager, store: AgentStore): Router {
         whatsappPhone,
         slackWebhookUrl,
         flags: flags || {},
-      });
+      }, labels);
 
       res.status(201).json(agent);
     } catch (err) {
@@ -207,6 +222,30 @@ export function agentRoutes(manager: AgentManager, store: AgentStore): Router {
     } catch (err) {
       res.status(500).json({ error: String(err) });
     }
+  });
+
+  // Update agent labels
+  router.patch('/:id/labels', (req, res) => {
+    const agent = manager.getAgent(req.params.id);
+    if (!agent) { res.status(404).json({ error: 'Agent not found' }); return; }
+    agent.labels = { ...(agent.labels || {}), ...req.body };
+    store.saveAgent(agent);
+    manager.emit('agent:update', agent.id, agent);
+    res.json({ ok: true, labels: agent.labels });
+  });
+
+  // Wait for agent to finish (long-poll)
+  router.get('/:id/wait', async (req, res) => {
+    const agent = manager.getAgent(req.params.id);
+    if (!agent) { res.status(404).json({ error: 'Agent not found' }); return; }
+    if (agent.status === 'stopped' || agent.status === 'error') {
+      res.json({ status: agent.status, timedOut: false, agent: sanitizeAgentSnapshot(agent) });
+      return;
+    }
+    const timeout = Math.min(Number(req.query.timeout) || 60000, 300000);
+    const result = await manager.waitForAgent(agent.id, timeout);
+    const final = manager.getAgent(req.params.id);
+    res.json({ ...result, agent: final ? sanitizeAgentSnapshot(final) : null });
   });
 
   return router;

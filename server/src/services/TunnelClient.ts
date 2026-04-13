@@ -1,5 +1,6 @@
 import WebSocket from 'ws';
 import { config } from '../config.js';
+import { encryptMessage, decryptMessage } from '../lib/tunnelCrypto.js';
 
 export interface TunnelMessage {
   type: string;
@@ -44,7 +45,8 @@ export class TunnelClient {
 
   send(msg: TunnelMessage): void {
     if (this.ws && this.ws.readyState === WebSocket.OPEN) {
-      this.ws.send(JSON.stringify(msg));
+      const raw = JSON.stringify(msg);
+      this.ws.send(config.relay.encrypt ? encryptMessage(raw, this.token) : raw);
     }
   }
 
@@ -85,7 +87,9 @@ export class TunnelClient {
 
     this.ws.on('message', (data) => {
       try {
-        const msg: TunnelMessage = JSON.parse(data.toString());
+        const raw = data.toString();
+        const decrypted = config.relay.encrypt ? decryptMessage(raw, this.token) : raw;
+        const msg: TunnelMessage = JSON.parse(decrypted);
         this.handleMessage(msg);
       } catch (err) {
         console.error('[Tunnel] Failed to parse message:', err);

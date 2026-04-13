@@ -39,6 +39,7 @@ export function CreateAgent() {
   const [disallowedTools, setDisallowedTools] = useState('');
   const [addDirs, setAddDirs] = useState('');
   const [mcpConfig, setMcpConfig] = useState('');
+  const [labelsInput, setLabelsInput] = useState('');
   const [resumeSession, setResumeSession] = useState('');
   const [model, setModel] = useState<ModelSelection>('default');
   const [reasoningEffort, setReasoningEffort] = useState<ReasoningEffortSelection>('default');
@@ -214,6 +215,19 @@ export function CreateAgent() {
     setCreating(true);
     setError('');
     try {
+      const parsedLabels: Record<string, string> = {};
+      if (labelsInput.trim()) {
+        for (const part of labelsInput.split(',')) {
+          const trimmed = part.trim();
+          if (!trimmed) continue;
+          const eq = trimmed.indexOf('=');
+          if (eq > 0) {
+            parsedLabels[trimmed.slice(0, eq).trim()] = trimmed.slice(eq + 1).trim();
+          } else {
+            parsedLabels[trimmed] = '';
+          }
+        }
+      }
       const agent = await api.createAgent({
         name,
         provider,
@@ -223,6 +237,7 @@ export function CreateAgent() {
         adminEmail: adminEmail || undefined,
         whatsappPhone: whatsappPhone || undefined,
         slackWebhookUrl: slackWebhookUrl || undefined,
+        labels: Object.keys(parsedLabels).length > 0 ? parsedLabels : undefined,
         flags: {
           dangerouslySkipPermissions: skipPermissions || undefined,
           fullAuto: fullAuto || undefined,
@@ -290,6 +305,16 @@ export function CreateAgent() {
       <div className="form-group">
         <label>{t('create.name')}</label>
         <input value={name} onChange={(e) => setName(e.target.value)} placeholder={t('create.namePlaceholder')} />
+      </div>
+
+      <div className="form-group">
+        <label>{t('create.labels')}</label>
+        <input
+          value={labelsInput}
+          onChange={(e) => setLabelsInput(e.target.value)}
+          placeholder={t('create.labelsPlaceholder')}
+        />
+        <small style={{ color: 'var(--text-muted)' }}>{t('create.labelsHint')}</small>
       </div>
 
       <div className="form-group">

@@ -45,6 +45,7 @@ export interface AgentConfig {
     addDirs?: string;
     mcpConfig?: string;
     reasoningEffort?: ReasoningEffort;
+    outputSchema?: Record<string, unknown>;
   };
 }
 
@@ -71,4 +72,6 @@ export interface Agent {
   source?: 'monitor' | 'external';
   restoredConversationSeed?: string;
   codeSnapshots?: Array<{ beforeTurnIndex: number; commit: string }>;
+  labels?: Record<string, string>;
+  structuredOutput?: unknown;
 }

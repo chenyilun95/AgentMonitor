@@ -18,6 +18,7 @@ export function Dashboard() {
     dontAskAgain: boolean;
   } | null>(null);
   const [showExternal, setShowExternal] = useState(() => localStorage.getItem('agentmonitor-show-external') !== 'false');
+  const [labelFilter, setLabelFilter] = useState('');
   const navigate = useNavigate();
   const { t } = useTranslation();
 
@@ -163,13 +164,38 @@ export function Dashboard() {
   );
   const displayAgents = agents.filter(
     (a) => a.source !== 'external' || (a.status === 'running' || a.status === 'waiting_input'),
-  );
+  ).filter((a) => {
+    if (!labelFilter) return true;
+    const sep = labelFilter.indexOf('=');
+    if (sep < 0) {
+      // Filter by key existence
+      return a.labels && labelFilter in a.labels;
+    }
+    const k = labelFilter.slice(0, sep);
+    const v = labelFilter.slice(sep + 1);
+    return a.labels?.[k] === v;
+  });
+
+  // Collect all unique labels for the filter dropdown
+  const allLabels = Array.from(new Set(
+    agents.flatMap(a => Object.entries(a.labels || {}).map(([k, v]) => v ? `${k}=${v}` : k))
+  ));
 
   return (
     <div>
       <div className="page-header">
         <h1 className="page-title">{t('dashboard.title')}</h1>
-        <div style={{ display: 'flex', gap: 8 }}>
+        <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
+          {allLabels.length > 0 && (
+            <select
+              value={labelFilter}
+              onChange={(e) => setLabelFilter(e.target.value)}
+              style={{ padding: '6px 8px', borderRadius: 6, border: '1px solid var(--border)', background: 'var(--bg-secondary)', color: 'var(--text-primary)', fontSize: '0.85em' }}
+            >
+              <option value="">All Labels</option>
+              {allLabels.map(l => <option key={l} value={l}>{l}</option>)}
+            </select>
+          )}
           <button className="btn" onClick={() => navigate('/create')}>
             {t('dashboard.newAgent')}
           </button>
@@ -235,6 +261,9 @@ export function Dashboard() {
                   {agent.source === 'external' && (
                     <span className="provider-badge" style={{ background: '#6366f1', color: '#fff', marginLeft: 4 }}>{t('dashboard.externalBadge')}</span>
                   )}
+                  {agent.labels && Object.entries(agent.labels).map(([k, v]) => (
+                    <span key={k} className="provider-badge" style={{ background: 'var(--bg-tertiary)', color: 'var(--text-secondary)', marginLeft: 4, fontSize: '0.7em' }}>{v ? `${k}=${v}` : k}</span>
+                  ))}
                   {' '}{agent.name}
                 </span>
                 <span className={`status status-${agent.status}`}>

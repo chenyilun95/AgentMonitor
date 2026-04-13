@@ -59,6 +59,10 @@ describe('Template routes', () => {
   });
 
   it('creates and lists templates', async () => {
+    // AgentStore seeds a default template on init, so capture the baseline count
+    const baselineRes = await request(app, 'GET', '/api/templates');
+    const baselineCount = (baselineRes.body as unknown[]).length;
+
     const createRes = await request(app, 'POST', '/api/templates', {
       name: 'Test',
       content: '# Test',
@@ -68,7 +72,7 @@ describe('Template routes', () => {
     const listRes = await request(app, 'GET', '/api/templates');
     expect(listRes.status).toBe(200);
     expect(Array.isArray(listRes.body)).toBe(true);
-    expect((listRes.body as unknown[]).length).toBe(1);
+    expect((listRes.body as unknown[]).length).toBe(baselineCount + 1);
   });
 
   it('rejects template without name', async () => {
