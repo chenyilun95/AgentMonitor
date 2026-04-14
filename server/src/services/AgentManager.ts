@@ -908,6 +908,13 @@ export class AgentManager extends EventEmitter {
     const proc = this.processes.get(agentId);
     if (proc) {
       proc.interrupt();
+      // After SIGINT, Claude Code stops the current task and waits for the
+      // next user message.  Transition to waiting_input so the dashboard
+      // reflects the interrupted state instead of staying at "running".
+      const agent = this.store.getAgent(agentId);
+      if (agent && agent.status === 'running') {
+        this.updateAgentStatus(agentId, 'waiting_input');
+      }
     }
   }
 

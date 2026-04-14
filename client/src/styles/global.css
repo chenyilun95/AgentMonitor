@@ -296,6 +296,12 @@ body::after {
   color: var(--primary);
   letter-spacing: -0.02em;
   white-space: nowrap;
+  text-decoration: none;
+  cursor: pointer;
+}
+
+.nav-brand:hover {
+  opacity: 0.8;
 }
 
 .nav-links {

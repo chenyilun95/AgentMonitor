@@ -19,7 +19,7 @@ function NavBar({ onLogout }: { onLogout?: () => void }) {
 
   return (
     <nav className="nav">
-      <div className="nav-brand">{t('nav.brand')}</div>
+      <Link to="/" className="nav-brand">{t('nav.brand')}</Link>
       <div className="nav-links">
         <Link to="/" className={location.pathname === '/' ? 'active' : ''}>
           {t('nav.dashboard')}
