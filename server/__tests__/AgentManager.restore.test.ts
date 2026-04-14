@@ -142,6 +142,36 @@ describe('AgentManager restoreConversation', () => {
     expect(startProcessSpy).toHaveBeenCalledOnce();
   });
 
+  it('keeps dash-prefixed chat input intact when resuming a stopped codex agent', () => {
+    const agent: Agent = {
+      id: 'agent-codex-dash-prompt',
+      name: 'Codex Dash Prompt Test',
+      status: 'stopped',
+      config: {
+        provider: 'codex',
+        directory: tmpDir,
+        prompt: 'old prompt',
+        flags: {},
+      },
+      messages: [],
+      lastActivity: 1,
+      createdAt: 1,
+      sessionId: '019d5000-aaaa-7bbb-8ccc-1234567890ab',
+    };
+    store.saveAgent(agent);
+
+    const startProcessSpy = vi.spyOn(manager as unknown as { startProcess: (agent: Agent) => void }, 'startProcess')
+      .mockImplementation(() => {});
+
+    manager.sendMessage(agent.id, '--status');
+
+    const saved = store.getAgent(agent.id);
+    expect(saved?.config.prompt).toBe('--status');
+    expect(saved?.config.flags.resume).toBe(agent.sessionId);
+    expect(saved?.messages.at(-1)?.content).toBe('--status');
+    expect(startProcessSpy).toHaveBeenCalledOnce();
+  });
+
   it('routes code restore to the selected turn snapshot', async () => {
     const agent: Agent = {
       id: 'agent-3',

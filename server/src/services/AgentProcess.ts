@@ -265,7 +265,11 @@ export class AgentProcess extends EventEmitter {
     args.push('--skip-git-repo-check');
 
     if (opts.resume) {
-      args.push(shellEscape(opts.resume));
+      // End option parsing before positional args so prompts like "--help"
+      // are treated as user input rather than CLI flags.
+      args.push('--', shellEscape(opts.resume));
+    } else {
+      args.push('--');
     }
     args.push(shellEscape(opts.prompt));
 

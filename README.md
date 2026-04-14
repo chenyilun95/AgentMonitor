@@ -6,7 +6,7 @@
 [![Node.js](https://img.shields.io/badge/Node.js-%3E%3D18-339933?style=for-the-badge&logo=node.js&logoColor=white)](https://nodejs.org/)
 [![TypeScript](https://img.shields.io/badge/TypeScript-5.x-3178C6?style=for-the-badge&logo=typescript&logoColor=white)](https://www.typescriptlang.org/)
 [![React](https://img.shields.io/badge/React-19-61DAFB?style=for-the-badge&logo=react&logoColor=black)](https://react.dev/)
-[![Tests](https://img.shields.io/badge/Tests-127%20passing-22c55e?style=for-the-badge)](server/__tests__)
+[![Tests](https://img.shields.io/badge/Tests-159%20passing-22c55e?style=for-the-badge)](server/__tests__)
 [![Docs](https://img.shields.io/badge/Docs-VitePress-646cff?style=for-the-badge&logo=vitepress&logoColor=white)](https://ericonaldo.github.io/AgentMonitor/)
 
 A web dashboard to run, monitor, and manage **Claude Code** and **Codex** agents in one place. Create agents with a cloneable task template. Real-time streaming, task pipelines, and notifications via Email / WhatsApp / Slack — all from your browser.
@@ -61,7 +61,7 @@ A web dashboard to run, monitor, and manage **Claude Code** and **Codex** agents
 - **PTY web terminal** — Toggle a fully interactive shell (node-pty + xterm.js) in the agent's working directory — run any command, launch `claude`, or debug directly from the browser
 - **Built-in OpenCLI toolchain** — `server` install automatically syncs `@jackwener/opencli` to latest and exposes `opencli` to agent subprocesses via PATH
 - **Web chat interface** — Structured chat view with 25+ slash commands matching CLI behavior; both interfaces coexist and you can switch freely
-- **Session resume** — Send a message to a stopped agent to automatically restart it with `--resume`, continuing the conversation with full history
+- **Session resume** — Send a message to a stopped agent to automatically restart it with `--resume`, continuing the conversation with full history. Dash-prefixed Codex prompts such as `--help` are forwarded as plain chat input, not CLI flags
 - **Clone agent** — Duplicate an existing agent's configuration to quickly create a new one with the same settings
 - **Interactive prompts** — When an agent needs input (permission prompts, choices), the web UI shows notification banners and clickable choice buttons
 - **Cost & token tracking** — Per-agent cost (Claude) and token usage (Codex) displayed in real time
@@ -289,6 +289,8 @@ Click any card to open the full chat interface.
 Send messages, view conversation history, interrupt with Double-Esc, and use slash commands:
 
 `/help` `/clear` `/status` `/cost` `/stop` `/compact` `/model` `/export`
+
+For Codex agents, messages that begin with `--` are safely passed after an explicit end-of-options separator, so text like `--help` or `--sandbox danger-full-access` is treated as normal conversation content.
 
 ### Task Pipeline
 

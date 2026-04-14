@@ -98,8 +98,54 @@ describe('reasoning effort support', () => {
     });
 
     expect(args.slice(0, 3)).toEqual(['exec', 'resume', '--json']);
+    expect(args).toContain('--');
     expect(args).toContain(`'${sessionId}'`);
     expect(args).not.toContain('--cd');
+  });
+
+  it('treats dash-prefixed fresh Codex prompts as positional input', () => {
+    const proc = new AgentProcess();
+    const buildCodexCommand = (proc as unknown as {
+      buildCodexCommand: (opts: {
+        provider: 'codex';
+        directory: string;
+        prompt: string;
+      }) => { bin: string; args: string[] };
+    }).buildCodexCommand.bind(proc);
+
+    const { args } = buildCodexCommand({
+      provider: 'codex',
+      directory: tmpDir,
+      prompt: '--help',
+    });
+
+    expect(args[args.length - 2]).toBe('--');
+    expect(args[args.length - 1]).toBe('\'--help\'');
+  });
+
+  it('treats dash-prefixed resumed Codex prompts as positional input', () => {
+    const proc = new AgentProcess();
+    const buildCodexCommand = (proc as unknown as {
+      buildCodexCommand: (opts: {
+        provider: 'codex';
+        directory: string;
+        prompt: string;
+        resume?: string;
+      }) => { bin: string; args: string[] };
+    }).buildCodexCommand.bind(proc);
+
+    const sessionId = '019d5000-aaaa-7bbb-8ccc-1234567890ab';
+    const { args } = buildCodexCommand({
+      provider: 'codex',
+      directory: tmpDir,
+      prompt: '--status',
+      resume: sessionId,
+    });
+
+    const separatorIndex = args.indexOf('--');
+    expect(separatorIndex).toBeGreaterThan(2);
+    expect(args[separatorIndex + 1]).toBe(`'${sessionId}'`);
+    expect(args[separatorIndex + 2]).toBe('\'--status\'');
   });
 
   it('passes supported reasoning effort to Claude via --effort', () => {

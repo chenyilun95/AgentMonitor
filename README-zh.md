@@ -6,7 +6,7 @@
 [![Node.js](https://img.shields.io/badge/Node.js-%3E%3D18-339933?style=for-the-badge&logo=node.js&logoColor=white)](https://nodejs.org/)
 [![TypeScript](https://img.shields.io/badge/TypeScript-5.x-3178C6?style=for-the-badge&logo=typescript&logoColor=white)](https://www.typescriptlang.org/)
 [![React](https://img.shields.io/badge/React-19-61DAFB?style=for-the-badge&logo=react&logoColor=black)](https://react.dev/)
-[![Tests](https://img.shields.io/badge/Tests-127%20passing-22c55e?style=for-the-badge)](server/__tests__)
+[![Tests](https://img.shields.io/badge/Tests-159%20passing-22c55e?style=for-the-badge)](server/__tests__)
 [![Docs](https://img.shields.io/badge/Docs-VitePress-646cff?style=for-the-badge&logo=vitepress&logoColor=white)](https://ericonaldo.github.io/AgentMonitor/)
 
 一个 Agent 监控和调度仪表盘，用于在同一界面运行、监控和管理 **Claude Code** 和 **Codex** 智能体。通过可克隆任务模板，轻松创建智能体。实时流式输出、任务流水线、邮件 / WhatsApp / Slack 通知 —— 全部在浏览器中完成。
@@ -60,7 +60,7 @@
 - **PTY Web 终端** —— 切换全交互式 Shell（node-pty + xterm.js），在智能体工作目录中运行任意命令、启动 `claude`、调试代码 —— 直接在浏览器中操作
 - **内置 OpenCLI 工具链** —— 执行 `server` 依赖安装时会自动同步 `@jackwener/opencli` 到最新版，并通过 PATH 暴露给 agent 子进程
 - **Web 聊天界面** —— 结构化聊天视图，支持 25+ 斜杠命令与 CLI 行为一致；两种界面共存，可自由切换
-- **会话恢复** —— 向已停止的智能体发送消息即可自动使用 `--resume` 重启，继续完整对话历史
+- **会话恢复** —— 向已停止的智能体发送消息即可自动使用 `--resume` 重启，继续完整对话历史。对于 Codex，像 `--help` 这样以 `--` 开头的消息会按普通聊天内容转发，不会被当成 CLI 参数
 - **克隆智能体** —— 复制现有智能体的配置，快速创建具有相同设置的新智能体
 - **交互式提示** —— 当智能体需要输入（权限提示、选项）时，Web UI 显示通知横幅和可点击的选项按钮
 - **费用与 Token 追踪** —— 实时显示每个智能体的费用（Claude）和 Token 使用量（Codex）
@@ -284,6 +284,8 @@ npm run dev    # 同时启动服务端（tsx watch）+ 客户端（vite dev）
 发送消息、查看对话历史、双击 Esc 中断、使用斜杠命令：
 
 `/help` `/clear` `/status` `/cost` `/stop` `/compact` `/model` `/export`
+
+对于 Codex 智能体，任何以 `--` 开头的消息都会在显式的 end-of-options 分隔符之后传递，因此像 `--help` 或 `--sandbox danger-full-access` 这样的文本会被当成普通对话内容，而不是 CLI 选项。
 
 ### 任务流水线
 

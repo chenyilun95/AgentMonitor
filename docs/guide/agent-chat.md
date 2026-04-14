@@ -8,6 +8,7 @@ The chat interface provides a web-based terminal for interacting with individual
 - **Remote terminal attachment**: Toggle a live embedded terminal to see raw CLI output with full ANSI color rendering
 - **Expandable tool details**: Click on tool calls to expand/collapse full input and output
 - **Session resume**: Send a message to a stopped agent to automatically restart with `--resume`
+- **Dash-prefixed input safety**: Codex messages beginning with `--` are forwarded as plain prompt text, not interpreted as CLI options
 - **Optimistic messages**: User messages appear instantly with a thinking indicator while waiting for agent response
 - **Slash commands**: 25 commands matching Claude Code CLI (see [Slash Commands](/guide/slash-commands))
 - **CLAUDE.md editor**: Edit agent instructions mid-session
@@ -65,3 +66,7 @@ Messages are color-coded by role:
 - **Assistant messages**: Agent responses (highlighted)
 - **Tool messages**: Tool usage indicators (click to expand full input/output)
 - **System messages**: Local command output (from slash commands)
+
+## Safety Notes
+
+When Agent Monitor starts or resumes a Codex session, it inserts an explicit end-of-options separator before positional prompt arguments. That means messages like `--help`, `--model gpt-5`, or other dash-prefixed text stay normal chat content instead of being parsed as Codex CLI flags.
