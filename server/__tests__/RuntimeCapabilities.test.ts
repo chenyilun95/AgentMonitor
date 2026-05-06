@@ -37,7 +37,18 @@ describe('RuntimeCapabilitiesService', () => {
     const capabilities = service.getCapabilities(true);
     expect(capabilities.providers.claude.version).toBe('2.1.70');
     expect(capabilities.providers.claude.reasoningEfforts).toEqual(['low', 'medium', 'high']);
-    expect(capabilities.providers.claude.models).toEqual(['sonnet', 'opus']);
+    expect(capabilities.providers.claude.models).toEqual([
+      'sonnet',
+      'opus',
+      'haiku',
+      'sonnet[1m]',
+      'opusplan',
+      'claude-sonnet-4-6',
+      'claude-opus-4-1-20250805',
+      'claude-opus-4-20250514',
+      'claude-sonnet-4-20250514',
+      'claude-3-5-haiku-20241022',
+    ]);
     expect(capabilities.providers.claude.detectedFrom).toBe('help');
   });
 
@@ -50,10 +61,36 @@ describe('RuntimeCapabilitiesService', () => {
 
     const capabilities = service.getCapabilities(true);
     expect(capabilities.providers.claude.reasoningEfforts).toEqual(['low', 'medium', 'high', 'max']);
-    expect(capabilities.providers.claude.models).toEqual(['sonnet', 'opus', 'claude-sonnet-4-6']);
+    expect(capabilities.providers.claude.models).toEqual([
+      'sonnet',
+      'opus',
+      'haiku',
+      'sonnet[1m]',
+      'opusplan',
+      'claude-sonnet-4-6',
+      'claude-opus-4-1-20250805',
+      'claude-opus-4-20250514',
+      'claude-sonnet-4-20250514',
+      'claude-3-5-haiku-20241022',
+    ]);
   });
 
-  it('uses a Codex version threshold before exposing xhigh', () => {
+  it('uses Codex version thresholds before exposing newer efforts and models', () => {
+    const latestService = createService({
+      'claude --version': { stdout: '2.1.70 (Claude Code)' },
+      'claude --help': { stdout: '--effort <level>  Effort level for the current session (low, medium, high)' },
+      'codex --version': { stdout: 'codex-cli 0.128.0' },
+    });
+    expect(latestService.getCapabilities(true).providers.codex.reasoningEfforts).toEqual(['low', 'medium', 'high', 'xhigh']);
+    expect(latestService.getCapabilities(true).providers.codex.models).toEqual([
+      'gpt-5.5',
+      'gpt-5.4',
+      'gpt-5.4-mini',
+      'gpt-5.4-nano',
+      'gpt-5-codex',
+      'gpt-5',
+    ]);
+
     const newService = createService({
       'claude --version': { stdout: '2.1.70 (Claude Code)' },
       'claude --help': { stdout: '--effort <level>  Effort level for the current session (low, medium, high)' },

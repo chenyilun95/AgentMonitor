@@ -3,8 +3,19 @@ import type { AgentProvider, RuntimeCapabilities } from '../api/client';
 export type ModelSelection = string | 'default';
 
 const FALLBACK_MODELS: Record<AgentProvider, string[]> = {
-  claude: ['sonnet', 'opus'],
-  codex: ['gpt-5', 'gpt-5.4', 'gpt-5.4-mini'],
+  claude: [
+    'sonnet',
+    'opus',
+    'haiku',
+    'sonnet[1m]',
+    'opusplan',
+    'claude-sonnet-4-6',
+    'claude-opus-4-1-20250805',
+    'claude-opus-4-20250514',
+    'claude-sonnet-4-20250514',
+    'claude-3-5-haiku-20241022',
+  ],
+  codex: ['gpt-5.5', 'gpt-5.4', 'gpt-5.4-mini', 'gpt-5.4-nano', 'gpt-5-codex', 'gpt-5'],
 };
 
 export function getSupportedModels(

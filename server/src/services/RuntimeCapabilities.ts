@@ -30,10 +30,24 @@ type CommandRunner = (bin: string, args: string[]) => CommandResult;
 const CACHE_TTL_MS = 60_000;
 const DEFAULT_CLAUDE_REASONING_EFFORTS: ReasoningEffort[] = ['low', 'medium', 'high'];
 const DEFAULT_CODEX_REASONING_EFFORTS: ReasoningEffort[] = ['low', 'medium', 'high'];
-const DEFAULT_CLAUDE_MODELS = ['sonnet', 'opus'];
-const DEFAULT_CODEX_MODELS = ['gpt-5'];
+const DEFAULT_CLAUDE_MODELS = [
+  'sonnet',
+  'opus',
+  'haiku',
+  'sonnet[1m]',
+  'opusplan',
+  'claude-sonnet-4-6',
+  'claude-opus-4-1-20250805',
+  'claude-opus-4-20250514',
+  'claude-sonnet-4-20250514',
+  'claude-3-5-haiku-20241022',
+];
+const LEGACY_CODEX_MODELS = ['gpt-5'];
+const GPT54_CODEX_MODELS = [...LEGACY_CODEX_MODELS, 'gpt-5.4', 'gpt-5.4-mini'];
+const DEFAULT_CODEX_MODELS = ['gpt-5.5', 'gpt-5.4', 'gpt-5.4-mini', 'gpt-5.4-nano', 'gpt-5-codex', 'gpt-5'];
 const CODEX_XHIGH_MIN_VERSION = '0.117.0';
 const CODEX_GPT54_MIN_VERSION = '0.117.0';
+const CODEX_GPT55_MIN_VERSION = '0.128.0';
 
 function runCommand(bin: string, args: string[]): CommandResult {
   const result = spawnSync(bin, args, {
@@ -148,7 +162,7 @@ export class RuntimeCapabilitiesService {
     const helpText = [helpResult.stdout, helpResult.stderr].join('\n');
     const reasoningEfforts = this.parseClaudeEfforts(helpText);
     const parsedModels = this.parseClaudeModels(helpText);
-    const models = parsedModels.length > 0 ? parsedModels : DEFAULT_CLAUDE_MODELS;
+    const models = uniqueStrings([...DEFAULT_CLAUDE_MODELS, ...parsedModels]);
 
     if (reasoningEfforts.length > 0) {
       return {
@@ -198,9 +212,11 @@ export class RuntimeCapabilitiesService {
     const reasoningEfforts: ReasoningEffort[] = version && compareVersions(version, CODEX_XHIGH_MIN_VERSION) >= 0
       ? [...DEFAULT_CODEX_REASONING_EFFORTS, 'xhigh']
       : [...DEFAULT_CODEX_REASONING_EFFORTS];
-    const models = version && compareVersions(version, CODEX_GPT54_MIN_VERSION) >= 0
-      ? [...DEFAULT_CODEX_MODELS, 'gpt-5.4', 'gpt-5.4-mini']
-      : [...DEFAULT_CODEX_MODELS];
+    const models = version && compareVersions(version, CODEX_GPT55_MIN_VERSION) >= 0
+      ? [...DEFAULT_CODEX_MODELS]
+      : version && compareVersions(version, CODEX_GPT54_MIN_VERSION) >= 0
+        ? [...GPT54_CODEX_MODELS]
+        : [...LEGACY_CODEX_MODELS];
 
     return {
       available: true,
@@ -228,8 +244,10 @@ export class RuntimeCapabilitiesService {
 
     if (!modelLine) return [];
 
-    const quotedMatches = [...modelLine.matchAll(/'([a-zA-Z0-9.-]+)'/g)];
-    const quotedModels = quotedMatches.map((match) => match[1]);
+    const quotedMatches = [...modelLine.matchAll(/'([^']+)'/g)];
+    const quotedModels = quotedMatches
+      .map((match) => match[1])
+      .filter((model) => /^[A-Za-z0-9][A-Za-z0-9.:_[\]@/-]*$/.test(model));
     return uniqueStrings(quotedModels);
   }
 }
