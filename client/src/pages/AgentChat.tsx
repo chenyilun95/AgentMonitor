@@ -1283,7 +1283,7 @@ export function AgentChat() {
             }
             autoFocus
             rows={1}
-            style={{ resize: 'none', overflow: 'hidden' }}
+            style={{ resize: 'none', overflowY: 'auto' }}
             onInput={(e) => {
               const el = e.currentTarget;
               el.style.height = 'auto';

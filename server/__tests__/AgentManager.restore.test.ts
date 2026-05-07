@@ -4,6 +4,7 @@ import path from 'path';
 import os from 'os';
 import { AgentStore } from '../src/store/AgentStore.js';
 import { AgentManager } from '../src/services/AgentManager.js';
+import { AgentProcess } from '../src/services/AgentProcess.js';
 import type { Agent } from '../src/models/Agent.js';
 
 describe('AgentManager restoreConversation', () => {
@@ -170,6 +171,37 @@ describe('AgentManager restoreConversation', () => {
     expect(saved?.config.flags.resume).toBe(agent.sessionId);
     expect(saved?.messages.at(-1)?.content).toBe('--status');
     expect(startProcessSpy).toHaveBeenCalledOnce();
+  });
+
+  it('falls back to the configured directory when a stopped agent resumes after worktree cleanup', () => {
+    const missingWorktreePath = path.join(tmpDir, '.agent-worktrees', 'agent-missing');
+    const agent: Agent = {
+      id: 'agent-cleaned-worktree',
+      name: 'Cleaned Worktree Test',
+      status: 'stopped',
+      config: {
+        provider: 'codex',
+        directory: tmpDir,
+        prompt: 'old prompt',
+        flags: {},
+      },
+      worktreePath: missingWorktreePath,
+      worktreeBranch: 'agent-missing',
+      messages: [],
+      lastActivity: 1,
+      createdAt: 1,
+      sessionId: '019d5000-aaaa-7bbb-8ccc-1234567890ab',
+    };
+    store.saveAgent(agent);
+
+    const startSpy = vi.spyOn(AgentProcess.prototype, 'start').mockImplementation(() => {});
+
+    manager.sendMessage(agent.id, 'follow-up after cleanup');
+
+    expect(startSpy).toHaveBeenCalledWith(expect.objectContaining({ directory: tmpDir }));
+    const saved = store.getAgent(agent.id);
+    expect(saved?.worktreePath).toBeUndefined();
+    expect(saved?.worktreeBranch).toBeUndefined();
   });
 
   it('routes code restore to the selected turn snapshot', async () => {

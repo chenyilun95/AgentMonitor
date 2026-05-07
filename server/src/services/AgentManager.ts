@@ -22,6 +22,36 @@ interface DeleteAgentOptions {
   purgeSessionFiles?: boolean;
 }
 
+interface ClaudeModelPrice {
+  input: number;
+  output: number;
+  cacheWrite5m: number;
+  cacheWrite1h: number;
+  cacheRead: number;
+}
+
+interface ClaudeUsageCounts {
+  inputTokens: number;
+  outputTokens: number;
+  cacheWrite5mTokens: number;
+  cacheWrite1hTokens: number;
+  cacheReadTokens: number;
+}
+
+const CLAUDE_PRICES_PER_MTOK: Record<string, ClaudeModelPrice> = {
+  opus47: { input: 5, output: 25, cacheWrite5m: 6.25, cacheWrite1h: 10, cacheRead: 0.50 },
+  opus46: { input: 5, output: 25, cacheWrite5m: 6.25, cacheWrite1h: 10, cacheRead: 0.50 },
+  opus45: { input: 5, output: 25, cacheWrite5m: 6.25, cacheWrite1h: 10, cacheRead: 0.50 },
+  opus41: { input: 15, output: 75, cacheWrite5m: 18.75, cacheWrite1h: 30, cacheRead: 1.50 },
+  opus4: { input: 15, output: 75, cacheWrite5m: 18.75, cacheWrite1h: 30, cacheRead: 1.50 },
+  sonnet46: { input: 3, output: 15, cacheWrite5m: 3.75, cacheWrite1h: 6, cacheRead: 0.30 },
+  sonnet45: { input: 3, output: 15, cacheWrite5m: 3.75, cacheWrite1h: 6, cacheRead: 0.30 },
+  sonnet4: { input: 3, output: 15, cacheWrite5m: 3.75, cacheWrite1h: 6, cacheRead: 0.30 },
+  haiku45: { input: 1, output: 5, cacheWrite5m: 1.25, cacheWrite1h: 2, cacheRead: 0.10 },
+  haiku35: { input: 0.80, output: 4, cacheWrite5m: 1, cacheWrite1h: 1.60, cacheRead: 0.08 },
+  haiku3: { input: 0.25, output: 1.25, cacheWrite5m: 0.30, cacheWrite1h: 0.50, cacheRead: 0.03 },
+};
+
 export class AgentManager extends EventEmitter {
   private processes: Map<string, AgentProcess> = new Map();
   private store: AgentStore;
@@ -197,6 +227,7 @@ export class AgentManager extends EventEmitter {
     const processModel = agent.config.provider === 'codex'
       ? undefined
       : agent.config.flags.model;
+    const executionDirectory = this.resolveExecutionDirectory(agent);
 
     proc.on('message', (msg: StreamMessage) => {
       this.handleStreamMessage(agent.id, msg, agent.config.provider);
@@ -266,7 +297,7 @@ export class AgentManager extends EventEmitter {
 
     proc.start({
       provider: agent.config.provider,
-      directory: agent.worktreePath || agent.config.directory,
+      directory: executionDirectory,
       prompt: processPrompt,
       dangerouslySkipPermissions: agent.config.flags.dangerouslySkipPermissions,
       resume: agent.config.flags.resume,
@@ -286,6 +317,20 @@ export class AgentManager extends EventEmitter {
 
     agent.pid = proc.pid;
     this.store.saveAgent(agent);
+  }
+
+  private resolveExecutionDirectory(agent: Agent): string {
+    if (agent.worktreePath && existsSync(agent.worktreePath)) {
+      return agent.worktreePath;
+    }
+
+    if (agent.worktreePath) {
+      console.warn(`[AgentManager] Worktree path is missing for ${agent.id}, falling back to configured directory: ${agent.config.directory}`);
+      agent.worktreePath = undefined;
+      agent.worktreeBranch = undefined;
+    }
+
+    return agent.config.directory;
   }
 
   private composeProcessPrompt(agent: Agent): string {
@@ -505,10 +550,9 @@ export class AgentManager extends EventEmitter {
     }
 
     if (msg.type === 'result') {
-      // Cost is at top level with --verbose: total_cost_usd
-      const cost = (msg as { total_cost_usd?: number }).total_cost_usd || msg.result?.cost_usd;
-      if (cost) {
-        agent.costUsd = cost;
+      const cost = this.calculateClaudeCost(msg, agent.config.flags.model);
+      if (cost !== undefined) {
+        agent.costUsd = (agent.costUsd || 0) + cost;
       }
 
       // Store session ID for resume capability
@@ -559,6 +603,109 @@ export class AgentManager extends EventEmitter {
     if (this.isClaudePermissionPrompt(msg)) {
       this.handleWaitingInput(agent, msg);
     }
+  }
+
+  private calculateClaudeCost(msg: StreamMessage, configuredModel?: string): number | undefined {
+    const usage = this.extractClaudeUsage(msg);
+    if (usage) {
+      const price = this.getClaudeModelPrice(this.extractClaudeModel(msg, configuredModel));
+      return (
+        usage.inputTokens * price.input +
+        usage.outputTokens * price.output +
+        usage.cacheWrite5mTokens * price.cacheWrite5m +
+        usage.cacheWrite1hTokens * price.cacheWrite1h +
+        usage.cacheReadTokens * price.cacheRead
+      ) / 1_000_000;
+    }
+
+    const topLevelCost = (msg as { total_cost_usd?: unknown }).total_cost_usd;
+    const nestedCost = msg.result?.cost_usd;
+    const cost = typeof topLevelCost === 'number' ? topLevelCost : nestedCost;
+    return typeof cost === 'number' && Number.isFinite(cost) && cost >= 0
+      ? cost
+      : undefined;
+  }
+
+  private extractClaudeUsage(msg: StreamMessage): ClaudeUsageCounts | undefined {
+    const anyMsg = msg as Record<string, unknown>;
+    const result = typeof anyMsg.result === 'object' && anyMsg.result !== null
+      ? anyMsg.result as Record<string, unknown>
+      : undefined;
+    const message = typeof anyMsg.message === 'object' && anyMsg.message !== null
+      ? anyMsg.message as Record<string, unknown>
+      : undefined;
+    const usage = this.asRecord(anyMsg.usage) || this.asRecord(result?.usage) || this.asRecord(message?.usage) || anyMsg;
+    const cacheCreation = this.asRecord(usage.cache_creation);
+
+    const inputTokens = this.numberField(usage, 'input_tokens', 'total_input_tokens');
+    const outputTokens = this.numberField(usage, 'output_tokens');
+    const cacheReadTokens = this.numberField(usage, 'cache_read_input_tokens', 'cached_input_tokens');
+    const cacheWrite5mTokens = this.numberField(usage, 'cache_creation_input_tokens') +
+      this.numberField(cacheCreation, 'ephemeral_5m_input_tokens');
+    const cacheWrite1hTokens = this.numberField(cacheCreation, 'ephemeral_1h_input_tokens');
+
+    if (inputTokens + outputTokens + cacheReadTokens + cacheWrite5mTokens + cacheWrite1hTokens <= 0) {
+      return undefined;
+    }
+
+    return {
+      inputTokens,
+      outputTokens,
+      cacheReadTokens,
+      cacheWrite5mTokens,
+      cacheWrite1hTokens,
+    };
+  }
+
+  private extractClaudeModel(msg: StreamMessage, configuredModel?: string): string | undefined {
+    const anyMsg = msg as Record<string, unknown>;
+    const message = this.asRecord(anyMsg.message);
+    const result = this.asRecord(anyMsg.result);
+    return this.stringField(anyMsg, 'model') ||
+      this.stringField(message, 'model') ||
+      this.stringField(result, 'model') ||
+      configuredModel;
+  }
+
+  private getClaudeModelPrice(model?: string): ClaudeModelPrice {
+    const normalized = (model || 'sonnet').toLowerCase();
+
+    if (normalized === 'opus') return CLAUDE_PRICES_PER_MTOK.opus47;
+    if (normalized === 'sonnet' || normalized === 'sonnet[1m]') return CLAUDE_PRICES_PER_MTOK.sonnet46;
+    if (normalized === 'haiku') return CLAUDE_PRICES_PER_MTOK.haiku45;
+    if (normalized === 'opusplan') return CLAUDE_PRICES_PER_MTOK.sonnet46;
+
+    if (normalized.includes('opus-4-7') || normalized.includes('opus-4.7')) return CLAUDE_PRICES_PER_MTOK.opus47;
+    if (normalized.includes('opus-4-6') || normalized.includes('opus-4.6')) return CLAUDE_PRICES_PER_MTOK.opus46;
+    if (normalized.includes('opus-4-5') || normalized.includes('opus-4.5')) return CLAUDE_PRICES_PER_MTOK.opus45;
+    if (normalized.includes('opus-4-1') || normalized.includes('opus-4.1')) return CLAUDE_PRICES_PER_MTOK.opus41;
+    if (normalized.includes('opus-4')) return CLAUDE_PRICES_PER_MTOK.opus4;
+    if (normalized.includes('sonnet-4-6') || normalized.includes('sonnet-4.6')) return CLAUDE_PRICES_PER_MTOK.sonnet46;
+    if (normalized.includes('sonnet-4-5') || normalized.includes('sonnet-4.5')) return CLAUDE_PRICES_PER_MTOK.sonnet45;
+    if (normalized.includes('sonnet-4')) return CLAUDE_PRICES_PER_MTOK.sonnet4;
+    if (normalized.includes('haiku-4-5') || normalized.includes('haiku-4.5')) return CLAUDE_PRICES_PER_MTOK.haiku45;
+    if (normalized.includes('haiku-3-5') || normalized.includes('haiku-3.5')) return CLAUDE_PRICES_PER_MTOK.haiku35;
+    if (normalized.includes('haiku-3')) return CLAUDE_PRICES_PER_MTOK.haiku3;
+
+    return CLAUDE_PRICES_PER_MTOK.sonnet46;
+  }
+
+  private asRecord(value: unknown): Record<string, unknown> | undefined {
+    return typeof value === 'object' && value !== null ? value as Record<string, unknown> : undefined;
+  }
+
+  private numberField(source: Record<string, unknown> | undefined, ...keys: string[]): number {
+    if (!source) return 0;
+    for (const key of keys) {
+      const value = source[key];
+      if (typeof value === 'number' && Number.isFinite(value) && value > 0) return value;
+    }
+    return 0;
+  }
+
+  private stringField(source: Record<string, unknown> | undefined, key: string): string | undefined {
+    const value = source?.[key];
+    return typeof value === 'string' && value.trim() ? value.trim() : undefined;
   }
 
   private handleCodexMessage(agent: Agent, msg: StreamMessage): void {
