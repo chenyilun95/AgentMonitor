@@ -37,7 +37,7 @@ A web dashboard to run, monitor, and manage **Claude Code** and **Codex** agents
 
 ### Spin Up Agents Instantly with Cloneable Templates
 - **Clone agent** — Duplicate any agent's configuration (directory, provider, flags, instruction content) to instantly spin up a new one with the same setup — no re-entering settings
-- **Instruction templates** — Create reusable instruction sets and load them when spawning agents or pipeline tasks (`CLAUDE.md` for Claude, `AGENTS.md` for Codex), with a built-in `OpenCLI Skill Starter` template auto-seeded on first run
+- **Instruction templates** — Create reusable instruction sets and load them when spawning agents or pipeline tasks (`CLAUDE.md` for Claude, `AGENTS.md` for Codex), with built-in `OpenCLI Skill Starter` and `Karpathy Coding Guardrails` templates auto-seeded on first run
 - **Auto-detect instruction files** — When selecting a project directory, automatically detects existing instruction files with provider-aware fallback
 - **Auto-detect model options** — Create Agent shows provider-specific model choices detected from your locally installed CLI version
 - **Live editing** — Modify an agent's instruction content at any time without restarting
@@ -269,7 +269,7 @@ When a model is selected:
 
 **Tip — Clone an existing agent:** Hit the **Clone** button on any agent card to create a new agent pre-filled with the same directory, provider, flags, and instruction file content (`CLAUDE.md` / `AGENTS.md`). Combine with templates for a reusable agent library: create a template with your standard instructions → create one agent using it → clone whenever you need a fresh instance.
 
-Template quick start: use the built-in `OpenCLI Skill Starter` template to make agents proactively discover and use `opencli` (`opencli list`, `opencli doctor`, and JSON-first outputs).
+Template quick start: use the built-in `OpenCLI Skill Starter` template to make agents proactively discover and use `opencli` (`opencli list`, `opencli doctor`, and JSON-first outputs), or `Karpathy Coding Guardrails` for stricter coding behavior inspired by the andrej-karpathy-skills `CLAUDE.md`.
 
 ### Dashboard
 

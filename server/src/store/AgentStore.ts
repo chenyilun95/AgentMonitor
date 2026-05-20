@@ -11,7 +11,7 @@ export interface ServerSettings {
   promptSuggestions: string[]; // user-editable prompt quick-fill options
   pathHistory: Record<string, string[]>; // machine hostname → recently used paths
   deleteSessionFilesPolicy: 'ask' | 'keep' | 'purge';
-  opencliTemplateSeeded?: boolean; // one-time bootstrap marker
+  opencliTemplateSeeded?: boolean; // legacy bootstrap marker
 }
 
 const DEFAULT_SETTINGS: ServerSettings = {
@@ -53,6 +53,93 @@ Use this instruction block to make the agent actively leverage \`opencli\`.
 - Keep commands deterministic and auditable (show exact command used).
 - Prefer read-only operations unless the task explicitly asks for write/publish actions.
 `;
+
+const DEFAULT_KARPATHY_TEMPLATE_NAME = 'Karpathy Coding Guardrails';
+const DEFAULT_KARPATHY_TEMPLATE_CONTENT = `# Karpathy Coding Guardrails
+
+Behavioral guidelines to reduce common LLM coding mistakes. Merge with project-specific instructions as needed.
+
+Tradeoff: These guidelines bias toward caution over speed. For trivial tasks, use judgment.
+
+## 1. Think Before Coding
+
+Don't assume. Don't hide confusion. Surface tradeoffs.
+
+Before implementing:
+
+- State your assumptions explicitly. If uncertain, ask.
+- If multiple interpretations exist, present them - don't pick silently.
+- If a simpler approach exists, say so. Push back when warranted.
+- If something is unclear, stop. Name what's confusing. Ask.
+
+## 2. Simplicity First
+
+Minimum code that solves the problem. Nothing speculative.
+
+- No features beyond what was asked.
+- No abstractions for single-use code.
+- No "flexibility" or "configurability" that wasn't requested.
+- No error handling for impossible scenarios.
+- If you write 200 lines and it could be 50, rewrite it.
+
+Ask yourself: "Would a senior engineer say this is overcomplicated?" If yes, simplify.
+
+## 3. Surgical Changes
+
+Touch only what you must. Clean up only your own mess.
+
+When editing existing code:
+
+- Don't "improve" adjacent code, comments, or formatting.
+- Don't refactor things that aren't broken.
+- Match existing style, even if you'd do it differently.
+- If you notice unrelated dead code, mention it - don't delete it.
+
+When your changes create orphans:
+
+- Remove imports/variables/functions that YOUR changes made unused.
+- Don't remove pre-existing dead code unless asked.
+
+The test: Every changed line should trace directly to the user's request.
+
+## 4. Goal-Driven Execution
+
+Define success criteria. Loop until verified.
+
+Transform tasks into verifiable goals:
+
+- "Add validation" -> "Write tests for invalid inputs, then make them pass"
+- "Fix the bug" -> "Write a test that reproduces it, then make it pass"
+- "Refactor X" -> "Ensure tests pass before and after"
+
+For multi-step tasks, state a brief plan:
+
+1. [Step] -> verify: [check]
+2. [Step] -> verify: [check]
+3. [Step] -> verify: [check]
+
+Strong success criteria let you loop independently. Weak criteria ("make it work") require constant clarification.
+
+These guidelines are working if: fewer unnecessary changes in diffs, fewer rewrites due to overcomplication, and clarifying questions come before implementation rather than after mistakes.
+`;
+
+const DEFAULT_BUILTIN_TEMPLATES = [
+  {
+    name: DEFAULT_OPENCLI_TEMPLATE_NAME,
+    content: DEFAULT_OPENCLI_TEMPLATE_CONTENT,
+    matches: (template: Template) =>
+      template.name === DEFAULT_OPENCLI_TEMPLATE_NAME
+      || template.content.includes('# OpenCLI Skill Starter'),
+  },
+  {
+    name: DEFAULT_KARPATHY_TEMPLATE_NAME,
+    content: DEFAULT_KARPATHY_TEMPLATE_CONTENT,
+    matches: (template: Template) =>
+      template.name === DEFAULT_KARPATHY_TEMPLATE_NAME
+      || template.content.includes('# Karpathy Coding Guardrails')
+      || template.content.includes('Behavioral guidelines to reduce common LLM coding mistakes.'),
+  },
+];
 
 export class AgentStore {
   private agents: Map<string, Agent> = new Map();
@@ -126,30 +213,30 @@ export class AgentStore {
       }
     }
 
-    this.ensureDefaultOpencliTemplate();
+    this.ensureBuiltinTemplates();
   }
 
-  private ensureDefaultOpencliTemplate(): void {
-    if (this.settings.opencliTemplateSeeded) return;
+  private ensureBuiltinTemplates(): void {
+    let changed = false;
+    for (const builtin of DEFAULT_BUILTIN_TEMPLATES) {
+      const existing = [...this.templates.values()].find((template) => builtin.matches(template));
+      if (existing) continue;
 
-    const existing = [...this.templates.values()].find(
-      (template) => template.name === DEFAULT_OPENCLI_TEMPLATE_NAME
-        || template.content.includes('# OpenCLI Skill Starter'),
-    );
-
-    if (!existing) {
       const now = Date.now();
       const template: Template = {
         id: randomUUID(),
-        name: DEFAULT_OPENCLI_TEMPLATE_NAME,
-        content: DEFAULT_OPENCLI_TEMPLATE_CONTENT,
+        name: builtin.name,
+        content: builtin.content,
         createdAt: now,
         updatedAt: now,
       };
       this.templates.set(template.id, template);
-      this.saveTemplates();
+      changed = true;
     }
 
+    if (changed) this.saveTemplates();
+
+    // Preserve/upgrade the legacy marker so older settings files stay forward-compatible.
     this.settings.opencliTemplateSeeded = true;
     fs.writeFileSync(this.settingsFile, JSON.stringify(this.settings, null, 2));
   }

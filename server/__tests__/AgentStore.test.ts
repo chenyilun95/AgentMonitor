@@ -152,17 +152,24 @@ describe('AgentStore', () => {
     expect(store.getTemplate('tdel')).toBeUndefined();
   });
 
-  it('seeds default OpenCLI skill template once', () => {
+  it('seeds built-in templates and does not duplicate them on reload', () => {
     const templates = store.getAllTemplates();
     const opencliTemplate = templates.find((template) => template.name === 'OpenCLI Skill Starter');
+    const karpathyTemplate = templates.find((template) => template.name === 'Karpathy Coding Guardrails');
     expect(opencliTemplate).toBeDefined();
+    expect(karpathyTemplate).toBeDefined();
     expect(opencliTemplate!.content).toContain('opencli list');
+    expect(karpathyTemplate!.content).toContain('Think Before Coding');
     expect(store.getSettings().opencliTemplateSeeded).toBe(true);
 
     const store2 = new AgentStore(tmpDir);
-    const seededTemplates = store2
+    const opencliTemplates = store2
       .getAllTemplates()
       .filter((template) => template.name === 'OpenCLI Skill Starter');
-    expect(seededTemplates).toHaveLength(1);
+    const karpathyTemplates = store2
+      .getAllTemplates()
+      .filter((template) => template.name === 'Karpathy Coding Guardrails');
+    expect(opencliTemplates).toHaveLength(1);
+    expect(karpathyTemplates).toHaveLength(1);
   });
 });

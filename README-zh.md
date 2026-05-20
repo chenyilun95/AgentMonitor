@@ -36,7 +36,7 @@
 
 ### 通过可克隆任务模板，轻松创建智能体
 - **克隆智能体** —— 一键复制任意智能体的配置（目录、提供者、参数、指令文件内容），立即启动相同设置的新智能体，无需重复填写
-- **指令模板** —— 创建可复用的指令集，在启动智能体时加载（Claude 使用 `CLAUDE.md`，Codex 使用 `AGENTS.md`）；首次运行会自动注入内置模板 `OpenCLI Skill Starter`
+- **指令模板** —— 创建可复用的指令集，在启动智能体时加载（Claude 使用 `CLAUDE.md`，Codex 使用 `AGENTS.md`）；首次运行会自动注入内置模板 `OpenCLI Skill Starter` 和 `Karpathy Coding Guardrails`
 - **自动检测指令文件** —— 选择项目目录时，自动检测已有指令文件并提供加载选项（含跨 provider 兼容回退）
 - **自动检测模型选项** —— 创建页面会根据本机已安装 CLI 版本展示 provider 对应的可选模型下拉
 - **实时编辑** —— 随时修改智能体指令文件内容，无需重启
@@ -264,7 +264,7 @@ npm run dev    # 同时启动服务端（tsx watch）+ 客户端（vite dev）
 
 **提示 —— 克隆现有智能体：** 点击任意智能体卡片上的 **克隆** 按钮，即可创建一个预填了相同目录、提供者、参数和指令文件内容（`CLAUDE.md` / `AGENTS.md`）的新智能体。配合模板可打造可复用的智能体库：创建一个包含标准指令的模板 → 使用该模板创建一个智能体 → 每次需要新实例时克隆即可。
 
-模板快速上手：可直接使用内置 `OpenCLI Skill Starter` 模板，让 agent 主动发现并使用 `opencli`（如 `opencli list`、`opencli doctor`，优先结构化 JSON 输出）。
+模板快速上手：可直接使用内置 `OpenCLI Skill Starter` 模板，让 agent 主动发现并使用 `opencli`（如 `opencli list`、`opencli doctor`，优先结构化 JSON 输出）；如果你希望 agent 在编码时更克制、先澄清再实现，可使用内置 `Karpathy Coding Guardrails` 模板，它来自 andrej-karpathy-skills 的 `CLAUDE.md` 思路。
 
 ### 仪表盘
 

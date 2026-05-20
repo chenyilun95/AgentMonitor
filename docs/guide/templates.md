@@ -20,7 +20,7 @@ Detection is provider-aware and includes compatibility fallback (for example, a 
 
 Navigate to **Templates** in the nav bar to:
 
-- **Use starter template**: Agent Monitor auto-seeds a built-in `OpenCLI Skill Starter` template on first run
+- **Use built-in templates**: Agent Monitor auto-seeds `OpenCLI Skill Starter` and `Karpathy Coding Guardrails` on first run
 - **Create**: Click **+ New Template**, enter a name and instruction content
 - **Edit**: Click the edit button on any template to modify it
 - **Delete**: Remove templates you no longer need
@@ -63,5 +63,6 @@ This gives you a library of reusable agent configurations without manually re-en
 - Create a base template with common instructions (coding style, testing requirements)
 - Create specialized templates for different task types (frontend, backend, testing)
 - Start from `OpenCLI Skill Starter` when the task may need web/browser/desktop automation via `opencli`
+- Start from `Karpathy Coding Guardrails` when you want the agent to bias toward clarification, simplicity, surgical diffs, and explicit verification
 - Templates are stored server-side and available to all users
 - Use Clone + Template together: template provides the instructions, clone replicates the full agent config

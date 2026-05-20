@@ -40,7 +40,7 @@ The local dev UI is available at `http://localhost:5173`, and the API server run
 6. Configure flags (e.g., `--dangerously-skip-permissions`, `--chrome`, `--permission-mode`)
 7. Click **Create Agent**
 
-Tip: use the built-in `OpenCLI Skill Starter` template from **Load template...** if the task needs website/browser/desktop automation.
+Tip: use the built-in `OpenCLI Skill Starter` template from **Load template...** if the task needs website/browser/desktop automation, or `Karpathy Coding Guardrails` if you want stricter coding guardrails.
 
 If the working directory is a git repo, the agent will start in an isolated worktree branch. Otherwise, it works directly in the target directory.
 
