@@ -87,6 +87,7 @@ export interface Agent {
   currentTask?: string;
   sessionId?: string;
   originalPrompt?: string;
+  interactionMode?: 'default' | 'plan';
   source?: 'monitor' | 'external';
   labels?: Record<string, string>;
   structuredOutput?: unknown;

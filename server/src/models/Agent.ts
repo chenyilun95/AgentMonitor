@@ -69,6 +69,7 @@ export interface Agent {
   currentTask?: string;
   sessionId?: string;
   originalPrompt?: string;
+  interactionMode?: 'default' | 'plan';
   source?: 'monitor' | 'external';
   restoredConversationSeed?: string;
   codeSnapshots?: Array<{ beforeTurnIndex: number; commit: string }>;

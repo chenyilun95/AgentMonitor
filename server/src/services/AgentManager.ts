@@ -230,14 +230,17 @@ export class AgentManager extends EventEmitter {
     const executionDirectory = this.resolveExecutionDirectory(agent);
 
     proc.on('message', (msg: StreamMessage) => {
+      if (this.processes.get(agent.id) !== proc) return;
       this.handleStreamMessage(agent.id, msg, agent.config.provider);
     });
 
     proc.on('terminal', (chunk: { stream: string; data: string }) => {
+      if (this.processes.get(agent.id) !== proc) return;
       this.emit('agent:terminal', agent.id, chunk);
     });
 
     proc.on('stderr', (text: string) => {
+      if (this.processes.get(agent.id) !== proc) return;
       console.error(`[Agent ${agent.id}] stderr: ${text}`);
       // Codex prints this informational line when stdin is piped; harmless noise.
       if (agent.config.provider === 'codex' && text.trim() === 'Reading additional input from stdin...') {
@@ -258,6 +261,7 @@ export class AgentManager extends EventEmitter {
     });
 
     proc.on('exit', (code: number | null) => {
+      if (this.processes.get(agent.id) !== proc) return;
       // Don't override 'stopped' status (set when result message is received)
       const current = this.store.getAgent(agent.id);
       if (current && current.status !== 'stopped') {
@@ -281,6 +285,7 @@ export class AgentManager extends EventEmitter {
     });
 
     proc.on('error', (err: Error) => {
+      if (this.processes.get(agent.id) !== proc) return;
       console.error(`[Agent ${agent.id}] process error:`, err);
       const a = this.store.getAgent(agent.id);
       if (a) {
@@ -356,6 +361,28 @@ export class AgentManager extends EventEmitter {
     }
 
     return `/model ${selectedModel}\n${prompt}`;
+  }
+
+  private buildEffectiveUserMessage(agent: Agent, text: string): string {
+    return agent.interactionMode === 'plan'
+      ? `/plan\n${text}`
+      : text;
+  }
+
+  private togglePlanMode(agent: Agent): void {
+    const nextMode = agent.interactionMode === 'plan' ? 'default' : 'plan';
+    agent.interactionMode = nextMode;
+    agent.messages.push({
+      id: uuid(),
+      role: 'system',
+      content: nextMode === 'plan'
+        ? '[Mode] Plan mode enabled for web chat. Future web messages will be prefixed with /plan until you toggle it off.'
+        : '[Mode] Plan mode disabled for web chat. Future web messages will be sent normally.',
+      timestamp: Date.now(),
+    });
+    agent.lastActivity = Date.now();
+    this.store.saveAgent(agent);
+    this.emit('agent:update', agent.id, agent);
   }
 
   private extractStructuredOutput(agent: Agent): void {
@@ -990,6 +1017,13 @@ export class AgentManager extends EventEmitter {
     const agent = this.store.getAgent(agentId);
     if (!agent) return;
 
+    if (text.trim() === '/plan') {
+      this.togglePlanMode(agent);
+      return;
+    }
+
+    const effectiveText = this.buildEffectiveUserMessage(agent, text);
+
     // Take a code snapshot before this turn so we can restore to it later.
     const turnIndex = agent.messages.filter(m => m.role === 'user').length;
     this.takeCodeSnapshot(agent, turnIndex);
@@ -1008,23 +1042,28 @@ export class AgentManager extends EventEmitter {
 
     const proc = this.processes.get(agentId);
     if (proc) {
-      // Agent is running (or waiting_input) — send message to existing process.
-      // With --input-format stream-json, Claude CLI accepts stdin at any time and
-      // queues messages. The agent will process it when the current task finishes.
+      // Codex exec is single-turn; follow-ups must resume as a new turn.
+      if (proc.provider === 'codex') {
+        proc.stop();
+        this.resumeAgent(agent, effectiveText);
+        return;
+      }
+
+      // Claude accepts interactive follow-up messages over stdin.
       if (agent.status === 'waiting_input') {
         this.updateAgentStatus(agentId, 'running');
         // Only set stuck timer when agent transitions from waiting → running,
         // meaning we expect a response. Don't set it if agent is already busy.
         this.pendingUserMessage.set(agentId, Date.now());
       }
-      proc.sendMessage(text);
+      proc.sendMessage(effectiveText);
       this.emit('agent:message', agentId, {
         type: 'user',
-        text,
+        text: effectiveText,
       });
     } else if (agent.status === 'stopped' || agent.status === 'error') {
       // Agent is stopped — resume with new prompt
-      this.resumeAgent(agent, text);
+      this.resumeAgent(agent, effectiveText);
     }
   }
 

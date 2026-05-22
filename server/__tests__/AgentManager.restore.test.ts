@@ -204,6 +204,98 @@ describe('AgentManager restoreConversation', () => {
     expect(saved?.worktreeBranch).toBeUndefined();
   });
 
+  it('toggles web plan mode on and off with /plan', () => {
+    const agent: Agent = {
+      id: 'agent-plan-toggle',
+      name: 'Plan Toggle Test',
+      status: 'stopped',
+      config: {
+        provider: 'codex',
+        directory: tmpDir,
+        prompt: 'old prompt',
+        flags: {},
+      },
+      messages: [],
+      lastActivity: 1,
+      createdAt: 1,
+    };
+    store.saveAgent(agent);
+
+    manager.sendMessage(agent.id, '/plan');
+    expect(store.getAgent(agent.id)?.interactionMode).toBe('plan');
+    expect(store.getAgent(agent.id)?.messages.at(-1)?.content).toContain('Plan mode enabled');
+
+    manager.sendMessage(agent.id, '/plan');
+    expect(store.getAgent(agent.id)?.interactionMode).toBe('default');
+    expect(store.getAgent(agent.id)?.messages.at(-1)?.content).toContain('Plan mode disabled');
+  });
+
+  it('prefixes resumed prompts with /plan when web plan mode is enabled', () => {
+    const agent: Agent = {
+      id: 'agent-plan-prefix',
+      name: 'Plan Prefix Test',
+      status: 'stopped',
+      config: {
+        provider: 'codex',
+        directory: tmpDir,
+        prompt: 'old prompt',
+        flags: {},
+      },
+      interactionMode: 'plan',
+      messages: [],
+      lastActivity: 1,
+      createdAt: 1,
+      sessionId: '019d5000-aaaa-7bbb-8ccc-1234567890ab',
+    };
+    store.saveAgent(agent);
+
+    const startProcessSpy = vi.spyOn(manager as unknown as { startProcess: (agent: Agent) => void }, 'startProcess')
+      .mockImplementation(() => {});
+
+    manager.sendMessage(agent.id, 'follow-up question');
+
+    const saved = store.getAgent(agent.id);
+    expect(saved?.config.prompt).toBe('/plan\nfollow-up question');
+    expect(saved?.messages.at(-1)?.content).toBe('follow-up question');
+    expect(saved?.config.flags.resume).toBe(agent.sessionId);
+    expect(startProcessSpy).toHaveBeenCalledOnce();
+  });
+
+  it('restarts a running codex process instead of writing follow-up text to stdin', () => {
+    const agent: Agent = {
+      id: 'agent-codex-running-followup',
+      name: 'Running Codex Follow-up',
+      status: 'running',
+      config: {
+        provider: 'codex',
+        directory: tmpDir,
+        prompt: 'old prompt',
+        flags: {},
+      },
+      messages: [],
+      lastActivity: 1,
+      createdAt: 1,
+      sessionId: '019d5000-aaaa-7bbb-8ccc-1234567890ab',
+    };
+    store.saveAgent(agent);
+
+    const fakeProc = {
+      provider: 'codex',
+      stop: vi.fn(),
+      sendMessage: vi.fn(),
+    } as unknown as AgentProcess;
+    (manager as unknown as { processes: Map<string, AgentProcess> }).processes.set(agent.id, fakeProc);
+
+    const resumeAgentSpy = vi.spyOn(manager as unknown as { resumeAgent: (agent: Agent, text: string) => void }, 'resumeAgent')
+      .mockImplementation(() => {});
+
+    manager.sendMessage(agent.id, 'follow-up question');
+
+    expect(fakeProc.stop).toHaveBeenCalledOnce();
+    expect(fakeProc.sendMessage).not.toHaveBeenCalled();
+    expect(resumeAgentSpy).toHaveBeenCalledWith(expect.objectContaining({ id: agent.id }), 'follow-up question');
+  });
+
   it('routes code restore to the selected turn snapshot', async () => {
     const agent: Agent = {
       id: 'agent-3',
