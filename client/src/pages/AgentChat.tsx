@@ -1083,15 +1083,6 @@ export function AgentChat() {
   const reasoningEffortOptions = getReasoningEffortOptions(agent.config.provider, runtimeCapabilities);
   const interactionMode = agent.interactionMode || 'default';
   const isPlanMode = interactionMode === 'plan';
-  const latestUserMessageIndex = (() => {
-    for (let i = agent.messages.length - 1; i >= 0; i -= 1) {
-      if (agent.messages[i].role === 'user') return i;
-    }
-    return -1;
-  })();
-  const latestUserMessage = latestUserMessageIndex >= 0 ? agent.messages[latestUserMessageIndex] : null;
-  const showStickyInput = !!latestUserMessage
-    && (agent.status === 'running' || latestUserMessageIndex < agent.messages.length - 1);
 
   return (
     <div className="chat-container">
@@ -1228,12 +1219,6 @@ export function AgentChat() {
       {id && <TerminalView agentId={id} visible={showTerminal} resumeCommand={buildResumeCommand(agent, runtimeCapabilities)} />}
       <FileBrowserView rootPath={agent.worktreePath || agent.config.directory} visible={showFiles} />
       <div className="chat-messages" style={{ display: showTerminal || showFiles ? 'none' : undefined }}>
-        {showStickyInput && latestUserMessage && (
-          <div className="chat-current-input" title={latestUserMessage.content}>
-            <div className="chat-current-input-label">Current input</div>
-            <div className="chat-current-input-content">{latestUserMessage.content}</div>
-          </div>
-        )}
         {agent.messages.map((msg) => {
           const toolDetails = getToolMessageDetails(msg);
           const isToolMsg = !!toolDetails;
