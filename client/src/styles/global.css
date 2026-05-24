@@ -745,15 +745,6 @@ body::after {
   animation: statusPulse 2s ease-in-out infinite;
 }
 
-.status-stopped {
-  background: rgba(125, 110, 95, 0.12);
-  color: var(--text-muted);
-}
-
-.status-stopped .status-dot {
-  background: var(--text-muted);
-}
-
 .status-error {
   background: var(--red-dim);
   color: var(--red);
@@ -764,11 +755,13 @@ body::after {
   box-shadow: 0 0 8px rgba(224, 94, 94, 0.5);
 }
 
+.status-stopped,
 .status-waiting_input {
   background: var(--yellow-dim);
   color: var(--yellow);
 }
 
+.status-stopped .status-dot,
 .status-waiting_input .status-dot {
   background: var(--yellow);
   box-shadow: 0 0 8px rgba(224, 169, 70, 0.5);

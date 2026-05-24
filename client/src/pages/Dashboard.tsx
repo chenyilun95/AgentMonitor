@@ -3,6 +3,7 @@ import { useNavigate } from 'react-router-dom';
 import { api, type Agent, type DeleteSessionFilesPolicy } from '../api/client';
 import { getSocket } from '../api/socket';
 import { useTranslation } from '../i18n';
+import { getAgentStatusClass } from '../lib/agentStatus';
 
 export function Dashboard() {
   const [agents, setAgents] = useState<Agent[]>([]);
@@ -180,7 +181,7 @@ export function Dashboard() {
       case 'running':
         return t('dashboard.status.running');
       case 'stopped':
-        return t('dashboard.status.stopped');
+        return t('dashboard.status.needsInput');
       case 'error':
         return t('dashboard.status.error');
       default:
@@ -332,7 +333,7 @@ export function Dashboard() {
                     &#9998;
                   </button>
                 </span>
-                <span className={`status status-${agent.status}`}>
+                <span className={`status status-${getAgentStatusClass(agent.status)}`}>
                   <span className="status-dot" />
                   {formatStatus(agent.status)}
                 </span>

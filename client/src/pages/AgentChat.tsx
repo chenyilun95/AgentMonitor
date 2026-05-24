@@ -8,6 +8,7 @@ import { FileBrowserView } from '../components/FileBrowserView';
 import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
 import { getInstructionFileName, replaceInstructionFileName } from '../lib/instructionFiles';
+import { getAgentStatusClass, getAgentStatusLabel } from '../lib/agentStatus';
 import {
   getReasoningEffortLabel,
   getReasoningEffortOptions,
@@ -636,7 +637,7 @@ export function AgentChat() {
         if (agent) {
           const statusInfo = [
             `${t('chat.agentName')}: ${agent.name}`,
-            `${t('chat.agentStatus')}: ${agent.status}`,
+            `${t('chat.agentStatus')}: ${getAgentStatusLabel(agent.status)}`,
             `Provider: ${(agent.config.provider || 'claude').toUpperCase()}`,
             `Directory: ${agent.config.directory}`,
             `${t('chat.currentReasoningEffort')}: ${formatReasoningEffort(agent.config.flags.reasoningEffort)}`,
@@ -694,7 +695,7 @@ export function AgentChat() {
           if (!agent.config.directory) issues.push('No working directory configured');
           if (agent.messages.length === 0) issues.push('No messages in conversation');
           if (issues.length === 0) {
-            addLocalMessage(`${t('chat.doctorOk')}\nStatus: ${agent.status}\nProvider: ${(agent.config.provider || 'claude').toUpperCase()}\nMessages: ${agent.messages.length}`);
+            addLocalMessage(`${t('chat.doctorOk')}\nStatus: ${getAgentStatusLabel(agent.status)}\nProvider: ${(agent.config.provider || 'claude').toUpperCase()}\nMessages: ${agent.messages.length}`);
           } else {
             addLocalMessage(`${t('chat.doctorError')}\n${issues.join('\n')}`);
           }
@@ -1130,9 +1131,9 @@ export function AgentChat() {
               ))}
             </select>
           </div>
-          <span className={`status status-${agent.status}`}>
+          <span className={`status status-${getAgentStatusClass(agent.status)}`}>
             <span className="status-dot" />
-            {agent.status}
+            {getAgentStatusLabel(agent.status)}
           </span>
           <button
             className="btn btn-sm btn-outline"
