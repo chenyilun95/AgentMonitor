@@ -1,5 +1,5 @@
 import { Router } from 'express';
-import { DirectoryBrowser } from '../services/DirectoryBrowser.js';
+import { DirectoryBrowser, FileReadError } from '../services/DirectoryBrowser.js';
 import type { AgentProvider } from '../models/Agent.js';
 import { findInstructionFile } from '../utils/instructionFiles.js';
 
@@ -39,6 +39,23 @@ export function directoryRoutes(): Router {
       });
     } catch (err) {
       res.json({ exists: false });
+    }
+  });
+
+  router.get('/file', (req, res) => {
+    try {
+      const filePath = req.query.path as string;
+      if (!filePath) {
+        res.status(400).json({ error: 'path is required' });
+        return;
+      }
+      res.json(browser.readTextFile(filePath));
+    } catch (err) {
+      if (err instanceof FileReadError) {
+        res.status(err.statusCode).json({ error: err.message });
+        return;
+      }
+      res.status(400).json({ error: String(err) });
     }
   });
 

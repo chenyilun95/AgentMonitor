@@ -4,6 +4,7 @@ import { api, type Agent, type RuntimeCapabilities } from '../api/client';
 import { getSocket, joinAgent, leaveAgent } from '../api/socket';
 import { useTranslation } from '../i18n';
 import { TerminalView } from '../components/TerminalView';
+import { FileBrowserView } from '../components/FileBrowserView';
 import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
 import { getInstructionFileName, replaceInstructionFileName } from '../lib/instructionFiles';
@@ -183,6 +184,7 @@ export function AgentChat() {
   const [inputRequired, setInputRequired] = useState<{ prompt: string; choices?: string[] } | null>(null);
   const [expandedTools, setExpandedTools] = useState<Set<string>>(new Set());
   const [showTerminal, setShowTerminal] = useState(false);
+  const [showFiles, setShowFiles] = useState(false);
   const [renderMarkdown, setRenderMarkdown] = useState(() => localStorage.getItem('agentmonitor-markdown') !== 'false');
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const lastEscRef = useRef(0);
@@ -1144,6 +1146,7 @@ export function AgentChat() {
             onClick={() => {
               setShowTerminal(prev => {
                 const next = !prev;
+                if (next) setShowFiles(false);
                 // When switching back to chat view, re-fetch agent data to pick up
                 // any messages that arrived while in terminal view
                 if (!next) fetchAgent(true);
@@ -1159,6 +1162,19 @@ export function AgentChat() {
             </svg>
             Terminal
           </button>
+          <button
+            className={`btn btn-sm ${showFiles ? 'btn-primary' : 'btn-outline'}`}
+            onClick={() => {
+              setShowFiles(prev => {
+                const next = !prev;
+                if (next) setShowTerminal(false);
+                return next;
+              });
+            }}
+            title="Browse workspace files"
+          >
+            Files
+          </button>
           {(agent.status === 'running' || agent.status === 'waiting_input') && (
             <button className="btn btn-sm btn-danger" onClick={() => id && api.stopAgent(id)}>
               {t('common.stop')}
@@ -1168,7 +1184,8 @@ export function AgentChat() {
       </div>
 
       {id && <TerminalView agentId={id} visible={showTerminal} resumeCommand={buildResumeCommand(agent, runtimeCapabilities)} />}
-      <div className="chat-messages" style={{ display: showTerminal ? 'none' : undefined }}>
+      <FileBrowserView rootPath={agent.worktreePath || agent.config.directory} visible={showFiles} />
+      <div className="chat-messages" style={{ display: showTerminal || showFiles ? 'none' : undefined }}>
         {agent.messages.map((msg) => {
           const toolDetails = getToolMessageDetails(msg);
           const isToolMsg = !!toolDetails;
@@ -1252,9 +1269,9 @@ export function AgentChat() {
         <div ref={messagesEndRef} />
       </div>
 
-      {!showTerminal && <div className="esc-hint">{t('chat.escHint')}</div>}
+      {!showTerminal && !showFiles && <div className="esc-hint">{t('chat.escHint')}</div>}
 
-      {!showTerminal && agent.pendingPlan && !agent.pendingPlan.approvedAt && (
+      {!showTerminal && !showFiles && agent.pendingPlan && !agent.pendingPlan.approvedAt && (
         <div style={{
           padding: '10px 16px',
           background: 'var(--bg-card)',
@@ -1283,7 +1300,7 @@ export function AgentChat() {
       )}
 
       {/* Input required notification banner */}
-      {!showTerminal && (agent.status === 'waiting_input' || inputRequired) && (
+      {!showTerminal && !showFiles && (agent.status === 'waiting_input' || inputRequired) && (
         <div style={{
           padding: '10px 16px',
           background: 'var(--yellow, #f59e0b)',
@@ -1329,7 +1346,7 @@ export function AgentChat() {
         </div>
       )}
 
-      <div style={{ position: 'relative', display: showTerminal ? 'none' : undefined }}>
+      <div style={{ position: 'relative', display: showTerminal || showFiles ? 'none' : undefined }}>
         {showSlash && filteredCommands.length > 0 && (
           <div className="slash-hints">
             {filteredCommands.map((cmd, i) => (

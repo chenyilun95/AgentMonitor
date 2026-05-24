@@ -118,7 +118,27 @@ export interface SessionInfo {
 export interface DirListing {
   path: string;
   parent: string;
-  entries: Array<{ name: string; path: string; isDirectory: boolean }>;
+  entries: Array<{
+    name: string;
+    path: string;
+    isDirectory: boolean;
+    size?: number;
+    mtime?: number;
+    extension?: string;
+    isTextPreviewable?: boolean;
+  }>;
+}
+
+export interface FilePreview {
+  path: string;
+  name: string;
+  extension: string;
+  size: number;
+  mtime: number;
+  content: string;
+  truncated: boolean;
+  language: string;
+  isMarkdown: boolean;
 }
 
 export interface PipelineTask {
@@ -289,6 +309,8 @@ export const api = {
   // Directories
   listDirectory: (path?: string) =>
     request<DirListing>(`/directories${path ? `?path=${encodeURIComponent(path)}` : ''}`),
+  readFile: (path: string) =>
+    request<FilePreview>(`/directories/file?path=${encodeURIComponent(path)}`),
   checkClaudeMd: (path: string) =>
     request<{ exists: boolean; content?: string; fileName?: string; matchedProvider?: AgentProvider }>(
       `/directories/claude-md?path=${encodeURIComponent(path)}`,
