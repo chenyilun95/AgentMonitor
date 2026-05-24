@@ -28,10 +28,10 @@ export function CreateAgent() {
   const [adminEmail, setAdminEmail] = useState('');
   const [whatsappPhone, setWhatsappPhone] = useState('');
   const [slackWebhookUrl, setSlackWebhookUrl] = useState('');
-  const [skipPermissions, setSkipPermissions] = useState(false);
-  const [fullAuto, setFullAuto] = useState(false);
-  const [askForApprovalNever, setAskForApprovalNever] = useState(false);
-  const [sandboxDangerFullAccess, setSandboxDangerFullAccess] = useState(false);
+  const [skipPermissions, setSkipPermissions] = useState(true);
+  const [fullAuto, setFullAuto] = useState(true);
+  const [askForApprovalNever, setAskForApprovalNever] = useState(true);
+  const [sandboxDangerFullAccess, setSandboxDangerFullAccess] = useState(true);
   const [chrome, setChrome] = useState(false);
   const [permissionMode, setPermissionMode] = useState('');
   const [maxBudgetUsd, setMaxBudgetUsd] = useState('');
@@ -208,7 +208,7 @@ export function CreateAgent() {
   };
 
   const handleCreate = async () => {
-    if (!name || !directory || !prompt) {
+    if (!name || !directory) {
       setError(t('create.requiredFields'));
       return;
     }

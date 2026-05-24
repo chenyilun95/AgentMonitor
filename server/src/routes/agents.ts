@@ -87,8 +87,8 @@ export function agentRoutes(manager: AgentManager, store: AgentStore): Router {
       const nextProvider: AgentProvider = provider === 'codex' ? 'codex' : 'claude';
       const reasoningEffort = flags?.reasoningEffort;
 
-      if (!name || !directory || !prompt) {
-        res.status(400).json({ error: 'name, directory, and prompt are required' });
+      if (!name || !directory) {
+        res.status(400).json({ error: 'name and directory are required' });
         return;
       }
 
@@ -100,7 +100,7 @@ export function agentRoutes(manager: AgentManager, store: AgentStore): Router {
       const agent = await manager.createAgent(name, {
         provider: nextProvider,
         directory,
-        prompt,
+        prompt: typeof prompt === 'string' ? prompt : '',
         claudeMd,
         adminEmail,
         whatsappPhone,

@@ -82,7 +82,7 @@ export const en: Record<string, string> = {
     'create.slackWebhookPlaceholder': 'https://hooks.slack.com/services/...',
     'create.creating': 'Creating...',
     'create.createAgent': 'Create Agent',
-    'create.requiredFields': 'Name, directory, and prompt are required',
+    'create.requiredFields': 'Name and directory are required',
     'create.selectCurrent': 'Select current:',
     'create.claudeMdFound': 'CLAUDE.md found in this directory',
     'create.loadExisting': 'Load existing CLAUDE.md',

@@ -82,7 +82,7 @@ export const ko: Record<string, string> = {
     'create.slackWebhookPlaceholder': 'https://hooks.slack.com/services/...',
     'create.creating': '생성 중...',
     'create.createAgent': '에이전트 생성',
-    'create.requiredFields': '이름, 디렉토리, 프롬프트는 필수입니다',
+    'create.requiredFields': '이름과 디렉토리는 필수입니다',
     'create.selectCurrent': '현재 디렉토리 선택:',
     'create.claudeMdFound': '이 디렉토리에서 CLAUDE.md를 발견했습니다',
     'create.loadExisting': '기존 CLAUDE.md 불러오기',

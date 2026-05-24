@@ -82,7 +82,7 @@ export const ja: Record<string, string> = {
     'create.slackWebhookPlaceholder': 'https://hooks.slack.com/services/...',
     'create.creating': '作成中...',
     'create.createAgent': 'エージェントを作成',
-    'create.requiredFields': '名前、ディレクトリ、プロンプトは必須です',
+    'create.requiredFields': '名前とディレクトリは必須です',
     'create.selectCurrent': '現在のディレクトリを選択:',
     'create.claudeMdFound': 'このディレクトリにCLAUDE.mdが見つかりました',
     'create.loadExisting': '既存のCLAUDE.mdを読み込む',

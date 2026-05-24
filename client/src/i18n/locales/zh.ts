@@ -82,7 +82,7 @@ export const zh: Record<string, string> = {
     'create.slackWebhookPlaceholder': 'https://hooks.slack.com/services/...',
     'create.creating': '创建中...',
     'create.createAgent': '创建代理',
-    'create.requiredFields': '名称、目录和提示词为必填项',
+    'create.requiredFields': '名称和目录为必填项',
     'create.selectCurrent': '选择当前目录:',
     'create.claudeMdFound': '在此目录中发现 CLAUDE.md',
     'create.loadExisting': '加载已有的 CLAUDE.md',
