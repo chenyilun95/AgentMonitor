@@ -415,9 +415,9 @@ export function AgentChat() {
           setHistoryPickerIdx(0);
           setShowHistoryPicker(true);
         } else {
-          // Single Esc → interrupt
+          // Single Esc → interrupt (only when agent is running)
           lastEscRef.current = now;
-          if (id) {
+          if (id && agent?.status === 'running') {
             api.interruptAgent(id);
             addLocalMessage(t('chat.interrupted'));
           }
