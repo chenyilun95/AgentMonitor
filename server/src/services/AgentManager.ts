@@ -78,6 +78,7 @@ export class AgentManager extends EventEmitter {
   private feishuNotifier: FeishuNotifier;
   /** Track when a user message was sent per agent (agentId → timestamp) */
   private pendingUserMessage: Map<string, number> = new Map();
+  private queuedUserMessages: Map<string, string[]> = new Map();
   private stuckCheckInterval: ReturnType<typeof setInterval> | null = null;
 
   constructor(store: AgentStore, worktreeManager?: WorktreeManager, emailNotifier?: EmailNotifier, whatsappNotifier?: WhatsAppNotifier, slackNotifier?: SlackNotifier, feishuNotifier?: FeishuNotifier) {
@@ -295,6 +296,7 @@ export class AgentManager extends EventEmitter {
         this.extractStructuredOutput(current);
       }
       this.processes.delete(agent.id);
+      this.startNextQueuedMessage(agent.id);
     });
 
     proc.on('error', (err: Error) => {
@@ -1157,24 +1159,47 @@ export class AgentManager extends EventEmitter {
 
     const proc = this.processes.get(agentId);
     if (proc) {
-      // Agent is running (or waiting_input) — send message to existing process.
-      // With --input-format stream-json, Claude CLI accepts stdin at any time and
-      // queues messages. The agent will process it when the current task finishes.
       if (agent.status === 'waiting_input') {
         this.updateAgentStatus(agentId, 'running');
-        // Only set stuck timer when agent transitions from waiting → running,
-        // meaning we expect a response. Don't set it if agent is already busy.
         this.pendingUserMessage.set(agentId, Date.now());
+        proc.sendMessage(processText);
+        this.emit('agent:message', agentId, {
+          type: 'user',
+          text,
+        });
+        return;
       }
-      proc.sendMessage(processText);
-      this.emit('agent:message', agentId, {
-        type: 'user',
-        text,
-      });
+
+      this.enqueueUserMessage(agentId, processText);
     } else if (agent.status === 'stopped' || agent.status === 'error') {
       // Agent is stopped — resume with new prompt
       this.resumeAgent(agent, processText);
     }
+  }
+
+  private enqueueUserMessage(agentId: string, text: string): void {
+    const queued = this.queuedUserMessages.get(agentId) || [];
+    queued.push(text);
+    this.queuedUserMessages.set(agentId, queued);
+  }
+
+  private startNextQueuedMessage(agentId: string): void {
+    const queued = this.queuedUserMessages.get(agentId);
+    if (!queued || queued.length === 0) {
+      this.queuedUserMessages.delete(agentId);
+      return;
+    }
+    const nextText = queued.shift()!;
+
+    if (queued.length === 0) {
+      this.queuedUserMessages.delete(agentId);
+    }
+
+    const agent = this.store.getAgent(agentId);
+    if (!agent || agent.status === 'error') return;
+
+    this.pendingUserMessage.set(agentId, Date.now());
+    this.resumeAgent(agent, nextText);
   }
 
   private resumeAgent(agent: Agent, newPrompt: string): void {
@@ -1225,6 +1250,7 @@ export class AgentManager extends EventEmitter {
     }
 
     this.pendingUserMessage.delete(agentId);
+    this.queuedUserMessages.delete(agentId);
     agent.messages = [];
     agent.status = 'stopped';
     agent.pid = undefined;
@@ -1272,6 +1298,7 @@ export class AgentManager extends EventEmitter {
   async stopAgent(agentId: string): Promise<void> {
     const agent = this.store.getAgent(agentId);
     const proc = this.processes.get(agentId);
+    this.queuedUserMessages.delete(agentId);
 
     // Send /compact before stopping if session is large
     if (proc && agent?.sessionId) {
@@ -1494,6 +1521,7 @@ export class AgentManager extends EventEmitter {
     const agent = this.store.getAgent(agentId);
     if (!agent) throw new Error(`Agent ${agentId} not found`);
     let warning: string | undefined;
+    this.queuedUserMessages.delete(agentId);
 
     // Stop the running process first
     const proc = this.processes.get(agentId);

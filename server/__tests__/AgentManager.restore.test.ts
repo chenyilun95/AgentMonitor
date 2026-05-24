@@ -177,6 +177,44 @@ describe('AgentManager restoreConversation', () => {
     expect(startProcessSpy).toHaveBeenCalledOnce();
   });
 
+  it('queues follow-up messages while an agent is already running', () => {
+    const agent: Agent = {
+      id: 'agent-queued-followup',
+      name: 'Queued Followup Test',
+      status: 'running',
+      config: {
+        provider: 'codex',
+        directory: tmpDir,
+        prompt: 'old prompt',
+        flags: {},
+      },
+      messages: [
+        { id: 'u1', role: 'user', content: 'current prompt', timestamp: 1 },
+      ],
+      lastActivity: 1,
+      createdAt: 1,
+      sessionId: '019d5000-aaaa-7bbb-8ccc-1234567890ab',
+    };
+    store.saveAgent(agent);
+
+    const sendMessage = vi.fn();
+    (manager as unknown as { processes: Map<string, { sendMessage: (text: string) => void }> }).processes.set(agent.id, { sendMessage });
+    const startProcessSpy = vi.spyOn(manager as unknown as { startProcess: (agent: Agent) => void }, 'startProcess')
+      .mockImplementation(() => {});
+
+    manager.sendMessage(agent.id, 'follow-up while busy');
+
+    expect(sendMessage).not.toHaveBeenCalled();
+    expect(store.getAgent(agent.id)?.messages.at(-1)?.content).toBe('follow-up while busy');
+
+    (manager as unknown as { startNextQueuedMessage: (agentId: string) => void }).startNextQueuedMessage(agent.id);
+
+    const saved = store.getAgent(agent.id);
+    expect(saved?.config.prompt).toBe('follow-up while busy');
+    expect(saved?.config.flags.resume).toBe(agent.sessionId);
+    expect(startProcessSpy).toHaveBeenCalledOnce();
+  });
+
   it('starts a new empty conversation and clears resume state', () => {
     const agent: Agent = {
       id: 'agent-new-conversation',
