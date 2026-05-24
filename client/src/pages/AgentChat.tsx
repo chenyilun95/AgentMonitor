@@ -187,6 +187,8 @@ export function AgentChat() {
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const lastEscRef = useRef(0);
   const escTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const agentRef = useRef(agent);
+  agentRef.current = agent;
   const inputRef = useRef<HTMLTextAreaElement>(null);
   const composingRef = useRef(false);
   const compositionEndTimeRef = useRef(0);
@@ -458,8 +460,9 @@ export function AgentChat() {
             clearTimeout(escTimerRef.current);
             escTimerRef.current = null;
           }
-          const turns = agent?.messages.filter(m => m.role === 'user') || [];
-          setHistoryPickerIdx(turns.length - 1);
+          const currentAgent = agentRef.current;
+          const turns = currentAgent?.messages.filter(m => m.role === 'user') || [];
+          setHistoryPickerIdx(Math.max(turns.length - 1, 0));
           setShowHistoryPicker(true);
         } else {
           // First Esc — wait to see if a second follows (debounce)
@@ -467,7 +470,8 @@ export function AgentChat() {
           if (escTimerRef.current) clearTimeout(escTimerRef.current);
           escTimerRef.current = setTimeout(() => {
             escTimerRef.current = null;
-            if (id && agent?.status === 'running') {
+            const currentAgent = agentRef.current;
+            if (id && currentAgent?.status === 'running') {
               api.interruptAgent(id);
               addLocalMessage(t('chat.interrupted'));
             }
@@ -495,7 +499,6 @@ export function AgentChat() {
     window.addEventListener('keydown', handleKeyDown);
     return () => {
       window.removeEventListener('keydown', handleKeyDown);
-      if (escTimerRef.current) clearTimeout(escTimerRef.current);
     };
   }, [id, agent, showHistoryPicker, historyPickerIdx, historyRestoreTarget, navigate, restoreHistoryTurn, t]);
 
