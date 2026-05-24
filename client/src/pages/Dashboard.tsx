@@ -174,6 +174,10 @@ export function Dashboard() {
     const k = labelFilter.slice(0, sep);
     const v = labelFilter.slice(sep + 1);
     return a.labels?.[k] === v;
+  }).sort((a, b) => {
+    const byLastActivity = b.lastActivity - a.lastActivity;
+    if (byLastActivity !== 0) return byLastActivity;
+    return b.createdAt - a.createdAt;
   });
 
   // Collect all unique labels for the filter dropdown
