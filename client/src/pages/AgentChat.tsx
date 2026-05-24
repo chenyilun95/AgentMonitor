@@ -186,6 +186,7 @@ export function AgentChat() {
   const [renderMarkdown, setRenderMarkdown] = useState(() => localStorage.getItem('agentmonitor-markdown') !== 'false');
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const lastEscRef = useRef(0);
+  const escTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const inputRef = useRef<HTMLTextAreaElement>(null);
   const composingRef = useRef(false);
   const compositionEndTimeRef = useRef(0);
@@ -453,16 +454,24 @@ export function AgentChat() {
         if (now - lastEscRef.current < 500) {
           // Double Esc → show conversation history picker (start at most recent)
           lastEscRef.current = 0;
+          if (escTimerRef.current) {
+            clearTimeout(escTimerRef.current);
+            escTimerRef.current = null;
+          }
           const turns = agent?.messages.filter(m => m.role === 'user') || [];
           setHistoryPickerIdx(turns.length - 1);
           setShowHistoryPicker(true);
         } else {
-          // Single Esc → interrupt (only when agent is running)
+          // First Esc — wait to see if a second follows (debounce)
           lastEscRef.current = now;
-          if (id && agent?.status === 'running') {
-            api.interruptAgent(id);
-            addLocalMessage(t('chat.interrupted'));
-          }
+          if (escTimerRef.current) clearTimeout(escTimerRef.current);
+          escTimerRef.current = setTimeout(() => {
+            escTimerRef.current = null;
+            if (id && agent?.status === 'running') {
+              api.interruptAgent(id);
+              addLocalMessage(t('chat.interrupted'));
+            }
+          }, 500);
         }
         return;
       }
@@ -484,7 +493,10 @@ export function AgentChat() {
       }
     };
     window.addEventListener('keydown', handleKeyDown);
-    return () => window.removeEventListener('keydown', handleKeyDown);
+    return () => {
+      window.removeEventListener('keydown', handleKeyDown);
+      if (escTimerRef.current) clearTimeout(escTimerRef.current);
+    };
   }, [id, agent, showHistoryPicker, historyPickerIdx, historyRestoreTarget, navigate, restoreHistoryTurn, t]);
 
   const handleInputChange = (value: string) => {
