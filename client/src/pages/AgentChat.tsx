@@ -195,6 +195,7 @@ export function AgentChat() {
   const [showHistoryPicker, setShowHistoryPicker] = useState(false);
   const [historyPickerIdx, setHistoryPickerIdx] = useState(0);
   const [historyRestoreTarget, setHistoryRestoreTarget] = useState<number | null>(null);
+  const [historyRestoringIdx, setHistoryRestoringIdx] = useState<number | null>(null);
   const [attachedFiles, setAttachedFiles] = useState<File[]>([]);
   const [uploadingCount, setUploadingCount] = useState(0);
   const fileInputRef = useRef<HTMLInputElement>(null);
@@ -262,7 +263,14 @@ export function AgentChat() {
         // Don't overwrite optimistic messages (pending-* ids) if server hasn't caught up
         // But allow overwrite when explicitly forced (e.g. after restore)
         if (!forceOverwrite && prev && data.messages.length < prev.messages.length) {
-          return { ...prev, status: data.status as Agent['status'], costUsd: data.costUsd, tokenUsage: data.tokenUsage };
+          return {
+            ...prev,
+            status: data.status as Agent['status'],
+            costUsd: data.costUsd,
+            tokenUsage: data.tokenUsage,
+            interactionMode: data.interactionMode,
+            pendingPlan: data.pendingPlan,
+          };
         }
         return data;
       });
@@ -295,7 +303,7 @@ export function AgentChat() {
     let socketWorking = false;
 
     // Primary: incremental delta (lightweight, only new messages + metadata)
-    const onDelta = (data: { agentId: string; delta: { messages: Agent['messages']; status: string; costUsd?: number; tokenUsage?: Agent['tokenUsage']; lastActivity: number } }) => {
+    const onDelta = (data: { agentId: string; delta: { messages: Agent['messages']; status: string; costUsd?: number; tokenUsage?: Agent['tokenUsage']; lastActivity: number; interactionMode?: Agent['interactionMode']; pendingPlan?: Agent['pendingPlan'] } }) => {
       if (data.agentId !== id) return;
       socketWorking = true;
       setAgent(prev => {
@@ -309,6 +317,8 @@ export function AgentChat() {
           costUsd: data.delta.costUsd ?? prev.costUsd,
           tokenUsage: data.delta.tokenUsage ?? prev.tokenUsage,
           lastActivity: data.delta.lastActivity,
+          interactionMode: data.delta.interactionMode ?? prev.interactionMode,
+          pendingPlan: data.delta.pendingPlan ?? prev.pendingPlan,
         };
       });
     };
@@ -322,7 +332,14 @@ export function AgentChat() {
           if (!prev) return data.agent;
           if (data.agent.messages.length >= prev.messages.length) return data.agent;
           // Server hasn't caught up with our optimistic message yet — merge status only
-          return { ...prev, status: data.agent.status as Agent['status'], costUsd: data.agent.costUsd, tokenUsage: data.agent.tokenUsage };
+          return {
+            ...prev,
+            status: data.agent.status as Agent['status'],
+            costUsd: data.agent.costUsd,
+            tokenUsage: data.agent.tokenUsage,
+            interactionMode: data.agent.interactionMode,
+            pendingPlan: data.agent.pendingPlan,
+          };
         });
       }
     };
@@ -394,6 +411,30 @@ export function AgentChat() {
     }
   }, [agent, agent?.config.flags.reasoningEffort, agent?.config.provider, runtimeCapabilities]);
 
+  const restoreHistoryTurn = useCallback(async (turnIndex: number, restoreCode = true, restoreConv = true) => {
+    if (!id || historyRestoringIdx !== null) return;
+    setHistoryRestoringIdx(turnIndex);
+    try {
+      const result = await api.restoreConversation(id, turnIndex, restoreCode, restoreConv);
+      if (result.restoredPrompt) {
+        setInput(result.restoredPrompt);
+      }
+      await fetchAgent(true);
+      if (result.warning) {
+        addLocalMessage(`[Rewind] ${result.warning}`);
+      } else {
+        addLocalMessage(t('chat.rewindRestored'));
+      }
+      setShowHistoryPicker(false);
+      setHistoryRestoreTarget(null);
+      setTimeout(() => inputRef.current?.focus(), 100);
+    } catch (err) {
+      addLocalMessage(`[Error] ${String(err)}`);
+    } finally {
+      setHistoryRestoringIdx(null);
+    }
+  }, [fetchAgent, historyRestoringIdx, id, t]);
+
   // Esc key handler: single = interrupt, double = conversation history picker
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
@@ -410,9 +451,10 @@ export function AgentChat() {
         }
         const now = Date.now();
         if (now - lastEscRef.current < 500) {
-          // Double Esc → show conversation history picker
+          // Double Esc → show conversation history picker (start at most recent)
           lastEscRef.current = 0;
-          setHistoryPickerIdx(0);
+          const turns = agent?.messages.filter(m => m.role === 'user') || [];
+          setHistoryPickerIdx(turns.length - 1);
           setShowHistoryPicker(true);
         } else {
           // Single Esc → interrupt (only when agent is running)
@@ -429,21 +471,21 @@ export function AgentChat() {
         const userTurns = agent?.messages.filter(m => m.role === 'user') || [];
         if (e.key === 'ArrowDown') {
           e.preventDefault();
-          setHistoryPickerIdx(i => Math.min(i + 1, userTurns.length - 1));
+          setHistoryPickerIdx(i => Math.max(i - 1, 0));
         } else if (e.key === 'ArrowUp') {
           e.preventDefault();
-          setHistoryPickerIdx(i => Math.max(i - 1, 0));
+          setHistoryPickerIdx(i => Math.min(i + 1, userTurns.length - 1));
         } else if (e.key === 'Enter') {
           e.preventDefault();
           if (userTurns[historyPickerIdx]) {
-            setHistoryRestoreTarget(historyPickerIdx);
+            void restoreHistoryTurn(historyPickerIdx);
           }
         }
       }
     };
     window.addEventListener('keydown', handleKeyDown);
     return () => window.removeEventListener('keydown', handleKeyDown);
-  }, [id, agent, showHistoryPicker, historyPickerIdx, historyRestoreTarget, navigate, t]);
+  }, [id, agent, showHistoryPicker, historyPickerIdx, historyRestoreTarget, navigate, restoreHistoryTurn, t]);
 
   const handleInputChange = (value: string) => {
     setInput(value);
@@ -650,10 +692,7 @@ export function AgentChat() {
         }
         break;
       case '/plan':
-        if (id) {
-          api.sendMessage(id, '/plan');
-          addLocalMessage(t('chat.planSent'));
-        }
+        toggleInteractionMode();
         break;
       case '/plugin':
         addLocalMessage(t('chat.pluginInfo'));
@@ -738,6 +777,55 @@ export function AgentChat() {
 
   const removeAttachedFile = (index: number) => {
     setAttachedFiles(prev => prev.filter((_, i) => i !== index));
+  };
+
+  const setInteractionMode = async (mode: Agent['interactionMode']) => {
+    if (!id || !mode) return;
+    try {
+      const updated = await api.updateInteractionMode(id, mode);
+      setAgent(prev => {
+        if (!prev) return updated;
+        if (updated.messages.length >= prev.messages.length) return updated;
+        return {
+          ...prev,
+          interactionMode: updated.interactionMode,
+          pendingPlan: updated.pendingPlan,
+          lastActivity: updated.lastActivity,
+        };
+      });
+      addLocalMessage(mode === 'plan' ? t('chat.planModeEnabled') : t('chat.planModeDisabled'));
+    } catch (err) {
+      addLocalMessage(`[Error] ${String(err)}`);
+    }
+  };
+
+  const toggleInteractionMode = () => {
+    const nextMode = (agent?.interactionMode || 'default') === 'plan' ? 'default' : 'plan';
+    void setInteractionMode(nextMode);
+  };
+
+  const handleApprovePlan = async () => {
+    if (!id) return;
+    try {
+      const updated = await api.approvePlan(id);
+      setAgent(updated);
+      setInputRequired(null);
+      addLocalMessage(t('chat.planApproved'));
+    } catch (err) {
+      addLocalMessage(`[Error] ${String(err)}`);
+    }
+  };
+
+  const handleRevisePlan = async () => {
+    if (!id) return;
+    try {
+      const updated = await api.revisePlan(id);
+      setAgent(updated);
+      addLocalMessage(t('chat.planRevisionReady'));
+      setTimeout(() => inputRef.current?.focus(), 100);
+    } catch (err) {
+      addLocalMessage(`[Error] ${String(err)}`);
+    }
   };
 
   const handleSend = async () => {
@@ -831,6 +919,13 @@ export function AgentChat() {
   };
 
   const handleKeyDown = (e: React.KeyboardEvent) => {
+    if (e.key === 'Tab' && e.shiftKey) {
+      e.preventDefault();
+      setShowSlash(false);
+      toggleInteractionMode();
+      return;
+    }
+
     if (showSlash) {
       const filtered = slashCommands.filter((c) =>
         c.cmd.startsWith(slashFilter),
@@ -945,6 +1040,8 @@ export function AgentChat() {
   const editInstructionLabel = replaceInstructionFileName(t('chat.editClaudeMd'), instructionFileName);
   const editInstructionTitle = replaceInstructionFileName(t('chat.editClaudeMdTitle'), instructionFileName);
   const reasoningEffortOptions = getReasoningEffortOptions(agent.config.provider, runtimeCapabilities);
+  const interactionMode = agent.interactionMode || 'default';
+  const isPlanMode = interactionMode === 'plan';
 
   return (
     <div className="chat-container">
@@ -1118,6 +1215,13 @@ export function AgentChat() {
             <span className="thinking-dots">
               <span /><span /><span />
             </span>
+            {(agent.tokenUsage || agent.costUsd !== undefined) && (
+              <span className="thinking-stats">
+                {agent.tokenUsage && `${(agent.tokenUsage.input + agent.tokenUsage.output).toLocaleString()} tokens`}
+                {agent.costUsd !== undefined && ` · $${agent.costUsd.toFixed(4)}`}
+                {agent.contextWindow && ` · ${Math.round(agent.contextWindow.used / agent.contextWindow.total * 100)}% context`}
+              </span>
+            )}
           </div>
         )}
         {agent.structuredOutput != null && (agent.status === 'stopped' || agent.status === 'error') && (
@@ -1134,6 +1238,34 @@ export function AgentChat() {
       </div>
 
       {!showTerminal && <div className="esc-hint">{t('chat.escHint')}</div>}
+
+      {!showTerminal && agent.pendingPlan && !agent.pendingPlan.approvedAt && (
+        <div style={{
+          padding: '10px 16px',
+          background: 'var(--bg-card)',
+          borderRadius: 'var(--radius)',
+          border: '1px solid var(--border)',
+          margin: '0 0 8px 0',
+          display: 'flex',
+          alignItems: 'center',
+          justifyContent: 'space-between',
+          gap: 12,
+          flexWrap: 'wrap',
+        }}>
+          <div style={{ fontSize: 13, color: 'var(--text)' }}>
+            <strong>{t('chat.planReady')}</strong>
+            <span style={{ color: 'var(--text-muted)', marginLeft: 8 }}>{t('chat.planReadyHint')}</span>
+          </div>
+          <div style={{ display: 'flex', gap: 8 }}>
+            <button className="btn btn-sm" onClick={handleApprovePlan}>
+              {t('chat.approvePlan')}
+            </button>
+            <button className="btn btn-sm btn-outline" onClick={handleRevisePlan}>
+              {t('chat.revisePlan')}
+            </button>
+          </div>
+        </div>
+      )}
 
       {/* Input required notification banner */}
       {!showTerminal && (agent.status === 'waiting_input' || inputRequired) && (
@@ -1255,6 +1387,18 @@ export function AgentChat() {
           </div>
         )}
         <div className="chat-input-area">
+          <button
+            className={`btn btn-sm ${isPlanMode ? '' : 'btn-outline'}`}
+            onClick={toggleInteractionMode}
+            title={t('chat.planModeShortcut')}
+            style={{
+              minWidth: 76,
+              whiteSpace: 'nowrap',
+              borderColor: isPlanMode ? 'var(--accent)' : undefined,
+            }}
+          >
+            {isPlanMode ? t('chat.modePlan') : t('chat.modeDefault')}
+          </button>
           <input
             ref={fileInputRef}
             type="file"
@@ -1320,13 +1464,10 @@ export function AgentChat() {
               {historyRestoreTarget !== null && (() => {
                 const turnContent = userTurns[historyRestoreTarget]?.content || '';
                 const doRestore = async (restoreCode: boolean, restoreConv: boolean) => {
-                  if (!id || historyRestoreTarget === null) return;
+                  if (historyRestoreTarget === null) return;
                   if (restoreCode || restoreConv) {
-                    const result = await api.restoreConversation(id, historyRestoreTarget, restoreCode, restoreConv);
-                    if (result.restoredPrompt) {
-                      setInput(result.restoredPrompt);
-                    }
-                    await fetchAgent(true);
+                    await restoreHistoryTurn(historyRestoreTarget, restoreCode, restoreConv);
+                    return;
                   }
                   setShowHistoryPicker(false);
                   setHistoryRestoreTarget(null);
@@ -1355,6 +1496,7 @@ export function AgentChat() {
                         <button
                           key={i}
                           className="btn btn-sm btn-outline"
+                          disabled={historyRestoringIdx !== null}
                           style={{ textAlign: 'left', justifyContent: 'flex-start', fontWeight: 400 }}
                           onClick={opt.action}
                         >
@@ -1374,10 +1516,10 @@ export function AgentChat() {
                 )}
                 {userTurns.length === 0 ? (
                   <div style={{ padding: 24, textAlign: 'center', color: 'var(--text-muted)' }}>{t('chat.noHistory')}</div>
-                ) : userTurns.map((msg, i) => (
+                ) : [...userTurns].reverse().map((msg, ri) => { const i = userTurns.length - 1 - ri; return (
                   <div
                     key={msg.id}
-                    onClick={() => setHistoryRestoreTarget(i)}
+                    onClick={() => void restoreHistoryTurn(i)}
                     style={{
                       padding: '10px 16px',
                       cursor: 'pointer',
@@ -1388,14 +1530,27 @@ export function AgentChat() {
                     }}
                     onMouseEnter={() => setHistoryPickerIdx(i)}
                   >
-                    <div style={{ fontSize: 13, fontFamily: 'monospace', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
-                      {msg.content.slice(0, 80)}{msg.content.length > 80 ? '…' : ''}
+                    <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                      <div style={{ fontSize: 13, fontFamily: 'monospace', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', flex: 1 }}>
+                        {historyRestoringIdx === i ? t('chat.rewinding') : `${msg.content.slice(0, 80)}${msg.content.length > 80 ? '…' : ''}`}
+                      </div>
+                      <button
+                        className="btn btn-sm btn-outline"
+                        disabled={historyRestoringIdx !== null}
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          setHistoryRestoreTarget(i);
+                        }}
+                        style={{ padding: '2px 7px', lineHeight: 1.2 }}
+                      >
+                        {t('chat.restoreOptions')}
+                      </button>
                     </div>
                     <div style={{ fontSize: 11, color: i === historyPickerIdx ? 'rgba(255,255,255,0.7)' : 'var(--text-muted)', marginTop: 2 }}>
                       Turn {i + 1} &nbsp;·&nbsp; {new Date(msg.timestamp).toLocaleString()}
                     </div>
                   </div>
-                ))}
+                ); })}
               </div>
             </div>
           </div>

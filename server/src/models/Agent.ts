@@ -1,5 +1,6 @@
 export type AgentStatus = 'running' | 'stopped' | 'error' | 'waiting_input';
 export type AgentProvider = 'claude' | 'codex';
+export type AgentInteractionMode = 'default' | 'plan';
 export const REASONING_EFFORTS = ['low', 'medium', 'high', 'xhigh', 'max'] as const;
 export type ReasoningEffort = (typeof REASONING_EFFORTS)[number];
 export const PROVIDER_REASONING_EFFORTS: Record<AgentProvider, readonly ReasoningEffort[]> = {
@@ -69,10 +70,17 @@ export interface Agent {
   currentTask?: string;
   sessionId?: string;
   originalPrompt?: string;
-  interactionMode?: 'default' | 'plan';
   source?: 'monitor' | 'external';
   restoredConversationSeed?: string;
   codeSnapshots?: Array<{ beforeTurnIndex: number; commit: string }>;
   labels?: Record<string, string>;
   structuredOutput?: unknown;
+  interactionMode?: AgentInteractionMode;
+  pendingPlan?: {
+    id: string;
+    content: string;
+    sourceMessageId: string;
+    createdAt: number;
+    approvedAt?: number;
+  };
 }

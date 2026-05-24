@@ -160,6 +160,39 @@ export function agentRoutes(manager: AgentManager, store: AgentStore): Router {
     res.json({ ok: true });
   });
 
+  router.put('/:id/interaction-mode', (req, res) => {
+    const { mode } = req.body;
+    if (mode !== 'default' && mode !== 'plan') {
+      res.status(400).json({ error: 'mode must be default or plan' });
+      return;
+    }
+
+    const agent = manager.updateInteractionMode(req.params.id, mode);
+    if (!agent) {
+      res.status(404).json({ error: 'agent not found' });
+      return;
+    }
+    res.json(sanitizeAgentSnapshot(agent));
+  });
+
+  router.post('/:id/plan/approve', (req, res) => {
+    const agent = manager.approvePlan(req.params.id);
+    if (!agent) {
+      res.status(404).json({ error: 'agent not found' });
+      return;
+    }
+    res.json(sanitizeAgentSnapshot(agent));
+  });
+
+  router.post('/:id/plan/revise', (req, res) => {
+    const agent = manager.revisePlan(req.params.id);
+    if (!agent) {
+      res.status(404).json({ error: 'agent not found' });
+      return;
+    }
+    res.json(sanitizeAgentSnapshot(agent));
+  });
+
   // Interrupt agent (double-Esc)
   router.post('/:id/interrupt', (req, res) => {
     manager.interruptAgent(req.params.id);
@@ -215,10 +248,10 @@ export function agentRoutes(manager: AgentManager, store: AgentStore): Router {
         res.status(400).json({ error: 'turnIndex (number) is required' });
         return;
       }
-      const restoredPrompt = await manager.restoreConversation(
+      const result = await manager.restoreConversation(
         req.params.id, Number(turnIndex), !!restoreCode, restoreConv !== false,
       );
-      res.json({ ok: true, restoredPrompt });
+      res.json({ ok: true, ...result });
     } catch (err) {
       res.status(500).json({ error: String(err) });
     }

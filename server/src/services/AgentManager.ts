@@ -4,7 +4,7 @@ import { execSync } from 'child_process';
 import { readFileSync, readdirSync, existsSync, mkdirSync, writeFileSync, statSync, unlinkSync } from 'fs';
 import path, { basename } from 'path';
 import os from 'os';
-import type { Agent, AgentConfig, AgentMessage, AgentStatus, ReasoningEffort } from '../models/Agent.js';
+import type { Agent, AgentConfig, AgentInteractionMode, AgentMessage, AgentStatus, ReasoningEffort } from '../models/Agent.js';
 import { AgentStore } from '../store/AgentStore.js';
 import { AgentProcess, type StreamMessage } from './AgentProcess.js';
 import { WorktreeManager } from './WorktreeManager.js';
@@ -17,9 +17,25 @@ import { getInstructionFileName } from '../utils/instructionFiles.js';
 /** How long (ms) after a user message with no response before we notify (not auto-interrupt) */
 const STUCK_TIMEOUT_MS = 600_000; // 10 minutes — long tasks (build, push, chrome MCP) can take time
 const STUCK_CHECK_INTERVAL_MS = 60_000; // check every 60s
+const PLAN_MODE_INSTRUCTIONS = `You are in AgentMonitor Plan Mode for this turn.
+
+Rules:
+- Do not edit files, write files, run formatters, apply patches, start services, commit code, or perform any mutating action.
+- You may inspect and analyze existing files and run read-only commands that help produce a plan.
+- Produce a decision-complete implementation plan only.
+- Put the final plan in exactly one <proposed_plan>...</proposed_plan> block.
+- Do not ask for approval inside the plan. AgentMonitor will show explicit approval controls.`;
+const PLAN_APPROVAL_MESSAGE = 'User has approved the proposed plan. Proceed with implementation according to the approved plan.';
 
 interface DeleteAgentOptions {
   purgeSessionFiles?: boolean;
+}
+
+export interface RestoreConversationResult {
+  restoredPrompt: string;
+  restoredCode: boolean;
+  restoredConversation: boolean;
+  warning?: string;
 }
 
 interface ClaudeModelPrice {
@@ -205,6 +221,7 @@ export class AgentManager extends EventEmitter {
       currentTask: agentConfig.prompt.length > 120 ? agentConfig.prompt.slice(0, 120) + '...' : agentConfig.prompt,
       originalPrompt: agentConfig.prompt,
       labels,
+      interactionMode: 'default',
     };
 
     // Take initial code snapshot (before turn 0) so we can restore to clean state
@@ -230,17 +247,14 @@ export class AgentManager extends EventEmitter {
     const executionDirectory = this.resolveExecutionDirectory(agent);
 
     proc.on('message', (msg: StreamMessage) => {
-      if (this.processes.get(agent.id) !== proc) return;
       this.handleStreamMessage(agent.id, msg, agent.config.provider);
     });
 
     proc.on('terminal', (chunk: { stream: string; data: string }) => {
-      if (this.processes.get(agent.id) !== proc) return;
       this.emit('agent:terminal', agent.id, chunk);
     });
 
     proc.on('stderr', (text: string) => {
-      if (this.processes.get(agent.id) !== proc) return;
       console.error(`[Agent ${agent.id}] stderr: ${text}`);
       // Codex prints this informational line when stdin is piped; harmless noise.
       if (agent.config.provider === 'codex' && text.trim() === 'Reading additional input from stdin...') {
@@ -261,7 +275,6 @@ export class AgentManager extends EventEmitter {
     });
 
     proc.on('exit', (code: number | null) => {
-      if (this.processes.get(agent.id) !== proc) return;
       // Don't override 'stopped' status (set when result message is received)
       const current = this.store.getAgent(agent.id);
       if (current && current.status !== 'stopped') {
@@ -285,7 +298,6 @@ export class AgentManager extends EventEmitter {
     });
 
     proc.on('error', (err: Error) => {
-      if (this.processes.get(agent.id) !== proc) return;
       console.error(`[Agent ${agent.id}] process error:`, err);
       const a = this.store.getAgent(agent.id);
       if (a) {
@@ -346,6 +358,8 @@ export class AgentManager extends EventEmitter {
       prompt += `\n\nIMPORTANT: When you have completed the task, output your final result as a JSON code block (wrapped in \`\`\`json ... \`\`\`) that conforms to this JSON Schema:\n${JSON.stringify(agent.config.flags.outputSchema, null, 2)}`;
     }
 
+    prompt = this.wrapPlanModeMessage(agent, prompt);
+
     if (agent.config.provider !== 'codex') {
       return prompt;
     }
@@ -363,26 +377,13 @@ export class AgentManager extends EventEmitter {
     return `/model ${selectedModel}\n${prompt}`;
   }
 
-  private buildEffectiveUserMessage(agent: Agent, text: string): string {
-    return agent.interactionMode === 'plan'
-      ? `/plan\n${text}`
-      : text;
+  private isPlanMode(agent: Agent): boolean {
+    return agent.interactionMode === 'plan';
   }
 
-  private togglePlanMode(agent: Agent): void {
-    const nextMode = agent.interactionMode === 'plan' ? 'default' : 'plan';
-    agent.interactionMode = nextMode;
-    agent.messages.push({
-      id: uuid(),
-      role: 'system',
-      content: nextMode === 'plan'
-        ? '[Mode] Plan mode enabled for web chat. Future web messages will be prefixed with /plan until you toggle it off.'
-        : '[Mode] Plan mode disabled for web chat. Future web messages will be sent normally.',
-      timestamp: Date.now(),
-    });
-    agent.lastActivity = Date.now();
-    this.store.saveAgent(agent);
-    this.emit('agent:update', agent.id, agent);
+  private wrapPlanModeMessage(agent: Agent, text: string): string {
+    if (!this.isPlanMode(agent)) return text;
+    return `${PLAN_MODE_INSTRUCTIONS}\n\nUser request:\n${text}`;
   }
 
   private extractStructuredOutput(agent: Agent): void {
@@ -443,6 +444,7 @@ export class AgentManager extends EventEmitter {
 
     // Emit lightweight delta with only new messages + metadata (efficient for tunnel)
     const newMessages = agent.messages.slice(prevMsgCount);
+    this.capturePendingPlan(agent, newMessages);
     if (newMessages.length > 0) {
       this.emit('agent:delta', agentId, {
         messages: newMessages,
@@ -450,6 +452,8 @@ export class AgentManager extends EventEmitter {
         costUsd: agent.costUsd,
         tokenUsage: agent.tokenUsage,
         lastActivity: agent.lastActivity,
+        interactionMode: agent.interactionMode,
+        pendingPlan: agent.pendingPlan,
       });
     }
 
@@ -458,6 +462,29 @@ export class AgentManager extends EventEmitter {
     if (updated) {
       this.emit('agent:update', agentId, updated);
     }
+  }
+
+  private capturePendingPlan(agent: Agent, messages: AgentMessage[]): void {
+    for (const message of messages) {
+      if (message.role !== 'assistant') continue;
+      const plan = this.extractProposedPlan(message.content);
+      if (!plan) continue;
+
+      agent.pendingPlan = {
+        id: uuid(),
+        content: plan,
+        sourceMessageId: message.id,
+        createdAt: Date.now(),
+      };
+      agent.interactionMode = 'plan';
+      agent.lastActivity = Date.now();
+      this.store.saveAgent(agent);
+    }
+  }
+
+  private extractProposedPlan(text: string): string | undefined {
+    const match = text.match(/<proposed_plan>\s*([\s\S]*?)\s*<\/proposed_plan>/i);
+    return match?.[1]?.trim() || undefined;
   }
 
   private handleClaudeMessage(agent: Agent, msg: StreamMessage): void {
@@ -1013,16 +1040,51 @@ export class AgentManager extends EventEmitter {
     return agent;
   }
 
+  updateInteractionMode(agentId: string, mode: AgentInteractionMode): Agent | undefined {
+    const agent = this.store.getAgent(agentId);
+    if (!agent) return undefined;
+
+    agent.interactionMode = mode;
+    agent.lastActivity = Date.now();
+    if (mode === 'default' && agent.pendingPlan && !agent.pendingPlan.approvedAt) {
+      delete agent.pendingPlan;
+    }
+    this.store.saveAgent(agent);
+    this.emit('agent:update', agentId, agent);
+    return agent;
+  }
+
+  approvePlan(agentId: string): Agent | undefined {
+    const agent = this.store.getAgent(agentId);
+    if (!agent || !agent.pendingPlan) return agent;
+
+    agent.pendingPlan.approvedAt = Date.now();
+    agent.interactionMode = 'default';
+    this.store.saveAgent(agent);
+    this.emit('agent:update', agentId, agent);
+
+    this.sendMessage(agentId, PLAN_APPROVAL_MESSAGE);
+    return this.store.getAgent(agentId);
+  }
+
+  revisePlan(agentId: string): Agent | undefined {
+    const agent = this.store.getAgent(agentId);
+    if (!agent) return undefined;
+
+    agent.interactionMode = 'plan';
+    if (agent.pendingPlan && !agent.pendingPlan.approvedAt) {
+      delete agent.pendingPlan;
+    }
+    agent.lastActivity = Date.now();
+    this.store.saveAgent(agent);
+    this.emit('agent:update', agentId, agent);
+    return agent;
+  }
+
   sendMessage(agentId: string, text: string): void {
     const agent = this.store.getAgent(agentId);
     if (!agent) return;
-
-    if (text.trim() === '/plan') {
-      this.togglePlanMode(agent);
-      return;
-    }
-
-    const effectiveText = this.buildEffectiveUserMessage(agent, text);
+    const processText = this.wrapPlanModeMessage(agent, text);
 
     // Take a code snapshot before this turn so we can restore to it later.
     const turnIndex = agent.messages.filter(m => m.role === 'user').length;
@@ -1042,28 +1104,23 @@ export class AgentManager extends EventEmitter {
 
     const proc = this.processes.get(agentId);
     if (proc) {
-      // Codex exec is single-turn; follow-ups must resume as a new turn.
-      if (proc.provider === 'codex') {
-        proc.stop();
-        this.resumeAgent(agent, effectiveText);
-        return;
-      }
-
-      // Claude accepts interactive follow-up messages over stdin.
+      // Agent is running (or waiting_input) — send message to existing process.
+      // With --input-format stream-json, Claude CLI accepts stdin at any time and
+      // queues messages. The agent will process it when the current task finishes.
       if (agent.status === 'waiting_input') {
         this.updateAgentStatus(agentId, 'running');
         // Only set stuck timer when agent transitions from waiting → running,
         // meaning we expect a response. Don't set it if agent is already busy.
         this.pendingUserMessage.set(agentId, Date.now());
       }
-      proc.sendMessage(effectiveText);
+      proc.sendMessage(processText);
       this.emit('agent:message', agentId, {
         type: 'user',
-        text: effectiveText,
+        text,
       });
     } else if (agent.status === 'stopped' || agent.status === 'error') {
       // Agent is stopped — resume with new prompt
-      this.resumeAgent(agent, effectiveText);
+      this.resumeAgent(agent, processText);
     }
   }
 
@@ -1348,9 +1405,10 @@ export class AgentManager extends EventEmitter {
    * returns that message's text so the client can pre-fill the input box.
    * Does NOT auto-restart — the user edits the prompt and sends manually.
    */
-  async restoreConversation(agentId: string, turnIndex: number, restoreCode: boolean, restoreConv = true): Promise<string> {
+  async restoreConversation(agentId: string, turnIndex: number, restoreCode: boolean, restoreConv = true): Promise<RestoreConversationResult> {
     const agent = this.store.getAgent(agentId);
     if (!agent) throw new Error(`Agent ${agentId} not found`);
+    let warning: string | undefined;
 
     // Stop the running process first
     const proc = this.processes.get(agentId);
@@ -1372,8 +1430,9 @@ export class AgentManager extends EventEmitter {
       }
     }
 
-    // Truncate the JSONL session file — keep everything BEFORE the selected user turn
-    if (restoreConv && agent.sessionId) {
+    // Truncate Claude's JSONL session file — keep everything BEFORE the selected user turn.
+    // Codex session files are not currently mutated; we seed a fresh session below instead.
+    if (restoreConv && agent.sessionId && agent.config.provider === 'claude') {
       const jsonlPath = this.findSessionJsonlPath(agent.sessionId);
       if (jsonlPath) {
         try {
@@ -1399,6 +1458,7 @@ export class AgentManager extends EventEmitter {
           console.log(`[AgentManager] Truncated JSONL to line ${cutLine} (before turn ${turnIndex})`);
         } catch (err) {
           console.warn('[AgentManager] JSONL truncation error:', err);
+          warning = 'Conversation history was restored in AgentMonitor, but the provider session file could not be truncated.';
         }
       }
     }
@@ -1420,8 +1480,15 @@ export class AgentManager extends EventEmitter {
     }
 
     // Optionally restore git worktree to the snapshot before this turn
-    if (restoreCode && agent.worktreePath) {
-      this.restoreAgentCode(agent, turnIndex);
+    let restoredCode = false;
+    if (restoreCode) {
+      if (agent.worktreePath) {
+        const codeResult = this.restoreAgentCode(agent, turnIndex);
+        restoredCode = codeResult.restored;
+        warning = codeResult.warning || warning;
+      } else {
+        warning = 'No worktree is attached to this agent, so only the conversation was restored.';
+      }
     }
 
     // After truncating the JSONL, the old session is no longer valid for --resume.
@@ -1440,13 +1507,20 @@ export class AgentManager extends EventEmitter {
       // Code-only restore: session is intact, keep resume flag
       agent.config.flags.resume = agent.sessionId;
     }
+    agent.interactionMode = 'default';
+    delete agent.pendingPlan;
     agent.status = 'stopped';
     agent.lastActivity = Date.now();
     this.store.saveAgent(agent);
     this.emit('agent:status', agentId, 'stopped');
     this.emit('agent:update', agentId, agent);
 
-    return restoredPrompt;
+    return {
+      restoredPrompt,
+      restoredCode,
+      restoredConversation: restoreConv,
+      warning,
+    };
   }
 
   private takeCodeSnapshot(agent: Agent, beforeTurnIndex: number): void {
@@ -1472,8 +1546,10 @@ export class AgentManager extends EventEmitter {
     }
   }
 
-  private restoreAgentCode(agent: Agent, beforeTurnIndex: number): void {
-    if (!agent.worktreePath) return;
+  private restoreAgentCode(agent: Agent, beforeTurnIndex: number): { restored: boolean; warning?: string } {
+    if (!agent.worktreePath) {
+      return { restored: false, warning: 'No worktree is attached to this agent, so code was not restored.' };
+    }
     try {
       execSync('git rev-parse --git-dir', { cwd: agent.worktreePath, stdio: 'pipe' });
       const snapshot = agent.codeSnapshots?.find(s => s.beforeTurnIndex === beforeTurnIndex);
@@ -1481,13 +1557,14 @@ export class AgentManager extends EventEmitter {
         execSync(`git reset --hard ${snapshot.commit}`, { cwd: agent.worktreePath, stdio: 'pipe' });
         agent.codeSnapshots = agent.codeSnapshots!.filter(s => s.beforeTurnIndex < beforeTurnIndex);
         console.log(`[AgentManager] Restored code to snapshot ${snapshot.commit.slice(0, 8)} (before turn ${beforeTurnIndex})`);
+        return { restored: true };
       } else {
-        // No snapshot — fall back to discarding uncommitted changes
-        execSync('git reset HEAD -- . && git checkout -- .', { cwd: agent.worktreePath, stdio: 'pipe', shell: '/bin/bash' });
-        console.log(`[AgentManager] No snapshot found, reset to HEAD in ${agent.worktreePath}`);
+        console.log(`[AgentManager] No snapshot found for turn ${beforeTurnIndex}; leaving worktree unchanged`);
+        return { restored: false, warning: 'No code snapshot was found for this turn, so only the conversation was restored.' };
       }
     } catch (err) {
       console.warn('[AgentManager] Code restore failed:', err);
+      return { restored: false, warning: `Code restore failed: ${err instanceof Error ? err.message : String(err)}` };
     }
   }
 }

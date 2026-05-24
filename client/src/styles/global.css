@@ -1192,6 +1192,13 @@ body::after {
   40% { transform: scale(1); opacity: 1; }
 }
 
+.thinking-stats {
+  margin-left: 12px;
+  font-size: 12px;
+  color: var(--text-muted);
+  font-variant-numeric: tabular-nums;
+}
+
 /* Terminal */
 .terminal-view {
   flex: 1;

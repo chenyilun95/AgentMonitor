@@ -19,6 +19,7 @@ async function request<T>(path: string, opts?: RequestInit): Promise<T> {
 }
 
 export type AgentProvider = 'claude' | 'codex';
+export type AgentInteractionMode = 'default' | 'plan';
 export type ReasoningEffort = 'low' | 'medium' | 'high' | 'xhigh' | 'max';
 export type DeleteSessionFilesPolicy = 'ask' | 'keep' | 'purge';
 
@@ -87,10 +88,17 @@ export interface Agent {
   currentTask?: string;
   sessionId?: string;
   originalPrompt?: string;
-  interactionMode?: 'default' | 'plan';
   source?: 'monitor' | 'external';
   labels?: Record<string, string>;
   structuredOutput?: unknown;
+  interactionMode?: AgentInteractionMode;
+  pendingPlan?: {
+    id: string;
+    content: string;
+    sourceMessageId: string;
+    createdAt: number;
+    approvedAt?: number;
+  };
 }
 
 export interface Template {
@@ -229,6 +237,15 @@ export const api = {
       method: 'POST',
       body: JSON.stringify({ text }),
     }),
+  updateInteractionMode: (id: string, mode: AgentInteractionMode) =>
+    request<Agent>('/agents/' + id + '/interaction-mode', {
+      method: 'PUT',
+      body: JSON.stringify({ mode }),
+    }),
+  approvePlan: (id: string) =>
+    request<Agent>('/agents/' + id + '/plan/approve', { method: 'POST' }),
+  revisePlan: (id: string) =>
+    request<Agent>('/agents/' + id + '/plan/revise', { method: 'POST' }),
   interruptAgent: (id: string) =>
     request('/agents/' + id + '/interrupt', { method: 'POST' }),
   renameAgent: (id: string, name: string) =>
@@ -247,7 +264,7 @@ export const api = {
       body: JSON.stringify({ reasoningEffort }),
     }),
   restoreConversation: (id: string, turnIndex: number, restoreCode: boolean, restoreConv = true) =>
-    request<{ ok: boolean; restoredPrompt: string }>('/agents/' + id + '/restore', {
+    request<{ ok: boolean; restoredPrompt: string; restoredCode: boolean; restoredConversation: boolean; warning?: string }>('/agents/' + id + '/restore', {
       method: 'POST',
       body: JSON.stringify({ turnIndex, restoreCode, restoreConv }),
     }),

@@ -20,7 +20,7 @@ The Agent Chat interface supports 25 slash commands, matching Claude Code CLI in
 | `/memory` | Open CLAUDE.md editor modal |
 | `/model` | Show current model |
 | `/permissions` | Show agent permission flags |
-| `/plan` | Toggle web chat plan mode on/off; while enabled, future web messages are sent with a `/plan` prefix |
+| `/plan` | Send plan mode command to the agent |
 | `/plugin` | Information about plugin management |
 | `/rename` | Rename the current agent |
 | `/skills` | List all available slash commands |
