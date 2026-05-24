@@ -451,6 +451,7 @@ export class AgentManager extends EventEmitter {
         status: agent.status,
         costUsd: agent.costUsd,
         tokenUsage: agent.tokenUsage,
+        contextWindow: agent.contextWindow,
         lastActivity: agent.lastActivity,
         interactionMode: agent.interactionMode,
         pendingPlan: agent.pendingPlan,
@@ -643,6 +644,7 @@ export class AgentManager extends EventEmitter {
         this.store.saveAgent(agent);
         this.updateAgentStatus(agent.id, 'error');
       } else {
+        this.addCompactTokenNotice(agent);
         this.updateAgentStatus(agent.id, 'stopped');
       }
 
@@ -821,9 +823,60 @@ export class AgentManager extends EventEmitter {
           input: (agent.tokenUsage?.input || 0) + (msg.usage.input_tokens || 0),
           output: (agent.tokenUsage?.output || 0) + (msg.usage.output_tokens || 0),
         };
+        this.addCompactTokenNotice(agent);
         this.store.saveAgent(agent);
       }
     }
+  }
+
+  private addCompactTokenNotice(agent: Agent): void {
+    const latestCompactIndex = [...agent.messages]
+      .map((message, index) => ({ message, index }))
+      .reverse()
+      .find(({ message }) => message.role === 'user' && this.isCompactCommand(message.content))
+      ?.index;
+
+    if (latestCompactIndex === undefined) return;
+    const alreadyNotified = agent.messages
+      .slice(latestCompactIndex + 1)
+      .some((message) => message.role === 'system' && message.content.startsWith('[Compact]'));
+    if (alreadyNotified) return;
+
+    agent.messages.push({
+      id: uuid(),
+      role: 'system',
+      content: this.formatCompactTokenNotice(agent),
+      timestamp: Date.now(),
+    });
+    agent.lastActivity = Date.now();
+    this.store.saveAgent(agent);
+  }
+
+  private isCompactCommand(text: string): boolean {
+    return text.trim().toLowerCase().startsWith('/compact');
+  }
+
+  private formatCompactTokenNotice(agent: Agent): string {
+    const context = agent.contextWindow;
+    const usage = agent.tokenUsage;
+
+    if (context?.total) {
+      const used = Math.max(0, Math.min(context.total, context.used));
+      const pct = Math.round((used / context.total) * 100);
+      const lines = [
+        `[Compact] Context after compact: ${used.toLocaleString()} / ${context.total.toLocaleString()} tokens (${pct}%).`,
+      ];
+      if (usage) {
+        lines.push(`Cumulative usage: input ${usage.input.toLocaleString()} / output ${usage.output.toLocaleString()} / total ${(usage.input + usage.output).toLocaleString()} tokens.`);
+      }
+      return lines.join('\n');
+    }
+
+    if (usage) {
+      return `[Compact] Token usage after compact: input ${usage.input.toLocaleString()} / output ${usage.output.toLocaleString()} / total ${(usage.input + usage.output).toLocaleString()} tokens.`;
+    }
+
+    return '[Compact] Token usage after compact is not available yet.';
   }
 
   private findSessionCwd(provider: Agent['config']['provider'], sessionId: string, _projectDir: string): string | undefined {

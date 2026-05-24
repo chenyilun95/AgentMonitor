@@ -273,6 +273,7 @@ export function AgentChat() {
             status: data.status as Agent['status'],
             costUsd: data.costUsd,
             tokenUsage: data.tokenUsage,
+            contextWindow: data.contextWindow,
             interactionMode: data.interactionMode,
             pendingPlan: data.pendingPlan,
           };
@@ -308,7 +309,7 @@ export function AgentChat() {
     let socketWorking = false;
 
     // Primary: incremental delta (lightweight, only new messages + metadata)
-    const onDelta = (data: { agentId: string; delta: { messages: Agent['messages']; status: string; costUsd?: number; tokenUsage?: Agent['tokenUsage']; lastActivity: number; interactionMode?: Agent['interactionMode']; pendingPlan?: Agent['pendingPlan'] } }) => {
+    const onDelta = (data: { agentId: string; delta: { messages: Agent['messages']; status: string; costUsd?: number; tokenUsage?: Agent['tokenUsage']; contextWindow?: Agent['contextWindow']; lastActivity: number; interactionMode?: Agent['interactionMode']; pendingPlan?: Agent['pendingPlan'] } }) => {
       if (data.agentId !== id) return;
       socketWorking = true;
       setAgent(prev => {
@@ -321,6 +322,7 @@ export function AgentChat() {
           status: data.delta.status as Agent['status'],
           costUsd: data.delta.costUsd ?? prev.costUsd,
           tokenUsage: data.delta.tokenUsage ?? prev.tokenUsage,
+          contextWindow: data.delta.contextWindow ?? prev.contextWindow,
           lastActivity: data.delta.lastActivity,
           interactionMode: data.delta.interactionMode ?? prev.interactionMode,
           pendingPlan: data.delta.pendingPlan ?? prev.pendingPlan,
@@ -342,6 +344,7 @@ export function AgentChat() {
             status: data.agent.status as Agent['status'],
             costUsd: data.agent.costUsd,
             tokenUsage: data.agent.tokenUsage,
+            contextWindow: data.agent.contextWindow,
             interactionMode: data.agent.interactionMode,
             pendingPlan: data.agent.pendingPlan,
           };
@@ -542,8 +545,10 @@ export function AgentChat() {
         setLocalMessages([]);
         break;
       case '/compact':
-        // Support /compact [instructions] - send as message if has args
-        addLocalMessage(t('chat.compactMsg'));
+        if (id) {
+          api.sendMessage(id, '/compact');
+        }
+        addLocalMessage('Compact requested. Token count will appear here when it completes.');
         break;
       case '/config':
         if (agent) {
@@ -886,7 +891,7 @@ export function AgentChat() {
         if (cmdName === '/compact' && args) {
           api.sendMessage(id, input.trim());
           setInput('');
-          addLocalMessage(t('chat.compactMsg'));
+          addLocalMessage('Compact requested. Token count will appear here when it completes.');
           return;
         }
         handleSlashSelect(cmd.cmd);
