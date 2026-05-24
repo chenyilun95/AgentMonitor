@@ -60,9 +60,13 @@ describe('AgentManager restoreConversation', () => {
     vi.spyOn(manager as unknown as { findSessionJsonlPath: (sessionId: string) => string | undefined }, 'findSessionJsonlPath')
       .mockReturnValue(jsonlPath);
 
-    const restoredPrompt = await manager.restoreConversation(agent.id, 1, false, true);
+    const result = await manager.restoreConversation(agent.id, 1, false, true);
 
-    expect(restoredPrompt).toBe('second prompt');
+    expect(result).toMatchObject({
+      restoredPrompt: 'second prompt',
+      restoredCode: false,
+      restoredConversation: true,
+    });
 
     const saved = store.getAgent(agent.id);
     expect(saved).toBeDefined();
@@ -227,9 +231,9 @@ describe('AgentManager restoreConversation', () => {
     store.saveAgent(agent);
 
     const restoreAgentCodeSpy = vi.spyOn(
-      manager as unknown as { restoreAgentCode: (agent: Agent, beforeTurnIndex: number) => void },
+      manager as unknown as { restoreAgentCode: (agent: Agent, beforeTurnIndex: number) => { restored: boolean; warning?: string } },
       'restoreAgentCode',
-    ).mockImplementation(() => {});
+    ).mockReturnValue({ restored: true });
 
     await manager.restoreConversation(agent.id, 1, true, false);
 

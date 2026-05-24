@@ -1484,8 +1484,8 @@ export class AgentManager extends EventEmitter {
     if (restoreCode) {
       if (agent.worktreePath) {
         const codeResult = this.restoreAgentCode(agent, turnIndex);
-        restoredCode = codeResult.restored;
-        warning = codeResult.warning || warning;
+        restoredCode = codeResult?.restored ?? false;
+        warning = codeResult?.warning || warning;
       } else {
         warning = 'No worktree is attached to this agent, so only the conversation was restored.';
       }
