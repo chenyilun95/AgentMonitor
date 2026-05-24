@@ -720,13 +720,7 @@ export function AgentChat() {
         addLocalMessage(t('chat.pluginInfo'));
         break;
       case '/rename': {
-        const newName = window.prompt(t('chat.renamePrompt'), agent?.name || '');
-        if (newName && newName.trim() && id) {
-          api.renameAgent(id, newName.trim()).then(() => {
-            addLocalMessage(`${t('chat.renamed')} ${newName.trim()}`);
-            fetchAgent();
-          });
-        }
+        void renameCurrentAgent();
         break;
       }
       case '/tasks':
@@ -824,6 +818,20 @@ export function AgentChat() {
   const toggleInteractionMode = () => {
     const nextMode = (agent?.interactionMode || 'default') === 'plan' ? 'default' : 'plan';
     void setInteractionMode(nextMode);
+  };
+
+  const renameCurrentAgent = async () => {
+    if (!agent || !id) return;
+    const nextName = window.prompt(t('chat.renamePrompt'), agent.name)?.trim();
+    if (!nextName || nextName === agent.name) return;
+    try {
+      await api.renameAgent(id, nextName);
+      setAgent(prev => prev ? { ...prev, name: nextName } : prev);
+      addLocalMessage(`${t('chat.renamed')} ${nextName}`);
+      fetchAgent();
+    } catch (err) {
+      addLocalMessage(`[Error] ${String(err)}`);
+    }
   };
 
   const handleApprovePlan = async () => {
@@ -1069,14 +1077,23 @@ export function AgentChat() {
     <div className="chat-container">
       <div className="chat-header">
         <div>
-          <h2 style={{ fontSize: 18, fontWeight: 600 }}>
+          <h2 style={{ fontSize: 18, fontWeight: 600, display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
             <span className={`provider-badge provider-${agent.config.provider || 'claude'}`}>
               {(agent.config.provider || 'claude').toUpperCase()}
             </span>
             {agent.source === 'external' && (
               <span className="provider-badge" style={{ background: '#6366f1', color: '#fff', marginLeft: 4 }}>EXT</span>
             )}
-            {' '}{agent.name}
+            <span className="agent-title-text">{agent.name}</span>
+            <button
+              type="button"
+              className="agent-rename-btn"
+              aria-label={`${t('chat.slashRename')}: ${agent.name}`}
+              title={t('chat.slashRename')}
+              onClick={renameCurrentAgent}
+            >
+              &#9998;
+            </button>
           </h2>
           <div style={{ fontSize: 12, color: 'var(--text-muted)' }}>
             {agent.config.directory}

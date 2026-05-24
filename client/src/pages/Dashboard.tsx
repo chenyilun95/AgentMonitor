@@ -134,6 +134,22 @@ export function Dashboard() {
     fetchAgents();
   };
 
+  const handleRename = async (e: React.MouseEvent, agent: Agent) => {
+    e.stopPropagation();
+    const nextName = window.prompt(t('chat.renamePrompt'), agent.name)?.trim();
+    if (!nextName || nextName === agent.name) return;
+
+    setAgents((prev) => prev.map((item) => (
+      item.id === agent.id ? { ...item, name: nextName } : item
+    )));
+    try {
+      await api.renameAgent(agent.id, nextName);
+    } catch (err) {
+      console.error('Failed to rename agent:', err);
+      fetchAgents();
+    }
+  };
+
   const formatDuration = (createdAt: number, lastActivity: number) => {
     const now = Date.now();
     const elapsed = Math.floor((lastActivity - createdAt) / 1000);
@@ -305,7 +321,16 @@ export function Dashboard() {
                   {agent.labels && Object.entries(agent.labels).map(([k, v]) => (
                     <span key={k} className="provider-badge" style={{ background: 'var(--bg-tertiary)', color: 'var(--text-secondary)', marginLeft: 4, fontSize: '0.7em' }}>{v ? `${k}=${v}` : k}</span>
                   ))}
-                  {' '}{agent.name}
+                  <span className="agent-title-text">{agent.name}</span>
+                  <button
+                    type="button"
+                    className="agent-rename-btn"
+                    aria-label={`${t('chat.slashRename')}: ${agent.name}`}
+                    title={t('chat.slashRename')}
+                    onClick={(e) => handleRename(e, agent)}
+                  >
+                    &#9998;
+                  </button>
                 </span>
                 <span className={`status status-${agent.status}`}>
                   <span className="status-dot" />
