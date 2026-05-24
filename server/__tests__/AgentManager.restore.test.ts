@@ -177,6 +177,51 @@ describe('AgentManager restoreConversation', () => {
     expect(startProcessSpy).toHaveBeenCalledOnce();
   });
 
+  it('starts a new empty conversation and clears resume state', () => {
+    const agent: Agent = {
+      id: 'agent-new-conversation',
+      name: 'New Conversation Test',
+      status: 'running',
+      config: {
+        provider: 'codex',
+        directory: tmpDir,
+        prompt: 'old prompt',
+        flags: { resume: 'old-session' },
+      },
+      messages: [
+        { id: 'u1', role: 'user', content: 'old prompt', timestamp: 1 },
+        { id: 'a1', role: 'assistant', content: 'old reply', timestamp: 2 },
+      ],
+      lastActivity: 2,
+      createdAt: 1,
+      sessionId: 'old-session',
+      tokenUsage: { input: 10, output: 20 },
+      contextWindow: { used: 30, total: 100 },
+      costUsd: 0.1,
+      currentTask: 'old task',
+      restoredConversationSeed: 'old seed',
+      codeSnapshots: [{ beforeTurnIndex: 0, commit: 'abc123' }],
+    };
+    store.saveAgent(agent);
+
+    const stop = vi.fn();
+    (manager as unknown as { processes: Map<string, { stop: () => void }> }).processes.set(agent.id, { stop });
+
+    const updated = manager.newConversation(agent.id);
+
+    expect(stop).toHaveBeenCalledOnce();
+    expect(updated?.messages).toEqual([]);
+    expect(updated?.status).toBe('stopped');
+    expect(updated?.sessionId).toBeUndefined();
+    expect(updated?.config.flags.resume).toBeUndefined();
+    expect(updated?.tokenUsage).toBeUndefined();
+    expect(updated?.contextWindow).toBeUndefined();
+    expect(updated?.costUsd).toBeUndefined();
+    expect(updated?.currentTask).toBeUndefined();
+    expect(updated?.restoredConversationSeed).toBeUndefined();
+    expect(updated?.codeSnapshots).toBeUndefined();
+  });
+
   it('falls back to the configured directory when a stopped agent resumes after worktree cleanup', () => {
     const missingWorktreePath = path.join(tmpDir, '.agent-worktrees', 'agent-missing');
     const agent: Agent = {

@@ -268,6 +268,8 @@ export const api = {
     request<Agent>('/agents/' + id + '/plan/revise', { method: 'POST' }),
   interruptAgent: (id: string) =>
     request('/agents/' + id + '/interrupt', { method: 'POST' }),
+  newConversation: (id: string) =>
+    request<Agent>('/agents/' + id + '/new-conversation', { method: 'POST' }),
   renameAgent: (id: string, name: string) =>
     request('/agents/' + id + '/rename', {
       method: 'PUT',

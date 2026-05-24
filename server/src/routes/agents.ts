@@ -199,6 +199,15 @@ export function agentRoutes(manager: AgentManager, store: AgentStore): Router {
     res.json({ ok: true });
   });
 
+  router.post('/:id/new-conversation', (req, res) => {
+    const agent = manager.newConversation(req.params.id);
+    if (!agent) {
+      res.status(404).json({ error: 'Agent not found' });
+      return;
+    }
+    res.json(sanitizeAgentSnapshot(agent));
+  });
+
   // Rename agent
   router.put('/:id/rename', (req, res) => {
     const { name } = req.body;

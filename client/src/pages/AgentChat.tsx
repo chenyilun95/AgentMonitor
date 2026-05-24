@@ -251,6 +251,7 @@ export function AgentChat() {
     { cmd: '/mcp', desc: t('chat.slashMcp') },
     { cmd: '/memory', desc: t('chat.slashMemory') },
     { cmd: '/model', desc: t('chat.slashModel') },
+    { cmd: '/new', desc: t('chat.slashNew') },
     { cmd: '/permissions', desc: t('chat.slashPermissions') },
     { cmd: '/plan', desc: t('chat.slashPlan') },
     { cmd: '/plugin', desc: t('chat.slashPlugin') },
@@ -553,8 +554,17 @@ export function AgentChat() {
         );
         break;
       case '/clear':
-        setLocalMessages([]);
-        setStatusNotices([]);
+      case '/new':
+        if (id) {
+          api.newConversation(id).then((updated) => {
+            setAgent(updated);
+            setLocalMessages([]);
+            setStatusNotices([]);
+            addStatusNotice(t('chat.newConversationStarted'));
+          }).catch((err) => {
+            addLocalMessage(`[Error] ${String(err)}`);
+          });
+        }
         break;
       case '/compact':
         if (id) {

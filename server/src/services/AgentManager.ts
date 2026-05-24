@@ -1214,6 +1214,38 @@ export class AgentManager extends EventEmitter {
     }
   }
 
+  newConversation(agentId: string): Agent | undefined {
+    const agent = this.store.getAgent(agentId);
+    if (!agent) return undefined;
+
+    const proc = this.processes.get(agentId);
+    if (proc) {
+      proc.stop();
+      this.processes.delete(agentId);
+    }
+
+    this.pendingUserMessage.delete(agentId);
+    agent.messages = [];
+    agent.status = 'stopped';
+    agent.pid = undefined;
+    agent.sessionId = undefined;
+    agent.currentTask = undefined;
+    agent.costUsd = undefined;
+    agent.tokenUsage = undefined;
+    agent.contextWindow = undefined;
+    agent.structuredOutput = undefined;
+    agent.restoredConversationSeed = undefined;
+    agent.codeSnapshots = undefined;
+    agent.pendingPlan = undefined;
+    agent.lastActivity = Date.now();
+    delete agent.config.flags.resume;
+
+    this.store.saveAgent(agent);
+    this.emit('agent:update', agentId, agent);
+    this.emit('agent:status', agentId, agent.status);
+    return agent;
+  }
+
   waitForAgent(agentId: string, timeoutMs: number): Promise<{ status: string; timedOut: boolean }> {
     return new Promise((resolve) => {
       const agent = this.store.getAgent(agentId);
