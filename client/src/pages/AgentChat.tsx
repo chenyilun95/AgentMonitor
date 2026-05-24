@@ -19,6 +19,7 @@ import {
 
 type ChatMessage = Agent['messages'][number];
 type LocalMessage = { id: string; role: string; content: string };
+type ChatMessageGroup = { id: string; messages: ChatMessage[] };
 type ToolMessageDetails = {
   title: string;
   input?: string;
@@ -1083,6 +1084,14 @@ export function AgentChat() {
   const reasoningEffortOptions = getReasoningEffortOptions(agent.config.provider, runtimeCapabilities);
   const interactionMode = agent.interactionMode || 'default';
   const isPlanMode = interactionMode === 'plan';
+  const chatMessageGroups = agent.messages.reduce<ChatMessageGroup[]>((groups, msg) => {
+    if (msg.role === 'user' || groups.length === 0) {
+      groups.push({ id: `turn-${msg.id}`, messages: [msg] });
+    } else {
+      groups[groups.length - 1].messages.push(msg);
+    }
+    return groups;
+  }, []);
 
   return (
     <div className="chat-container">
@@ -1219,57 +1228,61 @@ export function AgentChat() {
       {id && <TerminalView agentId={id} visible={showTerminal} resumeCommand={buildResumeCommand(agent, runtimeCapabilities)} />}
       <FileBrowserView rootPath={agent.worktreePath || agent.config.directory} visible={showFiles} />
       <div className="chat-messages" style={{ display: showTerminal || showFiles ? 'none' : undefined }}>
-        {agent.messages.map((msg) => {
-          const toolDetails = getToolMessageDetails(msg);
-          const isToolMsg = !!toolDetails;
-          const isExpanded = expandedTools.has(msg.id);
-          return (
-            <div key={msg.id} className={`chat-message ${msg.role}`}>
-              {isToolMsg ? (
-                <>
-                  <div
-                    className="tool-header"
-                    onClick={() => setExpandedTools(prev => {
-                      const next = new Set(prev);
-                      if (next.has(msg.id)) next.delete(msg.id);
-                      else next.add(msg.id);
-                      return next;
-                    })}
-                  >
-                    <span className="tool-toggle">{isExpanded ? '\u25BC' : '\u25B6'}</span>
-                    <span className="tool-name">{toolDetails.title}</span>
-                  </div>
-                  {isExpanded && (
-                    <div className="tool-details">
-                      {toolDetails.input && (
-                        <div className="tool-section">
-                          <div className="tool-section-label">Input</div>
-                          <pre className="tool-content">{toolDetails.input}</pre>
+        {chatMessageGroups.map((group) => (
+          <div key={group.id} className="chat-turn">
+            {group.messages.map((msg) => {
+              const toolDetails = getToolMessageDetails(msg);
+              const isToolMsg = !!toolDetails;
+              const isExpanded = expandedTools.has(msg.id);
+              return (
+                <div key={msg.id} className={`chat-message ${msg.role}`}>
+                  {isToolMsg ? (
+                    <>
+                      <div
+                        className="tool-header"
+                        onClick={() => setExpandedTools(prev => {
+                          const next = new Set(prev);
+                          if (next.has(msg.id)) next.delete(msg.id);
+                          else next.add(msg.id);
+                          return next;
+                        })}
+                      >
+                        <span className="tool-toggle">{isExpanded ? '\u25BC' : '\u25B6'}</span>
+                        <span className="tool-name">{toolDetails.title}</span>
+                      </div>
+                      {isExpanded && (
+                        <div className="tool-details">
+                          {toolDetails.input && (
+                            <div className="tool-section">
+                              <div className="tool-section-label">Input</div>
+                              <pre className="tool-content">{toolDetails.input}</pre>
+                            </div>
+                          )}
+                          {toolDetails.output && (
+                            <div className="tool-section">
+                              <div className="tool-section-label">Output</div>
+                              <pre className="tool-content">{toolDetails.output}</pre>
+                            </div>
+                          )}
+                          {toolDetails.details && (
+                            <div className="tool-section">
+                              <div className="tool-section-label">Details</div>
+                              <pre className="tool-content">{toolDetails.details}</pre>
+                            </div>
+                          )}
                         </div>
                       )}
-                      {toolDetails.output && (
-                        <div className="tool-section">
-                          <div className="tool-section-label">Output</div>
-                          <pre className="tool-content">{toolDetails.output}</pre>
-                        </div>
-                      )}
-                      {toolDetails.details && (
-                        <div className="tool-section">
-                          <div className="tool-section-label">Details</div>
-                          <pre className="tool-content">{toolDetails.details}</pre>
-                        </div>
-                      )}
-                    </div>
+                    </>
+                  ) : (
+                    renderMarkdown && msg.role === 'assistant'
+                      ? <ReactMarkdown remarkPlugins={[remarkGfm]}>{msg.content}</ReactMarkdown>
+                      : msg.content
                   )}
-                </>
-              ) : (
-                renderMarkdown && msg.role === 'assistant'
-                  ? <ReactMarkdown remarkPlugins={[remarkGfm]}>{msg.content}</ReactMarkdown>
-                  : msg.content
-              )}
-            </div>
-          );
-        })}
+                </div>
+              );
+            })}
+          </div>
+        ))}
         {localMessages.map((msg) => (
           <div key={msg.id} className={`chat-message ${msg.role}`}>
             {msg.content}

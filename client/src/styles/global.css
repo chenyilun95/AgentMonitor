@@ -1071,6 +1071,10 @@ body::after {
   to { opacity: 1; transform: translateY(0); }
 }
 
+.chat-turn {
+  position: relative;
+}
+
 .chat-message.user {
   position: sticky;
   top: 0;
