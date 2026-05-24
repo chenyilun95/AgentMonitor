@@ -193,6 +193,8 @@ npm run dev    # Starts server (tsx watch) + client (vite dev) concurrently
 - Client dev server: http://localhost:5173 (proxies API to :3456)
 - API server: http://localhost:3456
 
+Both servers bind to `0.0.0.0` by default, so the dashboard is accessible from other devices on the same network via `http://<your-ip>:5173` (dev) or `http://<your-ip>:3456` (production).
+
 If you're running on the same machine as your agents, stop here. The relay setup below is only for remote access from another device or public server.
 
 ---

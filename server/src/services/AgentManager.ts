@@ -242,9 +242,7 @@ export class AgentManager extends EventEmitter {
     const proc = new AgentProcess();
     this.processes.set(agent.id, proc);
     const processPrompt = this.composeProcessPrompt(agent);
-    const processModel = agent.config.provider === 'codex'
-      ? undefined
-      : agent.config.flags.model;
+    const processModel = agent.config.flags.model;
     const executionDirectory = this.resolveExecutionDirectory(agent);
 
     proc.on('message', (msg: StreamMessage) => {
@@ -362,21 +360,7 @@ export class AgentManager extends EventEmitter {
 
     prompt = this.wrapPlanModeMessage(agent, prompt);
 
-    if (agent.config.provider !== 'codex') {
-      return prompt;
-    }
-
-    const selectedModel = agent.config.flags.model?.trim();
-    if (!selectedModel) {
-      return prompt;
-    }
-
-    const trimmedPrompt = prompt.trimStart();
-    if (trimmedPrompt.startsWith('/model ')) {
-      return prompt;
-    }
-
-    return `/model ${selectedModel}\n${prompt}`;
+    return prompt;
   }
 
   private isPlanMode(agent: Agent): boolean {

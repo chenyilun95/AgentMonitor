@@ -197,7 +197,7 @@ describe('reasoning effort support', () => {
     expect(args).not.toContain('--effort');
   });
 
-  it('prefixes Codex prompt with /model switch on process start', () => {
+  it('does not prefix Codex prompts with /model slash commands', () => {
     const composed = (manager as unknown as {
       composeProcessPrompt: (agent: Agent) => string;
     }).composeProcessPrompt({
@@ -215,8 +215,24 @@ describe('reasoning effort support', () => {
       createdAt: Date.now(),
     });
 
-    expect(composed.startsWith('/model gpt-5.4-mini\n')).toBe(true);
-    expect(composed.endsWith('Implement feature X')).toBe(true);
+    expect(composed).toBe('Implement feature X');
+  });
+
+  it('passes Codex model selection through process start options', async () => {
+    const startSpy = vi.spyOn(AgentProcess.prototype, 'start').mockImplementation(() => undefined);
+
+    await manager.createAgent('Codex Model', {
+      provider: 'codex',
+      directory: tmpDir,
+      prompt: 'Implement feature X',
+      flags: { model: 'gpt-5.4-mini' },
+    });
+
+    expect(startSpy).toHaveBeenCalledWith(expect.objectContaining({
+      provider: 'codex',
+      model: 'gpt-5.4-mini',
+      prompt: 'Implement feature X',
+    }));
   });
 
   it('does not inject /model prefix for Claude prompts', () => {

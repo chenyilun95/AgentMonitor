@@ -1,5 +1,6 @@
 import { ChildProcess, spawn } from 'child_process';
 import { EventEmitter } from 'events';
+import { existsSync, readFileSync } from 'fs';
 import path from 'path';
 import { fileURLToPath } from 'url';
 import { config } from '../config.js';
@@ -74,12 +75,43 @@ const localToolBins = [
   path.join(serverRoot, 'node_modules', '.bin'),
   path.join(projectRoot, 'node_modules', '.bin'),
 ];
+const proxyEnvKeys = [
+  'HTTP_PROXY',
+  'HTTPS_PROXY',
+  'ALL_PROXY',
+  'NO_PROXY',
+  'http_proxy',
+  'https_proxy',
+  'all_proxy',
+  'no_proxy',
+];
 
 function injectLocalToolBins(basePath?: string): string {
   const existing = (basePath || '').split(path.delimiter).filter(Boolean);
   const merged = [...localToolBins, ...existing];
   const deduped = [...new Set(merged)];
   return deduped.join(path.delimiter);
+}
+
+function readProjectDotenvProxyEnv(): Record<string, string> {
+  const envPath = path.join(projectRoot, '.env');
+  if (!existsSync(envPath)) return {};
+
+  const values: Record<string, string> = {};
+  for (const line of readFileSync(envPath, 'utf-8').split(/\r?\n/)) {
+    const trimmed = line.trim();
+    if (!trimmed || trimmed.startsWith('#')) continue;
+    const match = trimmed.match(/^([A-Za-z_][A-Za-z0-9_]*)=(.*)$/);
+    if (!match || !proxyEnvKeys.includes(match[1])) continue;
+
+    let value = match[2].trim();
+    if ((value.startsWith('"') && value.endsWith('"')) || (value.startsWith("'") && value.endsWith("'"))) {
+      value = value.slice(1, -1);
+    }
+    if (value) values[match[1]] = value;
+  }
+
+  return values;
 }
 
 export class AgentProcess extends EventEmitter {
@@ -109,6 +141,12 @@ export class AgentProcess extends EventEmitter {
     const cleanEnv = { ...process.env };
     delete cleanEnv.CLAUDECODE;
     delete cleanEnv.CLAUDE_CODE_ENTRYPOINT;
+    const dotenvProxyEnv = readProjectDotenvProxyEnv();
+    for (const key of proxyEnvKeys) {
+      if (!cleanEnv[key] && dotenvProxyEnv[key]) {
+        cleanEnv[key] = dotenvProxyEnv[key];
+      }
+    }
     const pathKey = Object.keys(cleanEnv).find((key) => key.toLowerCase() === 'path') || 'PATH';
     cleanEnv[pathKey] = injectLocalToolBins(cleanEnv[pathKey]);
 
