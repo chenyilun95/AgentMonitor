@@ -18,6 +18,7 @@ import {
 } from '../lib/reasoningEffort';
 
 type ChatMessage = Agent['messages'][number];
+type LocalMessage = { id: string; role: string; content: string };
 type ToolMessageDetails = {
   title: string;
   input?: string;
@@ -181,7 +182,8 @@ export function AgentChat() {
   const [selectedHint, setSelectedHint] = useState(0);
   const [editingClaudeMd, setEditingClaudeMd] = useState(false);
   const [claudeMdContent, setClaudeMdContent] = useState('');
-  const [localMessages, setLocalMessages] = useState<Array<{ id: string; role: string; content: string }>>([]);
+  const [localMessages, setLocalMessages] = useState<LocalMessage[]>([]);
+  const [statusNotices, setStatusNotices] = useState<LocalMessage[]>([]);
   const [inputRequired, setInputRequired] = useState<{ prompt: string; choices?: string[] } | null>(null);
   const [expandedTools, setExpandedTools] = useState<Set<string>>(new Set());
   const [showTerminal, setShowTerminal] = useState(false);
@@ -211,6 +213,13 @@ export function AgentChat() {
 
   const addLocalMessage = (content: string, role = 'system') => {
     setLocalMessages((prev) => [...prev, { id: `local-${Date.now()}`, role, content }]);
+  };
+
+  const addStatusNotice = (content: string, role = 'system') => {
+    setStatusNotices((prev) => [
+      ...prev.slice(-3),
+      { id: `notice-${Date.now()}-${Math.random().toString(36).slice(2)}`, role, content },
+    ]);
   };
 
   const formatReasoningEffort = (effort?: Agent['config']['flags']['reasoningEffort']) =>
@@ -430,9 +439,9 @@ export function AgentChat() {
       }
       await fetchAgent(true);
       if (result.warning) {
-        addLocalMessage(`[Rewind] ${result.warning}`);
+        addStatusNotice(`[Rewind] ${result.warning}`);
       } else {
-        addLocalMessage(t('chat.rewindRestored'));
+        addStatusNotice(t('chat.rewindRestored'));
       }
       setShowHistoryPicker(false);
       setHistoryRestoreTarget(null);
@@ -479,7 +488,7 @@ export function AgentChat() {
             const currentAgent = agentRef.current;
             if (id && currentAgent?.status === 'running') {
               api.interruptAgent(id);
-              addLocalMessage(t('chat.interrupted'));
+              addStatusNotice(t('chat.interrupted'));
             }
           }, 500);
         }
@@ -544,12 +553,13 @@ export function AgentChat() {
         break;
       case '/clear':
         setLocalMessages([]);
+        setStatusNotices([]);
         break;
       case '/compact':
         if (id) {
           api.sendMessage(id, '/compact');
         }
-        addLocalMessage('Compact requested. Token count will appear here when it completes.');
+        addStatusNotice('Compact requested. Token count will appear here when it completes.');
         break;
       case '/config':
         if (agent) {
@@ -585,7 +595,7 @@ export function AgentChat() {
           a.download = `${agent.name}-conversation.txt`;
           a.click();
           URL.revokeObjectURL(url);
-          addLocalMessage(t('chat.exportedMsg'));
+          addStatusNotice(t('chat.exportedMsg'));
         }
         break;
       }
@@ -678,12 +688,12 @@ export function AgentChat() {
           const lastAssistant = [...agent.messages].reverse().find(m => m.role === 'assistant');
           if (lastAssistant) {
             navigator.clipboard.writeText(lastAssistant.content).then(() => {
-              addLocalMessage(t('chat.copiedMsg'));
+              addStatusNotice(t('chat.copiedMsg'));
             }).catch(() => {
-              addLocalMessage(t('chat.copiedMsg'));
+              addStatusNotice(t('chat.copiedMsg'));
             });
           } else {
-            addLocalMessage(t('chat.noCopyContent'));
+            addStatusNotice(t('chat.noCopyContent'));
           }
         }
         break;
@@ -738,7 +748,7 @@ export function AgentChat() {
         break;
       case '/theme':
         toggleTheme();
-        addLocalMessage(t('chat.themeToggled'));
+        addStatusNotice(t('chat.themeToggled'));
         break;
       case '/todos': {
         if (agent) {
@@ -810,7 +820,7 @@ export function AgentChat() {
           lastActivity: updated.lastActivity,
         };
       });
-      addLocalMessage(mode === 'plan' ? t('chat.planModeEnabled') : t('chat.planModeDisabled'));
+      addStatusNotice(mode === 'plan' ? t('chat.planModeEnabled') : t('chat.planModeDisabled'));
     } catch (err) {
       addLocalMessage(`[Error] ${String(err)}`);
     }
@@ -828,7 +838,7 @@ export function AgentChat() {
     try {
       await api.renameAgent(id, nextName);
       setAgent(prev => prev ? { ...prev, name: nextName } : prev);
-      addLocalMessage(`${t('chat.renamed')} ${nextName}`);
+      addStatusNotice(`${t('chat.renamed')} ${nextName}`);
       fetchAgent();
     } catch (err) {
       addLocalMessage(`[Error] ${String(err)}`);
@@ -841,7 +851,7 @@ export function AgentChat() {
       const updated = await api.approvePlan(id);
       setAgent(updated);
       setInputRequired(null);
-      addLocalMessage(t('chat.planApproved'));
+      addStatusNotice(t('chat.planApproved'));
     } catch (err) {
       addLocalMessage(`[Error] ${String(err)}`);
     }
@@ -852,7 +862,7 @@ export function AgentChat() {
     try {
       const updated = await api.revisePlan(id);
       setAgent(updated);
-      addLocalMessage(t('chat.planRevisionReady'));
+      addStatusNotice(t('chat.planRevisionReady'));
       setTimeout(() => inputRef.current?.focus(), 100);
     } catch (err) {
       addLocalMessage(`[Error] ${String(err)}`);
@@ -900,7 +910,7 @@ export function AgentChat() {
         if (cmdName === '/compact' && args) {
           api.sendMessage(id, input.trim());
           setInput('');
-          addLocalMessage('Compact requested. Token count will appear here when it completes.');
+          addStatusNotice('Compact requested. Token count will appear here when it completes.');
           return;
         }
         handleSlashSelect(cmd.cmd);
@@ -1306,6 +1316,24 @@ export function AgentChat() {
         )}
         <div ref={messagesEndRef} />
       </div>
+
+      {!showTerminal && !showFiles && statusNotices.length > 0 && (
+        <div className="chat-status-notices" aria-live="polite">
+          {statusNotices.map((notice) => (
+            <div key={notice.id} className={`chat-status-notice ${notice.role}`}>
+              <span className="chat-status-notice-text">{notice.content}</span>
+              <button
+                type="button"
+                className="chat-status-notice-dismiss"
+                onClick={() => setStatusNotices((prev) => prev.filter((item) => item.id !== notice.id))}
+                aria-label="Dismiss status"
+              >
+                &times;
+              </button>
+            </div>
+          ))}
+        </div>
+      )}
 
       {!showTerminal && !showFiles && <div className="esc-hint">{t('chat.escHint')}</div>}
 
