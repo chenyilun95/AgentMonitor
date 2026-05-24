@@ -646,6 +646,45 @@ body::after {
   color: var(--text-muted);
 }
 
+.dashboard-attention {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  flex-wrap: wrap;
+  margin-bottom: 18px;
+  padding: 12px 14px;
+  border: 1px solid rgba(224, 169, 70, 0.35);
+  border-radius: var(--radius);
+  background: var(--yellow-dim);
+}
+
+.dashboard-attention-label {
+  font-weight: 700;
+  color: var(--yellow);
+}
+
+.dashboard-attention-list {
+  display: flex;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+.dashboard-attention-agent {
+  border: 1px solid rgba(224, 169, 70, 0.35);
+  border-radius: var(--radius-full);
+  background: var(--bg-card);
+  color: var(--text-primary);
+  padding: 4px 10px;
+  font: inherit;
+  font-size: 13px;
+  cursor: pointer;
+}
+
+.dashboard-attention-agent:hover {
+  border-color: var(--yellow);
+  color: var(--yellow);
+}
+
 /* --- Status Badges --- */
 .status {
   display: inline-flex;

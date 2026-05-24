@@ -157,6 +157,21 @@ export function Dashboard() {
     return text.length > 100 ? text.slice(0, 100) + '...' : text;
   };
 
+  const formatStatus = (status: Agent['status']) => {
+    switch (status) {
+      case 'waiting_input':
+        return t('dashboard.status.needsInput');
+      case 'running':
+        return t('dashboard.status.running');
+      case 'stopped':
+        return t('dashboard.status.stopped');
+      case 'error':
+        return t('dashboard.status.error');
+      default:
+        return status;
+    }
+  };
+
   if (loading) return <div>{t('common.loading')}</div>;
 
   const activeExternalAgents = agents.filter(
@@ -184,6 +199,8 @@ export function Dashboard() {
   const allLabels = Array.from(new Set(
     agents.flatMap(a => Object.entries(a.labels || {}).map(([k, v]) => v ? `${k}=${v}` : k))
   ));
+  const visibleAgents = displayAgents.filter(a => showExternal || a.source !== 'external');
+  const waitingInputAgents = visibleAgents.filter(a => a.status === 'waiting_input');
 
   return (
     <div>
@@ -238,13 +255,33 @@ export function Dashboard() {
         </div>
       </div>
 
-      {displayAgents.length === 0 ? (
+      {waitingInputAgents.length > 0 && (
+        <div className="dashboard-attention">
+          <span className="dashboard-attention-label">
+            {t('dashboard.needsInputCount', { count: waitingInputAgents.length })}
+          </span>
+          <div className="dashboard-attention-list">
+            {waitingInputAgents.map((waitingAgent) => (
+              <button
+                key={waitingAgent.id}
+                type="button"
+                className="dashboard-attention-agent"
+                onClick={() => navigate(`/agent/${waitingAgent.id}`)}
+              >
+                {waitingAgent.name}
+              </button>
+            ))}
+          </div>
+        </div>
+      )}
+
+      {visibleAgents.length === 0 ? (
         <div style={{ textAlign: 'center', padding: 48, color: 'var(--text-muted)' }}>
           {t('dashboard.empty')}
         </div>
       ) : (
         <div className="card-grid">
-          {displayAgents.filter(a => showExternal || a.source !== 'external').map((agent) => {
+          {visibleAgents.map((agent) => {
             const contextTotal = agent.contextWindow?.total ?? 0;
             const rawContextPercent = contextTotal > 0
               ? (agent.contextWindow!.used / contextTotal) * 100
@@ -272,7 +309,7 @@ export function Dashboard() {
                 </span>
                 <span className={`status status-${agent.status}`}>
                   <span className="status-dot" />
-                  {agent.status}
+                  {formatStatus(agent.status)}
                 </span>
               </div>
 

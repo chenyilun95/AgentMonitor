@@ -23,11 +23,11 @@ vi.mock('../src/api/socket', () => ({
   }),
 }));
 
-function makeAgent(id: string, name: string, lastActivity: number): Agent {
+function makeAgent(id: string, name: string, lastActivity: number, status: Agent['status'] = 'running'): Agent {
   return {
     id,
     name,
-    status: 'running',
+    status,
     config: {
       provider: 'claude',
       directory: '/tmp/project',
@@ -76,5 +76,33 @@ describe('Dashboard', () => {
       expect.stringContaining('Middle agent'),
       expect.stringContaining('Older agent'),
     ]);
+  });
+
+  it('highlights agents waiting for input', async () => {
+    vi.mocked(api.getAgents).mockResolvedValue([
+      makeAgent('running', 'Running agent', 1000),
+      makeAgent('waiting', 'Blocked agent', 2000, 'waiting_input'),
+    ]);
+    vi.mocked(api.getSettings).mockResolvedValue({
+      agentRetentionMs: 86_400_000,
+      promptSuggestions: [],
+      pathHistory: {},
+      deleteSessionFilesPolicy: 'keep',
+    });
+
+    render(
+      <MemoryRouter>
+        <LanguageProvider>
+          <Dashboard />
+        </LanguageProvider>
+      </MemoryRouter>,
+    );
+
+    await waitFor(() => {
+      expect(screen.getByText('Needs input (1)')).toBeInTheDocument();
+    });
+
+    expect(screen.getByRole('button', { name: 'Blocked agent' })).toBeInTheDocument();
+    expect(screen.getByText('Needs input', { selector: '.status' })).toBeInTheDocument();
   });
 });
