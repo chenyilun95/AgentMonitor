@@ -229,7 +229,7 @@ export const api = {
   uploadFile: (file: File) => uploadFile<{ path: string; originalName: string; size: number }>('/upload-image', file, 'file'),
 
   // Agents
-  getAgents: () => request<Agent[]>('/agents'),
+  getAgents: () => request<Agent[]>('/agents?summary=1'),
   getAgent: (id: string) => request<Agent>(`/agents/${id}`),
   createAgent: (data: {
     name: string;

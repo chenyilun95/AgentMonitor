@@ -32,7 +32,7 @@ import { FeishuService } from './services/FeishuService.js';
 import { FeishuNotifier } from './services/FeishuNotifier.js';
 import { TelegramService } from './services/TelegramService.js';
 import type { Agent } from './models/Agent.js';
-import { sanitizeAgentSnapshot } from './utils/agentSnapshot.js';
+import { sanitizeAgentListSnapshot, sanitizeAgentSnapshot } from './utils/agentSnapshot.js';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 
@@ -182,7 +182,7 @@ export function createApp() {
   externalScanner.on('agent:update', (agentId: string, agent: unknown) => {
     const safeAgent = sanitizeAgentSnapshot(agent as Agent);
     io.to(`agent:${agentId}`).emit('agent:update', { agentId, agent: safeAgent });
-    io.emit('agent:snapshot', { agentId, agent: safeAgent });
+    io.emit('agent:snapshot', { agentId, agent: sanitizeAgentListSnapshot(agent as Agent) });
   });
   externalScanner.on('agent:status', (agentId: string, status: string) => {
     io.to(`agent:${agentId}`).emit('agent:status', { agentId, status });

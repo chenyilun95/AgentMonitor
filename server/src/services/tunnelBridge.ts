@@ -2,6 +2,8 @@ import type { TunnelClient, TunnelMessage } from './TunnelClient.js';
 import type { AgentManager } from './AgentManager.js';
 import type { MetaAgentManager } from './MetaAgentManager.js';
 import type { TerminalService } from './TerminalService.js';
+import type { Agent } from '../models/Agent.js';
+import { sanitizeAgentListSnapshot } from '../utils/agentSnapshot.js';
 
 /**
  * Bridges local AgentManager/Pipeline events to the tunnel,
@@ -69,7 +71,7 @@ export function setupTunnelBridge(
     tunnel.send({
       type: 'socket:s2c',
       event: 'agent:snapshot',
-      args: [{ agentId, agent }],
+      args: [{ agentId, agent: sanitizeAgentListSnapshot(agent as Agent) }],
     });
   });
 

@@ -4,7 +4,7 @@ import type { AgentStore } from '../store/AgentStore.js';
 import type { ExternalAgentScanner } from '../services/ExternalAgentScanner.js';
 import type { AgentProvider } from '../models/Agent.js';
 import { runtimeCapabilities } from '../services/RuntimeCapabilities.js';
-import { sanitizeAgentSnapshot } from '../utils/agentSnapshot.js';
+import { sanitizeAgentListSnapshot, sanitizeAgentSnapshot } from '../utils/agentSnapshot.js';
 
 function reasoningEffortError(provider: AgentProvider): string {
   const capabilities = runtimeCapabilities.getCapabilities().providers[provider];
@@ -67,7 +67,8 @@ export function agentRoutes(manager: AgentManager, store: AgentStore): Router {
     if (statusFilter) {
       agents = agents.filter(a => a.status === statusFilter);
     }
-    res.json(agents.map(sanitizeAgentSnapshot));
+    const sanitizer = req.query.summary === '1' ? sanitizeAgentListSnapshot : sanitizeAgentSnapshot;
+    res.json(agents.map(sanitizer));
   });
 
   // Get single agent

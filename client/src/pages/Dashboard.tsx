@@ -59,10 +59,8 @@ export function Dashboard() {
     const socket = getSocket();
 
     // Real-time: use agent:snapshot to update individual cards without full re-fetch
-    let hasSnapshot = false;
     const onSnapshot = (data: { agentId: string; agent: Agent }) => {
       if (data.agent) {
-        hasSnapshot = true;
         setAgents((prev) => {
           const idx = prev.findIndex((a) => a.id === data.agentId);
           if (idx >= 0) {
@@ -78,8 +76,6 @@ export function Dashboard() {
 
     // Fallback for status changes (e.g., stop/delete which don't emit snapshot)
     const onStatus = () => {
-      if (!hasSnapshot) fetchAgents();
-      // For 'deleted' status from cleanup, always re-fetch to remove cards
       fetchAgents();
     };
 
