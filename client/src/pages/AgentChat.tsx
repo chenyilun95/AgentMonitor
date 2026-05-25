@@ -1,4 +1,4 @@
-import { useState, useEffect, useRef, useCallback } from 'react';
+import { useState, useEffect, useLayoutEffect, useRef, useCallback } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import { api, type Agent, type RuntimeCapabilities } from '../api/client';
 import { getSocket, joinAgent, leaveAgent } from '../api/socket';
@@ -190,7 +190,9 @@ export function AgentChat() {
   const [showTerminal, setShowTerminal] = useState(false);
   const [showFiles, setShowFiles] = useState(false);
   const [renderMarkdown, setRenderMarkdown] = useState(() => localStorage.getItem('agentmonitor-markdown') !== 'false');
+  const messagesContainerRef = useRef<HTMLDivElement>(null);
   const messagesEndRef = useRef<HTMLDivElement>(null);
+  const didInitialScrollRef = useRef(false);
   const lastEscRef = useRef(0);
   const escTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const agentRef = useRef(agent);
@@ -313,6 +315,7 @@ export function AgentChat() {
   }, [id, navigate]);
 
   useEffect(() => {
+    didInitialScrollRef.current = false;
     fetchAgent();
     api.getRuntimeCapabilities().then(setRuntimeCapabilities).catch(() => {});
     if (!id) return;
@@ -420,9 +423,24 @@ export function AgentChat() {
     };
   }, [id, fetchAgent]);
 
+  useLayoutEffect(() => {
+    if (!agent || didInitialScrollRef.current) return;
+    const container = messagesContainerRef.current;
+    if (container) {
+      const previousScrollBehavior = container.style.scrollBehavior;
+      container.style.scrollBehavior = 'auto';
+      container.scrollTop = container.scrollHeight;
+      container.style.scrollBehavior = previousScrollBehavior;
+    } else {
+      messagesEndRef.current?.scrollIntoView({ behavior: 'auto' });
+    }
+    didInitialScrollRef.current = true;
+  }, [agent]);
+
   useEffect(() => {
+    if (!didInitialScrollRef.current) return;
     messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
-  }, [agent?.messages?.length]);
+  }, [agent?.messages?.length, localMessages.length]);
 
   useEffect(() => {
     if (agent) {
@@ -1238,7 +1256,7 @@ export function AgentChat() {
 
       {id && <TerminalView agentId={id} visible={showTerminal} resumeCommand={buildResumeCommand(agent, runtimeCapabilities)} />}
       <FileBrowserView rootPath={agent.worktreePath || agent.config.directory} visible={showFiles} />
-      <div className="chat-messages" style={{ display: showTerminal || showFiles ? 'none' : undefined }}>
+      <div ref={messagesContainerRef} className="chat-messages" style={{ display: showTerminal || showFiles ? 'none' : undefined }}>
         {chatMessageGroups.map((group) => (
           <div key={group.id} className="chat-turn">
             {group.messages.map((msg) => {
