@@ -1685,6 +1685,86 @@ body::after {
   margin-top: 0;
 }
 
+.file-preview-markdown h1,
+.file-preview-markdown h2,
+.file-preview-markdown h3,
+.file-preview-markdown h4 {
+  margin: 18px 0 8px;
+  line-height: 1.25;
+}
+
+.file-preview-markdown p,
+.file-preview-markdown ul,
+.file-preview-markdown ol,
+.file-preview-markdown blockquote,
+.file-preview-markdown table,
+.file-preview-markdown pre {
+  margin: 0 0 12px;
+}
+
+.file-preview-markdown ul,
+.file-preview-markdown ol {
+  padding-left: 24px;
+}
+
+.file-preview-markdown blockquote {
+  border-left: 3px solid var(--primary);
+  padding: 4px 12px;
+  color: var(--text-muted);
+}
+
+.file-preview-markdown table {
+  display: block;
+  width: max-content;
+  max-width: 100%;
+  overflow-x: auto;
+  border-collapse: collapse;
+  font-size: 13px;
+}
+
+.file-preview-markdown th,
+.file-preview-markdown td {
+  border: 1px solid var(--border);
+  padding: 6px 10px;
+  vertical-align: top;
+}
+
+.file-preview-markdown th {
+  background: var(--bg-input);
+  font-weight: 600;
+}
+
+.file-preview-markdown img {
+  max-width: 100%;
+  height: auto;
+  display: block;
+  margin: 12px 0;
+  border-radius: var(--radius);
+}
+
+.file-preview-markdown code {
+  background: var(--bg-input);
+  border: 1px solid var(--border-subtle);
+  border-radius: 4px;
+  padding: 1px 4px;
+  font-family: var(--font-mono);
+  font-size: 0.9em;
+}
+
+.file-preview-markdown pre {
+  background: var(--bg-input);
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius);
+  padding: 12px;
+  overflow-x: auto;
+}
+
+.file-preview-markdown pre code {
+  background: transparent;
+  border: none;
+  padding: 0;
+}
+
 .file-preview-raw {
   margin: 0;
   background: var(--bg-input);

@@ -59,5 +59,23 @@ export function directoryRoutes(): Router {
     }
   });
 
+  router.get('/asset', (req, res) => {
+    try {
+      const filePath = req.query.path as string;
+      if (!filePath) {
+        res.status(400).json({ error: 'path is required' });
+        return;
+      }
+      const asset = browser.getPreviewAsset(filePath);
+      res.sendFile(asset.path);
+    } catch (err) {
+      if (err instanceof FileReadError) {
+        res.status(err.statusCode).json({ error: err.message });
+        return;
+      }
+      res.status(400).json({ error: String(err) });
+    }
+  });
+
   return router;
 }

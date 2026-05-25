@@ -29,7 +29,7 @@ describe('FileBrowserView', () => {
           extension: '.md',
           size: 14,
           mtime: 1,
-          content: '# Hello\n\nWorld',
+          content: '# Hello\n\nWorld\n\n![Diagram](docs/diagram.png)',
           truncated: false,
           language: 'markdown',
           isMarkdown: true,
@@ -59,9 +59,13 @@ describe('FileBrowserView', () => {
       expect(screen.getByRole('heading', { name: 'Hello' })).toBeInTheDocument();
     });
     expect(screen.getByText('World')).toBeInTheDocument();
+    expect(screen.getByRole('img', { name: 'Diagram' })).toHaveAttribute(
+      'src',
+      '/api/directories/asset?path=%2Frepo%2Fdocs%2Fdiagram.png',
+    );
 
     fireEvent.click(screen.getByText('Raw'));
-    expect(screen.getByText((_, element) => element?.textContent === '# Hello\n\nWorld')).toBeInTheDocument();
+    expect(screen.getByText((_, element) => element?.textContent === '# Hello\n\nWorld\n\n![Diagram](docs/diagram.png)')).toBeInTheDocument();
   });
 
   it('shows read errors from the API', async () => {

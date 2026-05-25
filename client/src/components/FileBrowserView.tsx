@@ -20,6 +20,44 @@ function pathLabel(path: string): string {
   return parts.length ? `/${parts.slice(-3).join('/')}` : '/';
 }
 
+function isExternalUrl(src: string): boolean {
+  return /^(https?:|data:|blob:|mailto:|#)/i.test(src);
+}
+
+function dirname(filePath: string): string {
+  const idx = filePath.lastIndexOf('/');
+  return idx > 0 ? filePath.slice(0, idx) : '/';
+}
+
+function normalizePath(path: string): string {
+  const absolute = path.startsWith('/');
+  const parts: string[] = [];
+  for (const part of path.split('/')) {
+    if (!part || part === '.') continue;
+    if (part === '..') {
+      parts.pop();
+      continue;
+    }
+    parts.push(part);
+  }
+  return `${absolute ? '/' : ''}${parts.join('/')}`;
+}
+
+function resolveMarkdownAsset(markdownPath: string, src?: string): string | undefined {
+  if (!src || isExternalUrl(src)) return src;
+  const cleanSrc = src.split(/[?#]/, 1)[0];
+  let localSrc = cleanSrc;
+  try {
+    localSrc = decodeURI(cleanSrc);
+  } catch {
+    localSrc = cleanSrc;
+  }
+  const resolved = localSrc.startsWith('/')
+    ? normalizePath(localSrc)
+    : normalizePath(`${dirname(markdownPath)}/${localSrc}`);
+  return `/api/directories/asset?path=${encodeURIComponent(resolved)}`;
+}
+
 export function FileBrowserView({ rootPath, visible }: FileBrowserViewProps) {
   const [listing, setListing] = useState<DirListing | null>(null);
   const [currentPath, setCurrentPath] = useState(rootPath);
@@ -163,7 +201,20 @@ export function FileBrowserView({ rootPath, visible }: FileBrowserViewProps) {
         {loadingFile && <div className="file-preview-empty">Loading file...</div>}
         {!loadingFile && preview && (
           viewMode === 'preview' && preview.isMarkdown
-            ? <div className="file-preview-markdown"><ReactMarkdown remarkPlugins={[remarkGfm]}>{preview.content}</ReactMarkdown></div>
+            ? (
+              <div className="file-preview-markdown">
+                <ReactMarkdown
+                  remarkPlugins={[remarkGfm]}
+                  components={{
+                    img: ({ src, alt, title }) => (
+                      <img src={resolveMarkdownAsset(preview.path, src)} alt={alt || ''} title={title} loading="lazy" />
+                    ),
+                  }}
+                >
+                  {preview.content}
+                </ReactMarkdown>
+              </div>
+            )
             : <pre className="file-preview-raw">{preview.content}</pre>
         )}
         {!loadingFile && !preview && !error && (

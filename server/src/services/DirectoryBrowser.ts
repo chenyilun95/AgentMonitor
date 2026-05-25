@@ -30,6 +30,16 @@ const PREVIEWABLE_NAMES = new Set([
   'Makefile',
   'README',
 ]);
+const PREVIEWABLE_ASSET_EXTENSIONS = new Set([
+  '.bmp',
+  '.gif',
+  '.ico',
+  '.jpeg',
+  '.jpg',
+  '.png',
+  '.svg',
+  '.webp',
+]);
 
 export interface DirEntry {
   name: string;
@@ -51,6 +61,11 @@ export interface FilePreview {
   truncated: boolean;
   language: string;
   isMarkdown: boolean;
+}
+
+export interface FileAsset {
+  path: string;
+  name: string;
 }
 
 export class FileReadError extends Error {
@@ -146,20 +161,40 @@ export class DirectoryBrowser {
     }
   }
 
+  getPreviewAsset(filePath: string): FileAsset {
+    const resolved = path.resolve(filePath);
+
+    if (!fs.existsSync(resolved)) {
+      throw new FileReadError(`File not found: ${resolved}`, 404);
+    }
+
+    const stat = fs.statSync(resolved);
+    if (!stat.isFile()) {
+      throw new FileReadError(`Not a file: ${resolved}`, 400);
+    }
+
+    const name = path.basename(resolved);
+    if (!PREVIEWABLE_ASSET_EXTENSIONS.has(path.extname(name).toLowerCase())) {
+      throw new FileReadError(`Asset type is not previewable: ${name}`, 415);
+    }
+
+    return { path: resolved, name };
+  }
+
   getParent(dirPath: string): string {
     return path.dirname(path.resolve(dirPath));
   }
 
   private isPreviewableTextFile(fileName: string): boolean {
-    return PREVIEWABLE_EXTENSIONS.has(path.extname(fileName)) || PREVIEWABLE_NAMES.has(fileName);
+    return PREVIEWABLE_EXTENSIONS.has(path.extname(fileName).toLowerCase()) || PREVIEWABLE_NAMES.has(fileName);
   }
 
   private isMarkdownFile(fileName: string): boolean {
-    return ['.md', '.mdx', '.markdown'].includes(path.extname(fileName));
+    return ['.md', '.mdx', '.markdown'].includes(path.extname(fileName).toLowerCase());
   }
 
   private getLanguage(fileName: string): string {
-    const ext = path.extname(fileName).slice(1);
+    const ext = path.extname(fileName).slice(1).toLowerCase();
     if (!ext) return 'text';
     if (ext === 'md' || ext === 'markdown') return 'markdown';
     if (ext === 'yml') return 'yaml';

@@ -79,4 +79,11 @@ describe('DirectoryBrowser', () => {
     expect(() => browser.readTextFile(path.join(tmpDir, 'subdir1'))).toThrow(/Not a file/);
     expect(() => browser.readTextFile(path.join(tmpDir, 'image.png'))).toThrow(/not previewable/);
   });
+
+  it('allows markdown preview image assets', () => {
+    const asset = browser.getPreviewAsset(path.join(tmpDir, 'image.png'));
+    expect(asset.name).toBe('image.png');
+    expect(asset.path).toBe(path.join(tmpDir, 'image.png'));
+    expect(() => browser.getPreviewAsset(path.join(tmpDir, 'file1.txt'))).toThrow(/Asset type is not previewable/);
+  });
 });
