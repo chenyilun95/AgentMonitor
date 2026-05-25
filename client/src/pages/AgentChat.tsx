@@ -18,8 +18,9 @@ import {
 } from '../lib/reasoningEffort';
 
 type ChatMessage = Agent['messages'][number];
-type LocalMessage = { id: string; role: string; content: string };
-type ChatMessageGroup = { id: string; messages: ChatMessage[] };
+type LocalMessage = { id: string; role: string; content: string; timestamp: number };
+type DisplayMessage = ChatMessage | LocalMessage;
+type ChatMessageGroup = { id: string; messages: DisplayMessage[] };
 type ToolMessageDetails = {
   title: string;
   input?: string;
@@ -184,7 +185,6 @@ export function AgentChat() {
   const [editingClaudeMd, setEditingClaudeMd] = useState(false);
   const [claudeMdContent, setClaudeMdContent] = useState('');
   const [localMessages, setLocalMessages] = useState<LocalMessage[]>([]);
-  const [statusNotices, setStatusNotices] = useState<LocalMessage[]>([]);
   const [inputRequired, setInputRequired] = useState<{ prompt: string; choices?: string[] } | null>(null);
   const [expandedTools, setExpandedTools] = useState<Set<string>>(new Set());
   const [showTerminal, setShowTerminal] = useState(false);
@@ -213,15 +213,16 @@ export function AgentChat() {
   const [runtimeCapabilities, setRuntimeCapabilities] = useState<RuntimeCapabilities | null>(null);
 
   const addLocalMessage = (content: string, role = 'system') => {
-    setLocalMessages((prev) => [...prev, { id: `local-${Date.now()}`, role, content }]);
+    const timestamp = Date.now();
+    setLocalMessages((prev) => [...prev, {
+      id: `local-${timestamp}-${Math.random().toString(36).slice(2)}`,
+      role,
+      content,
+      timestamp,
+    }]);
   };
 
-  const addStatusNotice = (content: string, role = 'system') => {
-    setStatusNotices((prev) => [
-      ...prev.slice(-3),
-      { id: `notice-${Date.now()}-${Math.random().toString(36).slice(2)}`, role, content },
-    ]);
-  };
+  const addStatusNotice = addLocalMessage;
 
   const formatReasoningEffort = (effort?: Agent['config']['flags']['reasoningEffort']) =>
     effort ? getReasoningEffortLabel(effort) : t('chat.defaultReasoningEffort');
@@ -559,7 +560,6 @@ export function AgentChat() {
           api.newConversation(id).then((updated) => {
             setAgent(updated);
             setLocalMessages([]);
-            setStatusNotices([]);
             addStatusNotice(t('chat.newConversationStarted'));
           }).catch((err) => {
             addLocalMessage(`[Error] ${String(err)}`);
@@ -1094,7 +1094,8 @@ export function AgentChat() {
   const reasoningEffortOptions = getReasoningEffortOptions(agent.config.provider, runtimeCapabilities);
   const interactionMode = agent.interactionMode || 'default';
   const isPlanMode = interactionMode === 'plan';
-  const chatMessageGroups = agent.messages.reduce<ChatMessageGroup[]>((groups, msg) => {
+  const displayMessages = [...agent.messages, ...localMessages].sort((a, b) => a.timestamp - b.timestamp);
+  const chatMessageGroups = displayMessages.reduce<ChatMessageGroup[]>((groups, msg) => {
     if (msg.role === 'user' || groups.length === 0) {
       groups.push({ id: `turn-${msg.id}`, messages: [msg] });
     } else {
@@ -1241,7 +1242,7 @@ export function AgentChat() {
         {chatMessageGroups.map((group) => (
           <div key={group.id} className="chat-turn">
             {group.messages.map((msg) => {
-              const toolDetails = getToolMessageDetails(msg);
+              const toolDetails = getToolMessageDetails(msg as ChatMessage);
               const isToolMsg = !!toolDetails;
               const isExpanded = expandedTools.has(msg.id);
               return (
@@ -1293,11 +1294,6 @@ export function AgentChat() {
             })}
           </div>
         ))}
-        {localMessages.map((msg) => (
-          <div key={msg.id} className={`chat-message ${msg.role}`}>
-            {msg.content}
-          </div>
-        ))}
         {agent.status === 'running' && (
           <div className="chat-message assistant thinking">
             <span className="thinking-dots">
@@ -1324,24 +1320,6 @@ export function AgentChat() {
         )}
         <div ref={messagesEndRef} />
       </div>
-
-      {!showTerminal && !showFiles && statusNotices.length > 0 && (
-        <div className="chat-status-notices" aria-live="polite">
-          {statusNotices.map((notice) => (
-            <div key={notice.id} className={`chat-status-notice ${notice.role}`}>
-              <span className="chat-status-notice-text">{notice.content}</span>
-              <button
-                type="button"
-                className="chat-status-notice-dismiss"
-                onClick={() => setStatusNotices((prev) => prev.filter((item) => item.id !== notice.id))}
-                aria-label="Dismiss status"
-              >
-                &times;
-              </button>
-            </div>
-          ))}
-        </div>
-      )}
 
       {!showTerminal && !showFiles && <div className="esc-hint">{t('chat.escHint')}</div>}
 
