@@ -190,9 +190,7 @@ export function Dashboard() {
   const activeExternalAgents = agents.filter(
     (a) => a.source === 'external' && (a.status === 'running' || a.status === 'waiting_input'),
   );
-  const displayAgents = agents.filter(
-    (a) => a.source !== 'external' || (a.status === 'running' || a.status === 'waiting_input'),
-  ).filter((a) => {
+  const displayAgents = agents.filter((a) => {
     if (!labelFilter) return true;
     const sep = labelFilter.indexOf('=');
     if (sep < 0) {

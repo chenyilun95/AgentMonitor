@@ -117,9 +117,11 @@ export class ExternalAgentScanner extends EventEmitter {
 
         const isAlive = !!agent.pid && (runningPids.has(agent.pid) || this.isProcessAlive(agent.pid));
         if (!isAlive) {
-          // External sessions should only appear while their underlying process is alive.
-          this.store.deleteAgent(agent.id);
-          this.emit('agent:status', agent.id, 'deleted');
+          if (agent.status === 'running' || agent.status === 'waiting_input') {
+            agent.status = 'stopped';
+            this.store.saveAgent(agent);
+            this.emit('agent:status', agent.id, 'stopped');
+          }
           result.removed++;
           continue;
         }

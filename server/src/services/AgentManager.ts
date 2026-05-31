@@ -1385,6 +1385,7 @@ export class AgentManager extends EventEmitter {
     const agents = this.store.getAllAgents();
     let count = 0;
     for (const agent of agents) {
+      if (agent.source !== 'external') continue;
       if (
         (agent.status === 'stopped' || agent.status === 'error') &&
         agent.lastActivity + retentionMs < now

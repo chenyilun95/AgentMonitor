@@ -84,7 +84,7 @@ export function createApp() {
   const externalScanner = new ExternalAgentScanner(
     store,
     () => manager.getManagedPids(),
-    { scanIntervalMs: 15_000, autoImport: true, maxMessages: 200 },
+    { scanIntervalMs: 15_000, autoImport: false, maxMessages: 200 },
   );
 
   // REST routes
