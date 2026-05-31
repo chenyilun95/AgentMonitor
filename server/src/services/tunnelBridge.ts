@@ -156,7 +156,7 @@ export function setupTunnelBridge(
           const d = args[0] as { agentId: string; cols?: number; rows?: number; initialCommand?: string };
           const agent = manager.getAgent(d.agentId);
           if (agent) {
-            const cwd = agent.worktreePath || agent.config.directory;
+            const cwd = manager.resolveExecutionDirectory(agent);
             terminalService.create(d.agentId, cwd, d.cols || 120, d.rows || 30, d.initialCommand);
           }
         }

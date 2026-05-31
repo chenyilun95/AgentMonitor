@@ -167,18 +167,23 @@ export class AgentManager extends EventEmitter {
     }
     const skipWorktree = !!agentConfig.flags.resume;
 
-    // Create git worktree for isolation — only if the directory is already a git repo
+    // Create git worktree for isolation — only if the directory is inside a git repo.
+    // Always create worktrees at the git root level so subdirectory paths work correctly.
+    let gitRoot: string | undefined;
     const isGitRepo = !skipWorktree && (() => {
       try {
-        execSync('git rev-parse --git-dir', { cwd: agentConfig.directory, stdio: 'pipe' });
+        gitRoot = execSync('git rev-parse --show-toplevel', {
+          cwd: agentConfig.directory,
+          stdio: 'pipe',
+        }).toString().trim();
         return true;
       } catch { return false; }
     })();
 
-    if (isGitRepo) {
+    if (isGitRepo && gitRoot) {
       try {
         const result = this.worktreeManager.createWorktree(
-          agentConfig.directory,
+          gitRoot,
           branchName,
           agentConfig.claudeMd,
           agentConfig.provider,
@@ -187,30 +192,30 @@ export class AgentManager extends EventEmitter {
         worktreeBranch = result.branch;
       } catch (err) {
         console.warn('[AgentManager] Worktree creation failed, using directory directly:', err);
-        worktreePath = agentConfig.directory;
+        worktreePath = undefined;
         if (agentConfig.claudeMd) {
           writeFileSync(
-            path.join(worktreePath, getInstructionFileName(agentConfig.provider)),
+            path.join(agentConfig.directory, getInstructionFileName(agentConfig.provider)),
             agentConfig.claudeMd,
           );
         }
       }
     } else {
       // Not a git repo — work directly in the directory, no worktree needed
-      worktreePath = agentConfig.directory;
-      // Write the provider-specific instruction file directly into the working directory.
       if (agentConfig.claudeMd) {
         writeFileSync(
-          path.join(worktreePath, getInstructionFileName(agentConfig.provider)),
+          path.join(agentConfig.directory, getInstructionFileName(agentConfig.provider)),
           agentConfig.claudeMd,
         );
       }
     }
 
+    const hasPrompt = agentConfig.prompt.trim().length > 0;
+
     const agent: Agent = {
       id,
       name,
-      status: 'running',
+      status: hasPrompt ? 'running' : 'waiting_input',
       config: agentConfig,
       worktreePath,
       worktreeBranch,
@@ -230,7 +235,10 @@ export class AgentManager extends EventEmitter {
 
     this.store.saveAgent(agent);
     this.store.recordPath(os.hostname(), agentConfig.directory);
-    this.startProcess(agent);
+
+    if (hasPrompt) {
+      this.startProcess(agent);
+    }
 
     // Notify dashboard of newly created agent immediately
     this.emit('agent:update', agent.id, agent);
@@ -336,8 +344,25 @@ export class AgentManager extends EventEmitter {
     this.store.saveAgent(agent);
   }
 
-  private resolveExecutionDirectory(agent: Agent): string {
+  resolveExecutionDirectory(agent: Agent): string {
     if (agent.worktreePath && existsSync(agent.worktreePath)) {
+      // The worktree is created at the git root level. If config.directory was
+      // a subdirectory, resolve the corresponding path within the worktree.
+      try {
+        const gitRoot = execSync('git rev-parse --show-toplevel', {
+          cwd: agent.config.directory,
+          stdio: 'pipe',
+        }).toString().trim();
+        const subdir = path.relative(gitRoot, agent.config.directory);
+        if (subdir && subdir !== '.' && !subdir.startsWith('..')) {
+          const effectiveDir = path.join(agent.worktreePath, subdir);
+          if (existsSync(effectiveDir)) {
+            return effectiveDir;
+          }
+        }
+      } catch {
+        // Original directory gone or not a git repo — use worktree root
+      }
       return agent.worktreePath;
     }
 
@@ -1155,6 +1180,10 @@ export class AgentManager extends EventEmitter {
       }
 
       this.enqueueUserMessage(agentId, processText);
+    } else if (agent.status === 'waiting_input') {
+      // Agent created without a prompt — start it with this message
+      agent.originalPrompt = text;
+      this.resumeAgent(agent, processText);
     } else if (agent.status === 'stopped' || agent.status === 'error') {
       // Agent is stopped — resume with new prompt
       this.resumeAgent(agent, processText);
