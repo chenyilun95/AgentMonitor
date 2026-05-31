@@ -275,4 +275,20 @@ export const zh: Record<string, string> = {
     'pipeline.slackWebhookPlaceholder': 'https://hooks.slack.com/services/...',
     'pipeline.stuckTimeout': '卡住代理超时（分钟）',
     'pipeline.saveConfig': '保存配置',
+
+    // Common (additions)
+    'common.close': '关闭',
+
+    // Nav (additions)
+    'nav.servers': '服务器',
+
+    // GPU Monitor
+    'gpu.title': 'GPU 监控',
+    'gpu.refresh': '刷新',
+    'gpu.serverCount': '{{count}} 台服务器',
+    'gpu.onlineCount': '{{count}} 台在线',
+    'gpu.openTerminal': 'SSH 终端',
+    'gpu.closeTerminal': '关闭终端',
+    'gpu.notConfigured': 'GPU 监控未配置。请在 .env 中设置 GPU_SERVERS_CONF 以启用。',
+    'gpu.noServers': '未配置服务器。',
 };

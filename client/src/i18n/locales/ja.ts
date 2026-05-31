@@ -272,4 +272,15 @@ export const ja: Record<string, string> = {
     'pipeline.slackWebhookPlaceholder': 'https://hooks.slack.com/services/...',
     'pipeline.stuckTimeout': 'スタックしたエージェントのタイムアウト（分）',
     'pipeline.saveConfig': '設定を保存',
+
+    'common.close': '閉じる',
+    'nav.servers': 'サーバー',
+    'gpu.title': 'GPU モニター',
+    'gpu.refresh': '更新',
+    'gpu.serverCount': '{{count}} 台のサーバー',
+    'gpu.onlineCount': '{{count}} 台オンライン',
+    'gpu.openTerminal': 'SSH ターミナル',
+    'gpu.closeTerminal': 'ターミナルを閉じる',
+    'gpu.notConfigured': 'GPU モニターが設定されていません。.env で GPU_SERVERS_CONF を設定してください。',
+    'gpu.noServers': 'サーバーが設定されていません。',
 };

@@ -300,4 +300,20 @@ export const en: Record<string, string> = {
     'pipeline.evalFail': 'Fail',
     'pipeline.revision': 'Revision',
     'pipeline.revisionCount': 'Revisions',
+
+    // Common (additions)
+    'common.close': 'Close',
+
+    // Nav (additions)
+    'nav.servers': 'Servers',
+
+    // GPU Monitor
+    'gpu.title': 'GPU Monitor',
+    'gpu.refresh': 'Refresh',
+    'gpu.serverCount': '{{count}} servers',
+    'gpu.onlineCount': '{{count}} online',
+    'gpu.openTerminal': 'SSH Terminal',
+    'gpu.closeTerminal': 'Close Terminal',
+    'gpu.notConfigured': 'GPU monitor is not configured. Set GPU_SERVERS_CONF in .env to enable.',
+    'gpu.noServers': 'No servers configured.',
 };

@@ -52,4 +52,14 @@ export const config = {
     /** Admin chat ID for pipeline/global notifications (optional) */
     adminChatId: process.env.FEISHU_ADMIN_CHAT_ID || '',
   },
+  gpuMonitor: {
+    serversConf: process.env.GPU_SERVERS_CONF || '',
+    jumpHost: process.env.GPU_SSH_JUMP || '',
+    identityFile: process.env.GPU_SSH_IDENTITY || '',
+    pollInterval: parseInt(process.env.GPU_POLL_INTERVAL || '10', 10),
+    sshAliveInterval: process.env.GPU_SSH_ALIVE_INTERVAL || '30',
+    controlPath: process.env.GPU_SSH_CONTROL_PATH || '~/.ssh/gpu-tmux-%C',
+    remoteBashrc: process.env.GPU_REMOTE_BASHRC || '',
+    useSshTarget: process.env.GPU_SSH_USE_TARGET === '1',
+  },
 };

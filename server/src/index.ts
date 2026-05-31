@@ -31,6 +31,8 @@ import { TerminalService } from './services/TerminalService.js';
 import { FeishuService } from './services/FeishuService.js';
 import { FeishuNotifier } from './services/FeishuNotifier.js';
 import { TelegramService } from './services/TelegramService.js';
+import { GpuMonitorService } from './services/GpuMonitorService.js';
+import { gpuMonitorRoutes } from './routes/gpu-monitor.js';
 import type { Agent } from './models/Agent.js';
 import { sanitizeAgentListSnapshot, sanitizeAgentSnapshot } from './utils/agentSnapshot.js';
 
@@ -95,6 +97,15 @@ export function createApp() {
   app.use('/api/settings', settingsRoutes(store));
   app.use('/api/upload-image', uploadRoutes());
 
+  // GPU Monitor (optional - only when GPU_SERVERS_CONF is set)
+  let gpuMonitor: GpuMonitorService | null = null;
+  if (config.gpuMonitor.serversConf) {
+    gpuMonitor = new GpuMonitorService(config.gpuMonitor);
+    gpuMonitor.start();
+    console.log(`[Server] GPU Monitor started with ${gpuMonitor.getServers().length} server(s)`);
+  }
+  app.use('/api/gpu', gpuMonitorRoutes(gpuMonitor));
+
   // Health check
   app.get('/api/health', (_req, res) => {
     res.json({ ok: true });
@@ -154,7 +165,14 @@ export function createApp() {
 
   // Socket.IO
   const terminalService = new TerminalService();
-  setupSocketHandlers(io, manager, terminalService, telegramService);
+  setupSocketHandlers(io, manager, terminalService, telegramService, gpuMonitor);
+
+  // Forward GPU monitor snapshots to socket
+  if (gpuMonitor) {
+    gpuMonitor.on('gpu:snapshot', (snapshot) => {
+      io.emit('gpu:snapshot', snapshot);
+    });
+  }
 
   // Forward agent manager pipeline events to socket
   agentManagerPipeline.on('task:update', (task) => {

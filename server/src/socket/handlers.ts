@@ -2,10 +2,11 @@ import type { Server, Socket } from 'socket.io';
 import type { AgentManager } from '../services/AgentManager.js';
 import type { TerminalService } from '../services/TerminalService.js';
 import type { TelegramService } from '../services/TelegramService.js';
+import type { GpuMonitorService } from '../services/GpuMonitorService.js';
 import type { Agent } from '../models/Agent.js';
 import { sanitizeAgentListSnapshot, sanitizeAgentSnapshot } from '../utils/agentSnapshot.js';
 
-export function setupSocketHandlers(io: Server, manager: AgentManager, terminalService: TerminalService, telegramService?: TelegramService | null): void {
+export function setupSocketHandlers(io: Server, manager: AgentManager, terminalService: TerminalService, telegramService?: TelegramService | null, gpuMonitor?: GpuMonitorService | null): void {
   // Forward agent events to connected clients
   manager.on('agent:message', (agentId: string, msg: unknown) => {
     io.to(`agent:${agentId}`).emit('agent:message', { agentId, message: msg });
@@ -39,12 +40,22 @@ export function setupSocketHandlers(io: Server, manager: AgentManager, terminalS
   });
 
   // PTY terminal output → client
-  terminalService.on('data', (agentId: string, data: string) => {
-    io.to(`agent:${agentId}`).emit('terminal:output', { agentId, data });
+  terminalService.on('data', (sessionId: string, data: string) => {
+    if (sessionId.startsWith('gpu:')) {
+      const serverName = sessionId.slice(4);
+      io.emit('gpu:terminal:output', { serverName, data });
+    } else {
+      io.to(`agent:${sessionId}`).emit('terminal:output', { agentId: sessionId, data });
+    }
   });
 
-  terminalService.on('exit', (agentId: string, exitCode: number) => {
-    io.to(`agent:${agentId}`).emit('terminal:exit', { agentId, exitCode });
+  terminalService.on('exit', (sessionId: string, exitCode: number) => {
+    if (sessionId.startsWith('gpu:')) {
+      const serverName = sessionId.slice(4);
+      io.emit('gpu:terminal:exit', { serverName, exitCode });
+    } else {
+      io.to(`agent:${sessionId}`).emit('terminal:exit', { agentId: sessionId, exitCode });
+    }
   });
 
   io.on('connection', (socket: Socket) => {
@@ -85,6 +96,28 @@ export function setupSocketHandlers(io: Server, manager: AgentManager, terminalS
 
     socket.on('terminal:close', (agentId: string) => {
       terminalService.destroy(agentId);
+    });
+
+    // --- GPU terminal events ---
+    socket.on('gpu:terminal:open', ({ serverName, cols, rows }: { serverName: string; cols?: number; rows?: number }) => {
+      if (!gpuMonitor) return;
+      const server = gpuMonitor.getServer(serverName);
+      if (!server) return;
+      const sessionId = `gpu:${serverName}`;
+      const sshArgs = gpuMonitor.buildInteractiveSshArgs(server);
+      terminalService.createSsh(sessionId, sshArgs, cols || 120, rows || 30);
+    });
+
+    socket.on('gpu:terminal:input', ({ serverName, data }: { serverName: string; data: string }) => {
+      terminalService.write(`gpu:${serverName}`, data);
+    });
+
+    socket.on('gpu:terminal:resize', ({ serverName, cols, rows }: { serverName: string; cols: number; rows: number }) => {
+      terminalService.resize(`gpu:${serverName}`, cols, rows);
+    });
+
+    socket.on('gpu:terminal:close', ({ serverName }: { serverName: string }) => {
+      terminalService.destroy(`gpu:${serverName}`);
     });
 
     // Extension: reply to Telegram command

@@ -205,6 +205,38 @@ export interface ServerSettings {
   deleteSessionFilesPolicy: DeleteSessionFilesPolicy;
 }
 
+export interface GpuServer {
+  group: string;
+  role: string;
+  name: string;
+  ip: string;
+  user: string;
+  port: string;
+  target: string;
+}
+
+export interface GpuInfo {
+  index: string;
+  utilization: number;
+  memoryPercent: number;
+  temperature: number;
+  memoryUsed: number;
+  memoryTotal: number;
+}
+
+export interface GpuSnapshot {
+  serverName: string;
+  status: 'ok' | 'offline' | 'nosmi' | 'pending';
+  gpus: GpuInfo[];
+  timestamp: number;
+}
+
+export interface GpuMonitorConfig {
+  pollInterval: number;
+  enabled: boolean;
+  serverCount: number;
+}
+
 async function uploadFile<T>(path: string, file: File, fieldName: string): Promise<T> {
   const formData = new FormData();
   formData.append(fieldName, file);
@@ -360,4 +392,16 @@ export const api = {
   getRuntimeCapabilities: () => request<RuntimeCapabilities>('/settings/runtime-capabilities'),
   updateSettings: (data: Partial<ServerSettings>) =>
     request<ServerSettings>('/settings', { method: 'PUT', body: JSON.stringify(data) }),
+
+  // GPU Monitor
+  getGpuServers: () => request<{ servers: GpuServer[]; snapshots: GpuSnapshot[]; enabled: boolean }>('/gpu/servers'),
+  getGpuServer: (name: string) => request<GpuSnapshot>(`/gpu/servers/${encodeURIComponent(name)}`),
+  execGpuCommand: (name: string, command: string) =>
+    request<{ stdout: string; exitCode: number }>(`/gpu/servers/${encodeURIComponent(name)}/exec`, {
+      method: 'POST',
+      body: JSON.stringify({ command }),
+    }),
+  getGpuConfig: () => request<GpuMonitorConfig>('/gpu/config'),
+  updateGpuConfig: (data: Partial<GpuMonitorConfig>) =>
+    request<GpuMonitorConfig>('/gpu/config', { method: 'PUT', body: JSON.stringify(data) }),
 };

@@ -272,4 +272,15 @@ export const de: Record<string, string> = {
     'pipeline.slackWebhookPlaceholder': 'https://hooks.slack.com/services/...',
     'pipeline.stuckTimeout': 'Zeitüberschreitung für blockierte Agenten (Minuten)',
     'pipeline.saveConfig': 'Konfiguration Speichern',
+
+    'common.close': 'Schließen',
+    'nav.servers': 'Server',
+    'gpu.title': 'GPU-Monitor',
+    'gpu.refresh': 'Aktualisieren',
+    'gpu.serverCount': '{{count}} Server',
+    'gpu.onlineCount': '{{count}} online',
+    'gpu.openTerminal': 'SSH-Terminal',
+    'gpu.closeTerminal': 'Terminal Schließen',
+    'gpu.notConfigured': 'GPU-Monitor ist nicht konfiguriert. Setzen Sie GPU_SERVERS_CONF in .env zum Aktivieren.',
+    'gpu.noServers': 'Keine Server konfiguriert.',
 };

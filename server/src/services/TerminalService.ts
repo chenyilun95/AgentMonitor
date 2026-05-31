@@ -97,6 +97,42 @@ export class TerminalService extends EventEmitter {
     }
   }
 
+  createSsh(sessionId: string, sshArgs: string[], cols = 120, rows = 30): string {
+    const existing = this.sessions.get(sessionId);
+    if (existing) {
+      existing.exitDisposable.dispose();
+      try {
+        process.kill(-existing.ptyProcess.pid, 'SIGTERM');
+      } catch {
+        existing.ptyProcess.kill();
+      }
+      this.sessions.delete(sessionId);
+    }
+
+    const ptyProcess = pty.spawn('ssh', sshArgs, {
+      name: 'xterm-256color',
+      cols,
+      rows,
+      env: {
+        ...process.env,
+        TERM: 'xterm-256color',
+        COLORTERM: 'truecolor',
+      } as Record<string, string>,
+    });
+
+    ptyProcess.onData((data: string) => {
+      this.emit('data', sessionId, data);
+    });
+
+    const exitDisposable = ptyProcess.onExit(({ exitCode }) => {
+      this.sessions.delete(sessionId);
+      this.emit('exit', sessionId, exitCode);
+    });
+
+    this.sessions.set(sessionId, { ptyProcess, agentId: sessionId, cwd: '', exitDisposable });
+    return sessionId;
+  }
+
   has(agentId: string): boolean {
     return this.sessions.has(agentId);
   }

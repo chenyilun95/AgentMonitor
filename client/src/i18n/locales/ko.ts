@@ -272,4 +272,15 @@ export const ko: Record<string, string> = {
     'pipeline.slackWebhookPlaceholder': 'https://hooks.slack.com/services/...',
     'pipeline.stuckTimeout': '멈춘 에이전트 타임아웃 (분)',
     'pipeline.saveConfig': '구성 저장',
+
+    'common.close': '닫기',
+    'nav.servers': '서버',
+    'gpu.title': 'GPU 모니터',
+    'gpu.refresh': '새로고침',
+    'gpu.serverCount': '서버 {{count}}대',
+    'gpu.onlineCount': '{{count}}대 온라인',
+    'gpu.openTerminal': 'SSH 터미널',
+    'gpu.closeTerminal': '터미널 닫기',
+    'gpu.notConfigured': 'GPU 모니터가 구성되지 않았습니다. .env에서 GPU_SERVERS_CONF를 설정하세요.',
+    'gpu.noServers': '서버가 구성되지 않았습니다.',
 };
