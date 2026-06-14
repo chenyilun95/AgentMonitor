@@ -519,7 +519,7 @@ export class AgentManager extends EventEmitter {
               role: 'tool',
               content: `Using tool: ${block.name || 'unknown'}`,
               toolName: block.name || 'unknown',
-              toolInput: inputStr.length > 5000 ? inputStr.slice(0, 5000) + '\n...(truncated)' : inputStr,
+              toolInput: inputStr.length > 50000 ? inputStr.slice(0, 50000) + '\n...(truncated)' : inputStr,
               timestamp: Date.now(),
             });
           }
