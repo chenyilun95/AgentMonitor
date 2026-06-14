@@ -186,7 +186,7 @@ export class HarnessOrchestrator extends EventEmitter {
 
     // Get the generator's agent to find its worktree
     const agent = task.agentId ? this.store.getAgent(task.agentId) : undefined;
-    const evalDir = agent?.worktreePath || workingDir;
+    const evalDir = agent ? this.agentManager.resolveExecutionDirectory(agent) : workingDir;
 
     const evalPrompt = this.buildEvaluatorPrompt(task, criteria);
 

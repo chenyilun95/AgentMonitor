@@ -82,7 +82,7 @@ export function setupSocketHandlers(io: Server, manager: AgentManager, terminalS
     socket.on('terminal:open', ({ agentId, cols, rows, initialCommand }: { agentId: string; cols?: number; rows?: number; initialCommand?: string }) => {
       const agent = manager.getAgent(agentId);
       if (!agent) return;
-      const cwd = agent.worktreePath || agent.config.directory;
+      const cwd = manager.resolveExecutionDirectory(agent);
       terminalService.create(agentId, cwd, cols || 120, rows || 30, initialCommand);
     });
 
