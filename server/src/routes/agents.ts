@@ -98,7 +98,7 @@ export function agentRoutes(manager: AgentManager, store: AgentStore): Router {
         return;
       }
 
-      const nextWorkspaceMode = workspaceMode === 'direct' ? 'direct' : 'worktree';
+      const nextWorkspaceMode = workspaceMode === 'worktree' ? 'worktree' : 'direct';
 
       const agent = await manager.createAgent(name, {
         provider: nextProvider,

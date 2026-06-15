@@ -42,7 +42,7 @@ export function CreateAgent() {
   const [resumeSession, setResumeSession] = useState('');
   const [model, setModel] = useState<ModelSelection>('default');
   const [reasoningEffort, setReasoningEffort] = useState<ReasoningEffortSelection>('default');
-  const [workspaceMode, setWorkspaceMode] = useState<'worktree' | 'direct'>('worktree');
+  const [workspaceMode, setWorkspaceMode] = useState<'worktree' | 'direct'>('direct');
   const [runtimeCapabilities, setRuntimeCapabilities] = useState<RuntimeCapabilities | null>(null);
   const [creating, setCreating] = useState(false);
   const [error, setError] = useState('');

@@ -71,7 +71,7 @@ export const fr: Record<string, string> = {
     'create.workingDir': 'Répertoire de travail',
     'create.workingDirPlaceholder': '/chemin/vers/projet',
     'create.workspaceMode': 'Workspace Mode',
-    'create.workspaceMode.worktree': 'Worktree',
+    'create.workspaceMode.worktree': 'Worktree-xxxx',
     'create.workspaceMode.worktreeDesc': 'Isolated branch under .agent-worktrees/. Merge back when done.',
     'create.workspaceMode.direct': 'Direct',
     'create.workspaceMode.directDesc': 'Symlink to the original repo. Edits land immediately.',

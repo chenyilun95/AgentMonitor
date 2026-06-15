@@ -147,7 +147,7 @@ export class AgentManager extends EventEmitter {
   ): Promise<Agent> {
     const id = uuid();
     const branchName = `agent-${id.slice(0, 8)}`;
-    const workspaceMode: AgentWorkspaceMode = opts.workspaceMode === 'direct' ? 'direct' : 'worktree';
+    const workspaceMode: AgentWorkspaceMode = opts.workspaceMode === 'worktree' ? 'worktree' : 'direct';
 
     let worktreePath: string | undefined;
     let worktreeBranch: string | undefined;

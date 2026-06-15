@@ -71,7 +71,7 @@ export const es: Record<string, string> = {
     'create.workingDir': 'Directorio de Trabajo',
     'create.workingDirPlaceholder': '/ruta/al/proyecto',
     'create.workspaceMode': 'Workspace Mode',
-    'create.workspaceMode.worktree': 'Worktree',
+    'create.workspaceMode.worktree': 'Worktree-xxxx',
     'create.workspaceMode.worktreeDesc': 'Isolated branch under .agent-worktrees/. Merge back when done.',
     'create.workspaceMode.direct': 'Direct',
     'create.workspaceMode.directDesc': 'Symlink to the original repo. Edits land immediately.',

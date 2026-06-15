@@ -71,7 +71,7 @@ export const ko: Record<string, string> = {
     'create.workingDir': '작업 디렉토리',
     'create.workingDirPlaceholder': '/path/to/project',
     'create.workspaceMode': 'Workspace Mode',
-    'create.workspaceMode.worktree': 'Worktree',
+    'create.workspaceMode.worktree': 'Worktree-xxxx',
     'create.workspaceMode.worktreeDesc': 'Isolated branch under .agent-worktrees/. Merge back when done.',
     'create.workspaceMode.direct': 'Direct',
     'create.workspaceMode.directDesc': 'Symlink to the original repo. Edits land immediately.',

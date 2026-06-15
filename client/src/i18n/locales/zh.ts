@@ -71,7 +71,7 @@ export const zh: Record<string, string> = {
     'create.workingDir': '工作目录',
     'create.workingDirPlaceholder': '/path/to/project',
     'create.workspaceMode': '工作区模式',
-    'create.workspaceMode.worktree': 'Worktree 模式',
+    'create.workspaceMode.worktree': 'Worktree-xxxx 模式',
     'create.workspaceMode.worktreeDesc': '在 .agent-worktrees/ 下创建独立分支，完成后需要合并回去。',
     'create.workspaceMode.direct': 'Direct 模式',
     'create.workspaceMode.directDesc': '通过软链接直接修改原仓库，改动立即生效。',
