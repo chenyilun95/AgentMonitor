@@ -84,7 +84,7 @@ export function agentRoutes(manager: AgentManager, store: AgentStore): Router {
   // Create agent
   router.post('/', async (req, res) => {
     try {
-      const { name, directory, prompt, claudeMd, adminEmail, whatsappPhone, slackWebhookUrl, flags, provider, labels } = req.body;
+      const { name, directory, prompt, claudeMd, adminEmail, whatsappPhone, slackWebhookUrl, flags, provider, labels, workspaceMode } = req.body;
       const nextProvider: AgentProvider = provider === 'codex' ? 'codex' : 'claude';
       const reasoningEffort = flags?.reasoningEffort;
 
@@ -98,6 +98,8 @@ export function agentRoutes(manager: AgentManager, store: AgentStore): Router {
         return;
       }
 
+      const nextWorkspaceMode = workspaceMode === 'direct' ? 'direct' : 'worktree';
+
       const agent = await manager.createAgent(name, {
         provider: nextProvider,
         directory,
@@ -107,7 +109,7 @@ export function agentRoutes(manager: AgentManager, store: AgentStore): Router {
         whatsappPhone,
         slackWebhookUrl,
         flags: flags || {},
-      }, labels);
+      }, labels, { workspaceMode: nextWorkspaceMode });
 
       res.status(201).json(agent);
     } catch (err) {

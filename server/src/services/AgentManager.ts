@@ -4,7 +4,7 @@ import { execSync } from 'child_process';
 import { readFileSync, readdirSync, existsSync, mkdirSync, writeFileSync, statSync, unlinkSync } from 'fs';
 import path, { basename } from 'path';
 import os from 'os';
-import type { Agent, AgentConfig, AgentInteractionMode, AgentMessage, AgentStatus, ReasoningEffort } from '../models/Agent.js';
+import type { Agent, AgentConfig, AgentInteractionMode, AgentMessage, AgentStatus, AgentWorkspaceMode, ReasoningEffort } from '../models/Agent.js';
 import { AgentStore } from '../store/AgentStore.js';
 import { AgentProcess, type StreamMessage } from './AgentProcess.js';
 import { WorktreeManager } from './WorktreeManager.js';
@@ -139,9 +139,15 @@ export class AgentManager extends EventEmitter {
     }
   }
 
-  async createAgent(name: string, agentConfig: AgentConfig, labels?: Record<string, string>): Promise<Agent> {
+  async createAgent(
+    name: string,
+    agentConfig: AgentConfig,
+    labels?: Record<string, string>,
+    opts: { workspaceMode?: AgentWorkspaceMode } = {},
+  ): Promise<Agent> {
     const id = uuid();
     const branchName = `agent-${id.slice(0, 8)}`;
+    const workspaceMode: AgentWorkspaceMode = opts.workspaceMode === 'direct' ? 'direct' : 'worktree';
 
     let worktreePath: string | undefined;
     let worktreeBranch: string | undefined;
@@ -182,18 +188,26 @@ export class AgentManager extends EventEmitter {
 
     if (isGitRepo && gitRoot) {
       try {
-        const result = this.worktreeManager.createWorktree(
-          gitRoot,
-          branchName,
-          agentConfig.claudeMd,
-          agentConfig.provider,
-        );
-        worktreePath = result.worktreePath;
-        worktreeBranch = result.branch;
+        if (workspaceMode === 'direct') {
+          const result = this.worktreeManager.createDirectLink(gitRoot, branchName);
+          worktreePath = result.worktreePath;
+          worktreeBranch = undefined;
+          // Direct mode edits the user's real repo; we don't write CLAUDE.md there.
+          // The user can place CLAUDE.md themselves if they want it loaded.
+        } else {
+          const result = this.worktreeManager.createWorktree(
+            gitRoot,
+            branchName,
+            agentConfig.claudeMd,
+            agentConfig.provider,
+          );
+          worktreePath = result.worktreePath;
+          worktreeBranch = result.branch;
+        }
       } catch (err) {
-        console.warn('[AgentManager] Worktree creation failed, using directory directly:', err);
+        console.warn('[AgentManager] Workspace setup failed, using directory directly:', err);
         worktreePath = undefined;
-        if (agentConfig.claudeMd) {
+        if (workspaceMode !== 'direct' && agentConfig.claudeMd) {
           writeFileSync(
             path.join(agentConfig.directory, getInstructionFileName(agentConfig.provider)),
             agentConfig.claudeMd,
@@ -202,7 +216,7 @@ export class AgentManager extends EventEmitter {
       }
     } else {
       // Not a git repo — work directly in the directory, no worktree needed
-      if (agentConfig.claudeMd) {
+      if (workspaceMode !== 'direct' && agentConfig.claudeMd) {
         writeFileSync(
           path.join(agentConfig.directory, getInstructionFileName(agentConfig.provider)),
           agentConfig.claudeMd,
@@ -219,6 +233,7 @@ export class AgentManager extends EventEmitter {
       config: agentConfig,
       worktreePath,
       worktreeBranch,
+      workspaceMode,
       messages: [],
       lastActivity: Date.now(),
       createdAt: Date.now(),
@@ -230,8 +245,11 @@ export class AgentManager extends EventEmitter {
       interactionMode: 'default',
     };
 
-    // Take initial code snapshot (before turn 0) so we can restore to clean state
-    this.takeCodeSnapshot(agent, 0);
+    // Take initial code snapshot (before turn 0) so we can restore to clean state.
+    // Skipped in direct mode — we don't commit to the user's real branch.
+    if (workspaceMode !== 'direct') {
+      this.takeCodeSnapshot(agent, 0);
+    }
 
     this.store.saveAgent(agent);
     this.store.recordPath(os.hostname(), agentConfig.directory);
@@ -1349,15 +1367,19 @@ export class AgentManager extends EventEmitter {
       this.purgeSessionFiles(agent);
     }
 
-    if (agent?.worktreePath && agent.worktreeBranch) {
+    if (agent?.worktreePath) {
       try {
-        this.worktreeManager.removeWorktree(
-          agent.config.directory,
-          agent.worktreePath,
-          agent.worktreeBranch,
-        );
+        if (agent.workspaceMode === 'direct') {
+          this.worktreeManager.removeDirectLink(agent.worktreePath);
+        } else if (agent.worktreeBranch) {
+          this.worktreeManager.removeWorktree(
+            agent.config.directory,
+            agent.worktreePath,
+            agent.worktreeBranch,
+          );
+        }
       } catch (err) {
-        console.warn('[AgentManager] Worktree cleanup failed:', err);
+        console.warn('[AgentManager] Workspace cleanup failed:', err);
       }
     }
     this.store.deleteAgent(agentId);
@@ -1652,6 +1674,7 @@ export class AgentManager extends EventEmitter {
 
   private takeCodeSnapshot(agent: Agent, beforeTurnIndex: number): void {
     if (!agent.worktreePath) return;
+    if (agent.workspaceMode === 'direct') return;
     try {
       execSync('git rev-parse --git-dir', { cwd: agent.worktreePath, stdio: 'pipe' });
       // Commit all current changes (including untracked) as a snapshot.
@@ -1676,6 +1699,9 @@ export class AgentManager extends EventEmitter {
   private restoreAgentCode(agent: Agent, beforeTurnIndex: number): { restored: boolean; warning?: string } {
     if (!agent.worktreePath) {
       return { restored: false, warning: 'No worktree is attached to this agent, so code was not restored.' };
+    }
+    if (agent.workspaceMode === 'direct') {
+      return { restored: false, warning: 'Agent is in direct mode (no isolated worktree); code was not restored.' };
     }
     try {
       execSync('git rev-parse --git-dir', { cwd: agent.worktreePath, stdio: 'pipe' });

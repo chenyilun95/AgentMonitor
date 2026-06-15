@@ -52,6 +52,35 @@ export class WorktreeManager {
     }
   }
 
+  createDirectLink(
+    repoDir: string,
+    branchName: string,
+  ): { worktreePath: string } {
+    const worktreeBase = path.join(repoDir, '.agent-worktrees');
+    fs.mkdirSync(worktreeBase, { recursive: true });
+
+    execSync('git rev-parse --git-dir', { cwd: repoDir, stdio: 'pipe' });
+
+    const worktreePath = path.join(worktreeBase, branchName);
+    if (fs.existsSync(worktreePath) || fs.lstatSync(worktreePath, { throwIfNoEntry: false })) {
+      throw new Error(`workspace path already exists: ${worktreePath}`);
+    }
+    fs.symlinkSync(repoDir, worktreePath, 'dir');
+    return { worktreePath };
+  }
+
+  removeDirectLink(worktreePath: string): void {
+    try {
+      const stat = fs.lstatSync(worktreePath);
+      if (stat.isSymbolicLink()) {
+        fs.unlinkSync(worktreePath);
+      }
+      // If it isn't a symlink, refuse to touch it — caller likely passed wrong path.
+    } catch {
+      // already gone
+    }
+  }
+
   updateClaudeMd(worktreePath: string, content: string, provider: AgentProvider = 'claude'): void {
     fs.writeFileSync(path.join(worktreePath, getInstructionFileName(provider)), content);
   }

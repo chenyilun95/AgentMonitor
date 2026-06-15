@@ -1,6 +1,7 @@
 export type AgentStatus = 'running' | 'stopped' | 'error' | 'waiting_input';
 export type AgentProvider = 'claude' | 'codex';
 export type AgentInteractionMode = 'default' | 'plan';
+export type AgentWorkspaceMode = 'worktree' | 'direct';
 export const REASONING_EFFORTS = ['low', 'medium', 'high', 'xhigh', 'max'] as const;
 export type ReasoningEffort = (typeof REASONING_EFFORTS)[number];
 export const PROVIDER_REASONING_EFFORTS: Record<AgentProvider, readonly ReasoningEffort[]> = {
@@ -57,6 +58,7 @@ export interface Agent {
   config: AgentConfig;
   worktreePath?: string;
   worktreeBranch?: string;
+  workspaceMode?: AgentWorkspaceMode;
   messages: AgentMessage[];
   lastActivity: number;
   createdAt: number;
