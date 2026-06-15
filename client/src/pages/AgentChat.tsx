@@ -102,6 +102,7 @@ function buildResumeCommand(agent: Agent | null, runtimeCapabilities?: RuntimeCa
   if (provider === 'codex') {
     const parts = ['codex', 'resume', '--include-non-interactive', agent.sessionId];
     const flags = agent.config.flags || {};
+    let addedApprovalPolicyNever = false;
 
     for (const [key, value] of Object.entries(flags)) {
       if (key === 'resume') continue;
@@ -110,11 +111,17 @@ function buildResumeCommand(agent: Agent | null, runtimeCapabilities?: RuntimeCa
         continue;
       }
       if (key === 'fullAuto' && value === true) {
-        parts.push('--full-auto');
+        if (!addedApprovalPolicyNever) {
+          parts.push('-c', 'approval_policy="never"');
+          addedApprovalPolicyNever = true;
+        }
         continue;
       }
       if (key === 'askForApprovalNever' && value === true) {
-        parts.push('--ask-for-approval', 'never');
+        if (!addedApprovalPolicyNever) {
+          parts.push('-c', 'approval_policy="never"');
+          addedApprovalPolicyNever = true;
+        }
         continue;
       }
       if (key === 'sandboxDangerFullAccess' && value === true) {
@@ -1134,6 +1141,19 @@ export function AgentChat() {
               <span className="provider-badge" style={{ background: '#6366f1', color: '#fff', marginLeft: 4 }}>EXT</span>
             )}
             <span className="agent-title-text">{agent.name}</span>
+            {agent.workspaceMode === 'direct' ? (
+              <span className="card-direct" title={t('workspaceMode.directTooltip')}>
+                <span className="direct-icon" aria-hidden>🔗</span>
+                {t('workspaceMode.direct')}
+              </span>
+            ) : agent.worktreeBranch ? (
+              <span className="card-branch" title={t('workspaceMode.worktreeTooltip')}>
+                <svg className="branch-icon" viewBox="0 0 16 16" width="12" height="12" fill="currentColor">
+                  <path d="M9.5 3.25a2.25 2.25 0 1 1 3 2.122V6A2.5 2.5 0 0 1 10 8.5H6a1 1 0 0 0-1 1v1.128a2.251 2.251 0 1 1-1.5 0V5.372a2.25 2.25 0 1 1 1.5 0v1.836A2.492 2.492 0 0 1 6 7h4a1 1 0 0 0 1-1v-.628A2.25 2.25 0 0 1 9.5 3.25Zm-6 0a.75.75 0 1 0 1.5 0 .75.75 0 0 0-1.5 0Zm8.25-.75a.75.75 0 1 0 0 1.5.75.75 0 0 0 0-1.5ZM4.25 12a.75.75 0 1 0 0 1.5.75.75 0 0 0 0-1.5Z" />
+                </svg>
+                {agent.worktreeBranch}
+              </span>
+            ) : null}
             <button
               type="button"
               className="agent-rename-btn"

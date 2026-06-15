@@ -589,6 +589,82 @@ body::after {
   opacity: 0.6;
 }
 
+.card-direct {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  background: rgba(245, 158, 11, 0.12);
+  border: 1px solid rgba(245, 158, 11, 0.4);
+  color: var(--text);
+  border-radius: 6px;
+  padding: 2px 8px;
+  font-size: 11px;
+  font-family: var(--font-mono);
+  margin-left: 4px;
+  white-space: nowrap;
+}
+
+.card-direct .direct-icon {
+  font-size: 10px;
+  line-height: 1;
+}
+
+.workspace-mode-toggle {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 8px;
+}
+
+.workspace-mode-option {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 4px;
+  padding: 10px 12px;
+  background: var(--bg-input);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  color: var(--text);
+  cursor: pointer;
+  text-align: left;
+  transition: border-color 0.15s ease, background 0.15s ease;
+}
+
+.workspace-mode-option:hover {
+  border-color: var(--border-strong, var(--border));
+}
+
+.workspace-mode-option.is-selected {
+  border-color: var(--accent, #3b82f6);
+  background: var(--bg-card);
+}
+
+.workspace-mode-icon {
+  font-size: 14px;
+  line-height: 1;
+}
+
+.workspace-mode-label {
+  font-weight: 600;
+  font-size: 13px;
+}
+
+.workspace-mode-desc {
+  font-size: 11px;
+  color: var(--text-muted);
+}
+
+.workspace-mode-warning {
+  display: block;
+  margin-top: 6px;
+  padding: 6px 10px;
+  border-radius: var(--radius);
+  background: rgba(245, 158, 11, 0.1);
+  border: 1px solid rgba(245, 158, 11, 0.35);
+  color: var(--text);
+  font-size: 11px;
+}
+
 .card-pr-link {
   display: inline-flex;
   align-items: center;

@@ -68,6 +68,7 @@ export interface Agent {
   };
   worktreePath?: string;
   worktreeBranch?: string;
+  workspaceMode?: 'worktree' | 'direct';
   messages: Array<{
     id: string;
     role: string;
@@ -274,6 +275,7 @@ export const api = {
     slackWebhookUrl?: string;
     flags?: AgentFlags;
     labels?: Record<string, string>;
+    workspaceMode?: 'worktree' | 'direct';
   }) => request<Agent>('/agents', { method: 'POST', body: JSON.stringify(data) }),
   stopAgent: (id: string) =>
     request('/agents/' + id + '/stop', { method: 'POST' }),

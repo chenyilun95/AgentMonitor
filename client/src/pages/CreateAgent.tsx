@@ -30,7 +30,6 @@ export function CreateAgent() {
   const [slackWebhookUrl, setSlackWebhookUrl] = useState('');
   const [skipPermissions, setSkipPermissions] = useState(true);
   const [fullAuto, setFullAuto] = useState(true);
-  const [askForApprovalNever, setAskForApprovalNever] = useState(true);
   const [sandboxDangerFullAccess, setSandboxDangerFullAccess] = useState(true);
   const [chrome, setChrome] = useState(false);
   const [permissionMode, setPermissionMode] = useState('');
@@ -43,6 +42,7 @@ export function CreateAgent() {
   const [resumeSession, setResumeSession] = useState('');
   const [model, setModel] = useState<ModelSelection>('default');
   const [reasoningEffort, setReasoningEffort] = useState<ReasoningEffortSelection>('default');
+  const [workspaceMode, setWorkspaceMode] = useState<'worktree' | 'direct'>('worktree');
   const [runtimeCapabilities, setRuntimeCapabilities] = useState<RuntimeCapabilities | null>(null);
   const [creating, setCreating] = useState(false);
   const [error, setError] = useState('');
@@ -87,7 +87,6 @@ export function CreateAgent() {
         const f = source.config.flags || {};
         setSkipPermissions(!!f.dangerouslySkipPermissions);
         setFullAuto(!!f.fullAuto);
-        setAskForApprovalNever(!!f.askForApprovalNever);
         setSandboxDangerFullAccess(!!f.sandboxDangerFullAccess);
         setChrome(!!f.chrome);
         setPermissionMode((f.permissionMode as string) || '');
@@ -98,6 +97,7 @@ export function CreateAgent() {
         setMcpConfig((f.mcpConfig as string) || '');
         setModel(normalizeModelSelection(source.config.provider, f.model, runtimeCapabilities, true));
         setReasoningEffort(normalizeReasoningEffortSelection(source.config.provider, f.reasoningEffort, runtimeCapabilities));
+        setWorkspaceMode(source.workspaceMode === 'direct' ? 'direct' : 'worktree');
       }).catch(() => {});
     }
 
@@ -238,10 +238,10 @@ export function CreateAgent() {
         whatsappPhone: whatsappPhone || undefined,
         slackWebhookUrl: slackWebhookUrl || undefined,
         labels: Object.keys(parsedLabels).length > 0 ? parsedLabels : undefined,
+        workspaceMode,
         flags: {
           dangerouslySkipPermissions: skipPermissions || undefined,
           fullAuto: fullAuto || undefined,
-          askForApprovalNever: askForApprovalNever || undefined,
           sandboxDangerFullAccess: sandboxDangerFullAccess || undefined,
           chrome: chrome || undefined,
           permissionMode: permissionMode || undefined,
@@ -371,6 +371,39 @@ export function CreateAgent() {
             );
           })()}
         </div>
+      </div>
+
+      <div className="form-group">
+        <label>{t('create.workspaceMode')}</label>
+        <div className="workspace-mode-toggle" role="radiogroup">
+          <button
+            type="button"
+            role="radio"
+            aria-checked={workspaceMode === 'worktree'}
+            className={`workspace-mode-option ${workspaceMode === 'worktree' ? 'is-selected' : ''}`}
+            onClick={() => setWorkspaceMode('worktree')}
+          >
+            <span className="workspace-mode-icon" aria-hidden>⎇</span>
+            <span className="workspace-mode-label">{t('create.workspaceMode.worktree')}</span>
+            <span className="workspace-mode-desc">{t('create.workspaceMode.worktreeDesc')}</span>
+          </button>
+          <button
+            type="button"
+            role="radio"
+            aria-checked={workspaceMode === 'direct'}
+            className={`workspace-mode-option ${workspaceMode === 'direct' ? 'is-selected' : ''}`}
+            onClick={() => setWorkspaceMode('direct')}
+          >
+            <span className="workspace-mode-icon" aria-hidden>🔗</span>
+            <span className="workspace-mode-label">{t('create.workspaceMode.direct')}</span>
+            <span className="workspace-mode-desc">{t('create.workspaceMode.directDesc')}</span>
+          </button>
+        </div>
+        {workspaceMode === 'direct' && (
+          <small className="workspace-mode-warning">
+            {t('create.workspaceMode.directWarning')}
+          </small>
+        )}
       </div>
 
       {showDirBrowser && dirListing && (
@@ -548,17 +581,7 @@ export function CreateAgent() {
                 checked={fullAuto}
                 onChange={(e) => setFullAuto(e.target.checked)}
               />
-              --full-auto
-            </label>
-          )}
-          {provider === 'codex' && (
-            <label className="checkbox-label">
-              <input
-                type="checkbox"
-                checked={askForApprovalNever}
-                onChange={(e) => setAskForApprovalNever(e.target.checked)}
-              />
-              --ask-for-approval never
+              approval_policy="never"
             </label>
           )}
           {provider === 'codex' && (
