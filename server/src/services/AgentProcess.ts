@@ -341,6 +341,19 @@ export class AgentProcess extends EventEmitter {
     }
   }
 
+  sendToolResult(toolUseId: string, content: string, isError = false): void {
+    if (this.process?.stdin?.writable) {
+      const msg = JSON.stringify({
+        type: 'user',
+        message: {
+          role: 'user',
+          content: [{ type: 'tool_result', tool_use_id: toolUseId, content, is_error: isError }],
+        },
+      });
+      this.process.stdin.write(msg + '\n');
+    }
+  }
+
   interrupt(): void {
     if (this.process && this._pid) {
       try {

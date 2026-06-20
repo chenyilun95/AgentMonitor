@@ -82,5 +82,27 @@ export interface Agent {
     sourceMessageId: string;
     createdAt: number;
     approvedAt?: number;
+    toolUseId?: string;
   };
+  pendingQuestion?: {
+    id: string;
+    toolUseId: string;
+    questions: PendingQuestionItem[];
+    sourceMessageId: string;
+    createdAt: number;
+    answeredAt?: number;
+  };
+}
+
+export interface PendingQuestionOption {
+  label: string;
+  description?: string;
+  preview?: string;
+}
+
+export interface PendingQuestionItem {
+  question: string;
+  header?: string;
+  multiSelect?: boolean;
+  options: PendingQuestionOption[];
 }

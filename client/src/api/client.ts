@@ -98,6 +98,20 @@ export interface Agent {
     sourceMessageId: string;
     createdAt: number;
     approvedAt?: number;
+    toolUseId?: string;
+  };
+  pendingQuestion?: {
+    id: string;
+    toolUseId: string;
+    sourceMessageId: string;
+    createdAt: number;
+    answeredAt?: number;
+    questions: Array<{
+      question: string;
+      header?: string;
+      multiSelect?: boolean;
+      options: Array<{ label: string; description?: string; preview?: string }>;
+    }>;
   };
 }
 
@@ -298,6 +312,11 @@ export const api = {
     request<Agent>('/agents/' + id + '/plan/approve', { method: 'POST' }),
   revisePlan: (id: string) =>
     request<Agent>('/agents/' + id + '/plan/revise', { method: 'POST' }),
+  answerQuestion: (id: string, answers: Record<string, string>) =>
+    request<Agent>('/agents/' + id + '/answer-question', {
+      method: 'POST',
+      body: JSON.stringify({ answers }),
+    }),
   interruptAgent: (id: string) =>
     request('/agents/' + id + '/interrupt', { method: 'POST' }),
   newConversation: (id: string) =>

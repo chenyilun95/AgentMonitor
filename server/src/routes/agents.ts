@@ -194,6 +194,20 @@ export function agentRoutes(manager: AgentManager, store: AgentStore): Router {
     res.json(sanitizeAgentSnapshot(agent));
   });
 
+  router.post('/:id/answer-question', (req, res) => {
+    const { answers } = req.body;
+    if (!answers || typeof answers !== 'object') {
+      res.status(400).json({ error: 'answers (object) is required' });
+      return;
+    }
+    const agent = manager.answerQuestion(req.params.id, answers);
+    if (!agent) {
+      res.status(404).json({ error: 'agent not found' });
+      return;
+    }
+    res.json(sanitizeAgentSnapshot(agent));
+  });
+
   // Interrupt agent (double-Esc)
   router.post('/:id/interrupt', (req, res) => {
     manager.interruptAgent(req.params.id);
