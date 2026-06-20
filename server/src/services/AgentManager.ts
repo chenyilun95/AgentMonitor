@@ -4,7 +4,7 @@ import { execSync } from 'child_process';
 import { readFileSync, readdirSync, existsSync, mkdirSync, writeFileSync, statSync, unlinkSync } from 'fs';
 import path, { basename } from 'path';
 import os from 'os';
-import type { Agent, AgentConfig, AgentInteractionMode, AgentMessage, AgentStatus, AgentWorkspaceMode, ReasoningEffort } from '../models/Agent.js';
+import type { Agent, AgentConfig, AgentInteractionMode, AgentMessage, AgentStatus, AgentWorkspaceMode, PendingQuestionItem, PendingQuestionOption, ReasoningEffort } from '../models/Agent.js';
 import { AgentStore } from '../store/AgentStore.js';
 import { AgentProcess, type StreamMessage } from './AgentProcess.js';
 import { WorktreeManager } from './WorktreeManager.js';
@@ -484,6 +484,7 @@ export class AgentManager extends EventEmitter {
         lastActivity: agent.lastActivity,
         interactionMode: agent.interactionMode,
         pendingPlan: agent.pendingPlan,
+        pendingQuestion: agent.pendingQuestion,
       });
     }
 
@@ -512,6 +513,81 @@ export class AgentManager extends EventEmitter {
     }
   }
 
+  /**
+   * Detect structured interactive tool calls (AskUserQuestion, ExitPlanMode) and
+   * stash their tool_use_id + parsed input on the agent so the UI can render
+   * approval / question controls and we can later send a `tool_result` back to
+   * unblock Claude. Without this, Claude hangs forever waiting for a reply that
+   * the chat UI's text input can't provide.
+   */
+  private captureInteractiveTool(
+    agent: Agent,
+    block: { type: string; name?: string; input?: unknown; id?: string },
+    sourceMessageId: string,
+  ): void {
+    if (!block.id || !block.name) return;
+    const input = block.input as Record<string, unknown> | undefined;
+
+    if (block.name === 'AskUserQuestion') {
+      const rawQuestions = Array.isArray(input?.questions) ? (input!.questions as unknown[]) : [];
+      const questions: PendingQuestionItem[] = [];
+      for (const q of rawQuestions) {
+        if (!q || typeof q !== 'object') continue;
+        const qo = q as Record<string, unknown>;
+        const questionText = typeof qo.question === 'string' ? qo.question : '';
+        if (!questionText) continue;
+        const rawOpts = Array.isArray(qo.options) ? (qo.options as unknown[]) : [];
+        const options: PendingQuestionOption[] = [];
+        for (const opt of rawOpts) {
+          if (!opt || typeof opt !== 'object') continue;
+          const oo = opt as Record<string, unknown>;
+          const label = typeof oo.label === 'string' ? oo.label : '';
+          if (!label) continue;
+          options.push({
+            label,
+            description: typeof oo.description === 'string' ? oo.description : undefined,
+            preview: typeof oo.preview === 'string' ? oo.preview : undefined,
+          });
+        }
+        if (options.length === 0) continue;
+        questions.push({
+          question: questionText,
+          header: typeof qo.header === 'string' ? qo.header : undefined,
+          multiSelect: qo.multiSelect === true,
+          options,
+        });
+      }
+      if (questions.length === 0) return;
+      agent.pendingQuestion = {
+        id: uuid(),
+        toolUseId: block.id,
+        questions,
+        sourceMessageId,
+        createdAt: Date.now(),
+      };
+      agent.lastActivity = Date.now();
+      this.store.saveAgent(agent);
+      this.updateAgentStatus(agent.id, 'waiting_input');
+      return;
+    }
+
+    if (block.name === 'ExitPlanMode') {
+      const plan = typeof input?.plan === 'string' ? (input!.plan as string) : '';
+      if (!plan) return;
+      agent.pendingPlan = {
+        id: uuid(),
+        content: plan,
+        sourceMessageId,
+        createdAt: Date.now(),
+        toolUseId: block.id,
+      };
+      agent.interactionMode = 'plan';
+      agent.lastActivity = Date.now();
+      this.store.saveAgent(agent);
+      this.updateAgentStatus(agent.id, 'waiting_input');
+    }
+  }
+
   private extractProposedPlan(text: string): string | undefined {
     const match = text.match(/<proposed_plan>\s*([\s\S]*?)\s*<\/proposed_plan>/i);
     return match?.[1]?.trim() || undefined;
@@ -520,7 +596,7 @@ export class AgentManager extends EventEmitter {
   private handleClaudeMessage(agent: Agent, msg: StreamMessage): void {
     // With --verbose, assistant messages have: {type: "assistant", message: {content: [{type: "text", text: "..."}]}}
     if (msg.type === 'assistant') {
-      const message = msg.message as { content?: Array<{ type: string; text?: string; name?: string; input?: unknown }> } | undefined;
+      const message = msg.message as { content?: Array<{ type: string; text?: string; name?: string; input?: unknown; id?: string }> } | undefined;
       if (message?.content) {
         for (const block of message.content) {
           if (block.type === 'text' && block.text) {
@@ -532,14 +608,16 @@ export class AgentManager extends EventEmitter {
             });
           } else if (block.type === 'tool_use') {
             const inputStr = block.input ? (typeof block.input === 'string' ? block.input : JSON.stringify(block.input, null, 2)) : '';
+            const toolMessageId = uuid();
             agent.messages.push({
-              id: uuid(),
+              id: toolMessageId,
               role: 'tool',
               content: `Using tool: ${block.name || 'unknown'}`,
               toolName: block.name || 'unknown',
               toolInput: inputStr.length > 50000 ? inputStr.slice(0, 50000) + '\n...(truncated)' : inputStr,
               timestamp: Date.now(),
             });
+            this.captureInteractiveTool(agent, block, toolMessageId);
           }
         }
         agent.lastActivity = Date.now();
@@ -1145,13 +1223,89 @@ export class AgentManager extends EventEmitter {
     this.store.saveAgent(agent);
     this.emit('agent:update', agentId, agent);
 
-    this.sendMessage(agentId, PLAN_APPROVAL_MESSAGE);
+    // If the pending plan came from an ExitPlanMode tool_use, Claude is blocked
+    // waiting for a tool_result with that exact tool_use_id — sending plain text
+    // would not unblock it. Otherwise (legacy <proposed_plan> text protocol),
+    // fall back to the regular message channel.
+    const toolUseId = agent.pendingPlan.toolUseId;
+    const proc = this.processes.get(agentId);
+    if (toolUseId && proc) {
+      proc.sendToolResult(toolUseId, PLAN_APPROVAL_MESSAGE);
+      this.updateAgentStatus(agentId, 'running');
+      this.pendingUserMessage.set(agentId, Date.now());
+      this.emit('agent:message', agentId, { type: 'user', text: PLAN_APPROVAL_MESSAGE });
+    } else {
+      this.sendMessage(agentId, PLAN_APPROVAL_MESSAGE);
+    }
     return this.store.getAgent(agentId);
+  }
+
+  /**
+   * Reply to a pending AskUserQuestion tool call.
+   * `answers` maps each question text to the chosen option label
+   * (or comma-joined labels for multi-select).
+   */
+  answerQuestion(agentId: string, answers: Record<string, string>): Agent | undefined {
+    const agent = this.store.getAgent(agentId);
+    if (!agent || !agent.pendingQuestion) return agent;
+
+    const pending = agent.pendingQuestion;
+    const proc = this.processes.get(agentId);
+    if (!proc) {
+      // Agent crashed/restarted while waiting — nothing to reply to. Just clear.
+      delete agent.pendingQuestion;
+      this.store.saveAgent(agent);
+      this.emit('agent:update', agentId, agent);
+      return agent;
+    }
+
+    // Build the tool_result content as a structured JSON payload Claude can read.
+    const payload = {
+      answers: pending.questions.map((q) => ({
+        question: q.question,
+        answer: answers[q.question] ?? '',
+      })),
+    };
+    proc.sendToolResult(pending.toolUseId, JSON.stringify(payload));
+
+    // Surface the user's choices in the chat history so it's not invisible.
+    const summary = pending.questions
+      .map((q) => `${q.header || q.question}: ${answers[q.question] ?? ''}`)
+      .join('\n');
+    agent.messages.push({
+      id: uuid(),
+      role: 'user',
+      content: summary,
+      timestamp: Date.now(),
+    });
+
+    pending.answeredAt = Date.now();
+    delete agent.pendingQuestion;
+    agent.lastActivity = Date.now();
+    this.store.saveAgent(agent);
+    this.updateAgentStatus(agentId, 'running');
+    this.pendingUserMessage.set(agentId, Date.now());
+    this.emit('agent:update', agentId, agent);
+    this.emit('agent:message', agentId, { type: 'user', text: summary });
+    return agent;
   }
 
   revisePlan(agentId: string): Agent | undefined {
     const agent = this.store.getAgent(agentId);
     if (!agent) return undefined;
+
+    // If the plan came from an ExitPlanMode tool_use, Claude is blocked waiting
+    // for a tool_result. Reject the plan so it knows to revise instead of hang.
+    const pending = agent.pendingPlan;
+    const proc = this.processes.get(agentId);
+    if (pending && !pending.approvedAt && pending.toolUseId && proc) {
+      proc.sendToolResult(
+        pending.toolUseId,
+        'User rejected the plan. Continue exploring/asking and propose a revised plan.',
+      );
+      this.updateAgentStatus(agentId, 'running');
+      this.pendingUserMessage.set(agentId, Date.now());
+    }
 
     agent.interactionMode = 'plan';
     if (agent.pendingPlan && !agent.pendingPlan.approvedAt) {
