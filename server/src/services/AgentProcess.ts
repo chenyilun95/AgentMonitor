@@ -281,10 +281,10 @@ export class AgentProcess extends EventEmitter {
       args.push('--full-auto');
     }
 
-    if (opts.askForApprovalNever) {
+    if (!isResume && opts.askForApprovalNever) {
       args.push('--ask-for-approval', 'never');
     }
-    if (opts.sandboxDangerFullAccess) {
+    if (!isResume && opts.sandboxDangerFullAccess) {
       args.push('--sandbox', 'danger-full-access');
     }
 

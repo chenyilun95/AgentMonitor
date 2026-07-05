@@ -4,6 +4,9 @@ import path from 'path';
 import os from 'os';
 import express from 'express';
 import { AgentStore } from '../src/store/AgentStore.js';
+import type { Agent } from '../src/models/Agent.js';
+import { AgentManager } from '../src/services/AgentManager.js';
+import { agentRoutes } from '../src/routes/agents.js';
 import { templateRoutes } from '../src/routes/templates.js';
 import { directoryRoutes } from '../src/routes/directories.js';
 
@@ -141,5 +144,89 @@ describe('Directory routes', () => {
       fileName: 'CLAUDE.md',
       matchedProvider: 'claude',
     });
+  });
+});
+
+describe('Agent operator routes', () => {
+  let tmpDir: string;
+  let app: express.Express;
+  let store: AgentStore;
+  let manager: AgentManager;
+
+  beforeEach(() => {
+    tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), 'agentroutes-test-'));
+    store = new AgentStore(tmpDir);
+    manager = new AgentManager(store);
+    app = express();
+    app.use(express.json());
+    app.use('/api/agents', agentRoutes(manager, store));
+  });
+
+  afterEach(() => {
+    const stuckCheckInterval = (manager as unknown as { stuckCheckInterval?: ReturnType<typeof setInterval> | null }).stuckCheckInterval;
+    if (stuckCheckInterval) clearInterval(stuckCheckInterval);
+    fs.rmSync(tmpDir, { recursive: true, force: true });
+  });
+
+  it('returns logs and operator context for an agent', async () => {
+    const agent: Agent = {
+      id: 'agent-1',
+      name: 'Test agent',
+      status: 'waiting_input',
+      config: {
+        provider: 'codex',
+        directory: tmpDir,
+        prompt: 'test',
+        flags: {},
+      },
+      workspaceMode: 'direct',
+      messages: [{
+        id: 'message-1',
+        role: 'assistant',
+        content: 'hello',
+        timestamp: 1,
+      }],
+      logs: [
+        {
+          id: 'log-1',
+          timestamp: 1,
+          level: 'error',
+          source: 'stderr',
+          stream: 'stderr',
+          message: 'boom',
+        },
+      ],
+      lastActivity: 1,
+      createdAt: 1,
+      pendingQuestion: {
+        id: 'question-1',
+        toolUseId: 'tool-1',
+        sourceMessageId: 'msg-1',
+        createdAt: 1,
+        questions: [{
+          question: 'Continue?',
+          options: [{ label: 'Yes' }],
+        }],
+      },
+    };
+    store.saveAgent(agent);
+
+    const logsRes = await request(app, 'GET', '/api/agents/agent-1/logs?limit=1');
+    expect(logsRes.status).toBe(200);
+    expect((logsRes.body as { logs: unknown[] }).logs).toHaveLength(1);
+
+    const contextRes = await request(app, 'GET', '/api/agents/agent-1/operator-context?messageLimit=1');
+    expect(contextRes.status).toBe(200);
+    const context = contextRes.body as {
+      agent: { recentMessages: unknown[]; totalMessageCount: number };
+      logs: unknown[];
+      actions: Record<string, string>;
+      interventionHints: Record<string, boolean>;
+    };
+    expect(context.agent.recentMessages).toHaveLength(1);
+    expect(context.agent.totalMessageCount).toBe(1);
+    expect(context.logs).toHaveLength(1);
+    expect(context.actions.sendMessage).toContain('/api/agents/agent-1/message');
+    expect(context.interventionHints.needsQuestionAnswer).toBe(true);
   });
 });

@@ -81,6 +81,30 @@ export function agentRoutes(manager: AgentManager, store: AgentStore): Router {
     res.json(sanitizeAgentSnapshot(agent));
   });
 
+  router.get('/:id/logs', (req, res) => {
+    const limit = typeof req.query.limit === 'string' ? Number(req.query.limit) : undefined;
+    const logs = manager.getAgentLogs(req.params.id, Number.isFinite(limit) ? limit : undefined);
+    if (!logs) {
+      res.status(404).json({ error: 'Agent not found' });
+      return;
+    }
+    res.json({ logs });
+  });
+
+  router.get('/:id/operator-context', (req, res) => {
+    const logLimit = typeof req.query.logLimit === 'string' ? Number(req.query.logLimit) : undefined;
+    const messageLimit = typeof req.query.messageLimit === 'string' ? Number(req.query.messageLimit) : undefined;
+    const context = manager.getOperatorContext(req.params.id, {
+      logLimit: Number.isFinite(logLimit) ? logLimit : undefined,
+      messageLimit: Number.isFinite(messageLimit) ? messageLimit : undefined,
+    });
+    if (!context) {
+      res.status(404).json({ error: 'Agent not found' });
+      return;
+    }
+    res.json(context);
+  });
+
   // Create agent
   router.post('/', async (req, res) => {
     try {

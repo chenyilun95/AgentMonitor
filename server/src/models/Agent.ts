@@ -23,6 +23,16 @@ export interface AgentMessage {
   toolResult?: string;
 }
 
+export interface AgentLogEntry {
+  id: string;
+  timestamp: number;
+  level: 'debug' | 'info' | 'warn' | 'error';
+  source: 'process' | 'stdout' | 'stderr' | 'terminal' | 'manager' | 'operator';
+  message: string;
+  stream?: 'stdout' | 'stderr';
+  payload?: unknown;
+}
+
 export interface AgentConfig {
   provider: AgentProvider;
   directory: string;
@@ -60,6 +70,7 @@ export interface Agent {
   worktreeBranch?: string;
   workspaceMode?: AgentWorkspaceMode;
   messages: AgentMessage[];
+  logs?: AgentLogEntry[];
   lastActivity: number;
   createdAt: number;
   costUsd?: number;

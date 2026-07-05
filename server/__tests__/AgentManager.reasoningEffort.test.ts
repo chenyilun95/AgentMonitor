@@ -103,6 +103,36 @@ describe('reasoning effort support', () => {
     expect(args).not.toContain('--cd');
   });
 
+  it('does not pass fresh-only Codex flags to resume', () => {
+    const proc = new AgentProcess();
+    const buildCodexCommand = (proc as unknown as {
+      buildCodexCommand: (opts: {
+        provider: 'codex';
+        directory: string;
+        prompt: string;
+        resume?: string;
+        askForApprovalNever?: boolean;
+        sandboxDangerFullAccess?: boolean;
+        fullAuto?: boolean;
+      }) => { bin: string; args: string[] };
+    }).buildCodexCommand.bind(proc);
+
+    const { args } = buildCodexCommand({
+      provider: 'codex',
+      directory: tmpDir,
+      prompt: 'continue the task',
+      resume: '019d5000-aaaa-7bbb-8ccc-1234567890ab',
+      askForApprovalNever: true,
+      sandboxDangerFullAccess: true,
+      fullAuto: true,
+    });
+
+    expect(args.slice(0, 3)).toEqual(['exec', 'resume', '--json']);
+    expect(args).toContain('--full-auto');
+    expect(args).not.toContain('--ask-for-approval');
+    expect(args).not.toContain('--sandbox');
+  });
+
   it('treats dash-prefixed fresh Codex prompts as positional input', () => {
     const proc = new AgentProcess();
     const buildCodexCommand = (proc as unknown as {

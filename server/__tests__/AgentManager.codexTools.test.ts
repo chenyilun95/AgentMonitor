@@ -64,4 +64,37 @@ describe('AgentManager codex tool messages', () => {
     expect(saved?.messages[0].toolResult).toContain(tmpDir);
     expect(saved?.messages[0].toolResult).toContain('[exit code] 0');
   });
+
+  it('truncates large log payloads before persisting', () => {
+    const agent: Agent = {
+      id: 'agent-large-log-payload',
+      name: 'Large Log Payload Test',
+      status: 'running',
+      config: {
+        provider: 'codex',
+        directory: tmpDir,
+        prompt: 'run a command',
+        flags: {},
+      },
+      messages: [],
+      lastActivity: 1,
+      createdAt: 1,
+    };
+    store.saveAgent(agent);
+
+    (manager as unknown as {
+      appendAgentLog: (agentId: string, entry: Record<string, unknown>) => void;
+    }).appendAgentLog(agent.id, {
+      level: 'debug',
+      source: 'stdout',
+      message: 'large payload',
+      payload: { aggregated_output: 'x'.repeat(20000) },
+    });
+
+    const saved = store.getAgent(agent.id);
+    expect(saved?.logs).toHaveLength(1);
+    expect(typeof saved?.logs?.[0].payload).toBe('string');
+    expect(saved?.logs?.[0].payload as string).toContain('...(truncated)');
+    expect(JSON.stringify(saved?.logs?.[0].payload).length).toBeLessThan(17000);
+  });
 });

@@ -4,7 +4,7 @@ import { execSync } from 'child_process';
 import { readFileSync, readdirSync, existsSync, mkdirSync, writeFileSync, statSync, unlinkSync } from 'fs';
 import path, { basename } from 'path';
 import os from 'os';
-import type { Agent, AgentConfig, AgentInteractionMode, AgentMessage, AgentStatus, AgentWorkspaceMode, PendingQuestionItem, PendingQuestionOption, ReasoningEffort } from '../models/Agent.js';
+import type { Agent, AgentConfig, AgentInteractionMode, AgentLogEntry, AgentMessage, AgentStatus, AgentWorkspaceMode, PendingQuestionItem, PendingQuestionOption, ReasoningEffort } from '../models/Agent.js';
 import { AgentStore } from '../store/AgentStore.js';
 import { AgentProcess, type StreamMessage } from './AgentProcess.js';
 import { WorktreeManager } from './WorktreeManager.js';
@@ -17,6 +17,9 @@ import { getInstructionFileName } from '../utils/instructionFiles.js';
 /** How long (ms) after a user message with no response before we notify (not auto-interrupt) */
 const STUCK_TIMEOUT_MS = 600_000; // 10 minutes — long tasks (build, push, chrome MCP) can take time
 const STUCK_CHECK_INTERVAL_MS = 60_000; // check every 60s
+const MAX_AGENT_LOG_ENTRIES = 400;
+const MAX_AGENT_LOG_MESSAGE_CHARS = 8000;
+const MAX_AGENT_LOG_PAYLOAD_CHARS = 16000;
 const PLAN_MODE_INSTRUCTIONS = `You are in AgentMonitor Plan Mode for this turn.
 
 Rules:
@@ -270,13 +273,48 @@ export class AgentManager extends EventEmitter {
     const processPrompt = this.composeProcessPrompt(agent);
     const processModel = agent.config.flags.model;
     const executionDirectory = this.resolveExecutionDirectory(agent);
+    this.appendAgentLog(agent.id, {
+      level: 'info',
+      source: 'manager',
+      message: `Starting ${agent.config.provider} agent in ${executionDirectory}`,
+      payload: {
+        provider: agent.config.provider,
+        directory: executionDirectory,
+        workspaceMode: agent.workspaceMode,
+        model: processModel,
+      },
+    });
 
     proc.on('message', (msg: StreamMessage) => {
+      this.appendAgentLog(agent.id, {
+        level: 'debug',
+        source: 'stdout',
+        message: `stream message: ${msg.type}${msg.subtype ? `/${msg.subtype}` : ''}`,
+        payload: msg,
+      });
       this.handleStreamMessage(agent.id, msg, agent.config.provider);
     });
 
     proc.on('terminal', (chunk: { stream: string; data: string }) => {
+      if (chunk.stream === 'stderr') {
+        const decoded = Buffer.from(chunk.data, 'base64').toString('utf-8');
+        this.appendAgentLog(agent.id, {
+          level: 'error',
+          source: 'terminal',
+          stream: 'stderr',
+          message: decoded,
+        });
+      }
       this.emit('agent:terminal', agent.id, chunk);
+    });
+
+    proc.on('raw', (text: string) => {
+      this.appendAgentLog(agent.id, {
+        level: 'debug',
+        source: 'stdout',
+        stream: 'stdout',
+        message: text,
+      });
     });
 
     proc.on('stderr', (text: string) => {
@@ -285,6 +323,12 @@ export class AgentManager extends EventEmitter {
       if (agent.config.provider === 'codex' && text.trim() === 'Reading additional input from stdin...') {
         return;
       }
+      this.appendAgentLog(agent.id, {
+        level: 'error',
+        source: 'stderr',
+        stream: 'stderr',
+        message: text,
+      });
       // Store stderr in messages for debugging
       const a = this.store.getAgent(agent.id);
       if (a) {
@@ -300,6 +344,12 @@ export class AgentManager extends EventEmitter {
     });
 
     proc.on('exit', (code: number | null) => {
+      this.appendAgentLog(agent.id, {
+        level: code === 0 || code === null ? 'info' : 'error',
+        source: 'process',
+        message: `Agent process exited with code ${code}`,
+        payload: { code },
+      });
       // Don't override 'stopped' status (set when result message is received)
       const current = this.store.getAgent(agent.id);
       if (current && current.status !== 'stopped') {
@@ -325,6 +375,12 @@ export class AgentManager extends EventEmitter {
 
     proc.on('error', (err: Error) => {
       console.error(`[Agent ${agent.id}] process error:`, err);
+      this.appendAgentLog(agent.id, {
+        level: 'error',
+        source: 'process',
+        message: `Process error: ${err.message}`,
+        payload: { stack: err.stack },
+      });
       const a = this.store.getAgent(agent.id);
       if (a) {
         a.messages.push({
@@ -360,6 +416,81 @@ export class AgentManager extends EventEmitter {
 
     agent.pid = proc.pid;
     this.store.saveAgent(agent);
+  }
+
+  getAgentLogs(agentId: string, limit = 200): AgentLogEntry[] | undefined {
+    const agent = this.store.getAgent(agentId);
+    if (!agent) return undefined;
+    const safeLimit = Math.max(0, Math.min(limit, MAX_AGENT_LOG_ENTRIES));
+    return (agent.logs || []).slice(-safeLimit);
+  }
+
+  getOperatorContext(agentId: string, opts: { logLimit?: number; messageLimit?: number } = {}): Record<string, unknown> | undefined {
+    const agent = this.store.getAgent(agentId);
+    if (!agent) return undefined;
+    const logLimit = Math.max(0, Math.min(opts.logLimit ?? 120, MAX_AGENT_LOG_ENTRIES));
+    const messageLimit = Math.max(0, Math.min(opts.messageLimit ?? 80, 300));
+    const logs = this.getAgentLogs(agentId, logLimit) || [];
+    const { messages: _messages, logs: _logs, ...agentSummary } = agent;
+    return {
+      agent: {
+        ...agentSummary,
+        recentMessages: agent.messages.slice(-messageLimit),
+        recentMessageCount: Math.min(agent.messages.length, messageLimit),
+        totalMessageCount: agent.messages.length,
+        totalLogCount: (agent.logs || []).length,
+      },
+      logs,
+      actions: {
+        refresh: `GET /api/agents/${agent.id}/operator-context?logLimit=${logLimit}&messageLimit=${messageLimit}`,
+        logs: `GET /api/agents/${agent.id}/logs?limit=${logLimit}`,
+        sendMessage: `POST /api/agents/${agent.id}/message { "text": "..." }`,
+        interrupt: `POST /api/agents/${agent.id}/interrupt`,
+        stop: `POST /api/agents/${agent.id}/stop`,
+        approvePlan: `POST /api/agents/${agent.id}/plan/approve`,
+        revisePlan: `POST /api/agents/${agent.id}/plan/revise`,
+        answerQuestion: `POST /api/agents/${agent.id}/answer-question { "answers": { ... } }`,
+      },
+      interventionHints: {
+        canSendMessage: agent.status === 'running' || agent.status === 'waiting_input',
+        canInterrupt: agent.status === 'running',
+        needsPlanDecision: !!agent.pendingPlan && !agent.pendingPlan.approvedAt,
+        needsQuestionAnswer: !!agent.pendingQuestion && !agent.pendingQuestion.answeredAt,
+      },
+    };
+  }
+
+  private appendAgentLog(
+    agentId: string,
+    entry: Omit<AgentLogEntry, 'id' | 'timestamp'> & { timestamp?: number },
+  ): void {
+    const agent = this.store.getAgent(agentId);
+    if (!agent) return;
+    const message = entry.message.length > MAX_AGENT_LOG_MESSAGE_CHARS
+      ? `${entry.message.slice(0, MAX_AGENT_LOG_MESSAGE_CHARS)}\n...(truncated)`
+      : entry.message;
+    const nextEntry: AgentLogEntry = {
+      ...entry,
+      id: uuid(),
+      timestamp: entry.timestamp || Date.now(),
+      message,
+      payload: this.sanitizeLogPayload(entry.payload),
+    };
+    agent.logs = [...(agent.logs || []), nextEntry].slice(-MAX_AGENT_LOG_ENTRIES);
+    this.store.saveAgent(agent);
+  }
+
+  private sanitizeLogPayload(payload: unknown): unknown {
+    if (payload === undefined) return undefined;
+    try {
+      const serialized = JSON.stringify(payload);
+      if (serialized.length <= MAX_AGENT_LOG_PAYLOAD_CHARS) {
+        return payload;
+      }
+      return `${serialized.slice(0, MAX_AGENT_LOG_PAYLOAD_CHARS)}\n...(truncated)`;
+    } catch {
+      return '[unserializable payload]';
+    }
   }
 
   resolveExecutionDirectory(agent: Agent): string {
@@ -1217,6 +1348,12 @@ export class AgentManager extends EventEmitter {
   approvePlan(agentId: string): Agent | undefined {
     const agent = this.store.getAgent(agentId);
     if (!agent || !agent.pendingPlan) return agent;
+    this.appendAgentLog(agentId, {
+      level: 'info',
+      source: 'operator',
+      message: 'Approved pending plan',
+      payload: { pendingPlanId: agent.pendingPlan.id },
+    });
 
     agent.pendingPlan.approvedAt = Date.now();
     agent.interactionMode = 'default';
@@ -1248,6 +1385,12 @@ export class AgentManager extends EventEmitter {
   answerQuestion(agentId: string, answers: Record<string, string>): Agent | undefined {
     const agent = this.store.getAgent(agentId);
     if (!agent || !agent.pendingQuestion) return agent;
+    this.appendAgentLog(agentId, {
+      level: 'info',
+      source: 'operator',
+      message: 'Answered pending question',
+      payload: { pendingQuestionId: agent.pendingQuestion.id, answers },
+    });
 
     const pending = agent.pendingQuestion;
     const proc = this.processes.get(agentId);
@@ -1293,6 +1436,12 @@ export class AgentManager extends EventEmitter {
   revisePlan(agentId: string): Agent | undefined {
     const agent = this.store.getAgent(agentId);
     if (!agent) return undefined;
+    this.appendAgentLog(agentId, {
+      level: 'info',
+      source: 'operator',
+      message: 'Requested plan revision',
+      payload: { pendingPlanId: agent.pendingPlan?.id },
+    });
 
     // If the plan came from an ExitPlanMode tool_use, Claude is blocked waiting
     // for a tool_result. Reject the plan so it knows to revise instead of hang.
@@ -1332,6 +1481,12 @@ export class AgentManager extends EventEmitter {
       role: 'user',
       content: text,
       timestamp: Date.now(),
+    });
+    this.appendAgentLog(agentId, {
+      level: 'info',
+      source: 'operator',
+      message: text,
+      payload: { action: 'sendMessage' },
     });
     agent.lastActivity = Date.now();
     this.store.saveAgent(agent);
@@ -1413,6 +1568,11 @@ export class AgentManager extends EventEmitter {
   interruptAgent(agentId: string): void {
     const proc = this.processes.get(agentId);
     if (proc) {
+      this.appendAgentLog(agentId, {
+        level: 'warn',
+        source: 'operator',
+        message: 'Interrupted agent process',
+      });
       proc.interrupt();
       // After SIGINT, Claude Code stops the current task and waits for the
       // next user message.  Transition to waiting_input so the dashboard
