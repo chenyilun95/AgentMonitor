@@ -1,8 +1,8 @@
 export const en: Record<string, string> = {
     // Nav
     'nav.brand': 'Agent Monitor',
-    'nav.dashboard': 'Agents',
-    'nav.pipeline': 'Agent Team',
+    'nav.dashboard': 'Agent Panel',
+    'nav.pipeline': 'Agent Team Panel',
     'nav.newAgent': 'New Agent',
     'nav.templates': 'Templates',
     'nav.help': 'Docs',
@@ -45,6 +45,9 @@ export const en: Record<string, string> = {
     'dashboard.externalHidden': 'External ({{count}} hidden)',
     'dashboard.externalBadge': 'EXT',
     'dashboard.needsInputCount': 'Needs input ({{count}})',
+    'dashboard.staleAgentCount': 'Idle agents with changes ({{count}})',
+    'dashboard.staleWorktreeBadge': 'Unmerged',
+    'dashboard.staleDirectBadge': 'Idle',
     'dashboard.status.running': 'Running',
     'dashboard.status.stopped': 'Stopped',
     'dashboard.status.error': 'Error',
@@ -318,7 +321,7 @@ export const en: Record<string, string> = {
     'common.close': 'Close',
 
     // Nav (additions)
-    'nav.servers': 'Servers',
+    'nav.servers': 'GPU Servers',
 
     // GPU Monitor
     'gpu.title': 'GPU Monitor',

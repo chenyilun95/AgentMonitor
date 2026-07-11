@@ -790,6 +790,31 @@ body::after {
   color: var(--yellow);
 }
 
+.dashboard-attention-stale {
+  background: rgba(245, 158, 11, 0.08);
+}
+
+.dashboard-attention-agent-stale {
+  border-color: rgba(245, 158, 11, 0.35);
+}
+
+.dashboard-attention-agent-stale:hover {
+  border-color: #f59e0b;
+  color: #f59e0b;
+}
+
+.stale-worktree-badge {
+  display: inline-block;
+  font-size: 0.65em;
+  padding: 1px 6px;
+  border-radius: var(--radius-full);
+  background: rgba(245, 158, 11, 0.15);
+  color: #f59e0b;
+  font-weight: 600;
+  margin-left: 6px;
+  vertical-align: middle;
+}
+
 /* --- Status Badges --- */
 .status {
   display: inline-flex;

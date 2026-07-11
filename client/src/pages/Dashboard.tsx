@@ -212,6 +212,23 @@ export function Dashboard() {
   ));
   const visibleAgents = displayAgents.filter(a => showExternal || a.source !== 'external');
   const waitingInputAgents = visibleAgents.filter(a => a.status === 'waiting_input');
+  const STALE_MS = 24 * 60 * 60 * 1000;
+  const now = Date.now();
+  const staleWorktreeAgents = visibleAgents.filter(a =>
+    a.worktreeBranch && a.status !== 'running' && (now - a.lastActivity > STALE_MS)
+  );
+  const staleDirectGroups = (() => {
+    const dirMap = new Map<string, typeof visibleAgents>();
+    for (const a of visibleAgents) {
+      if (a.workspaceMode === 'direct' && a.status !== 'running' && (now - a.lastActivity > STALE_MS)) {
+        const dir = a.config.directory;
+        const list = dirMap.get(dir) || [];
+        list.push(a);
+        dirMap.set(dir, list);
+      }
+    }
+    return Array.from(dirMap.entries());
+  })();
 
   return (
     <div>
@@ -286,6 +303,45 @@ export function Dashboard() {
         </div>
       )}
 
+      {(staleWorktreeAgents.length > 0 || staleDirectGroups.length > 0) && (
+        <div className="dashboard-attention dashboard-attention-stale">
+          <span className="dashboard-attention-label" style={{ color: 'var(--orange, #f59e0b)' }}>
+            {t('dashboard.staleAgentCount', { count: staleWorktreeAgents.length + staleDirectGroups.reduce((s, [, a]) => s + a.length, 0) })}
+          </span>
+          <div className="dashboard-attention-list">
+            {staleWorktreeAgents.map((a) => {
+              const days = Math.floor((now - a.lastActivity) / (24 * 60 * 60 * 1000));
+              return (
+                <button
+                  key={a.id}
+                  type="button"
+                  className="dashboard-attention-agent dashboard-attention-agent-stale"
+                  onClick={() => navigate(`/agent/${a.id}`)}
+                  title={t('dashboard.staleWorktreeBadge')}
+                >
+                  {a.name} ({days}d)
+                </button>
+              );
+            })}
+            {staleDirectGroups.map(([dir, agents]) => {
+              const days = Math.floor((now - Math.max(...agents.map(a => a.lastActivity))) / (24 * 60 * 60 * 1000));
+              const dirShort = dir.split('/').pop() || dir;
+              return (
+                <button
+                  key={`dir-${dir}`}
+                  type="button"
+                  className="dashboard-attention-agent dashboard-attention-agent-stale"
+                  onClick={() => navigate(`/agent/${agents[0].id}`)}
+                  title={dir}
+                >
+                  {dirShort}: {agents.map(a => a.name).join(', ')} ({days}d)
+                </button>
+              );
+            })}
+          </div>
+        </div>
+      )}
+
       {visibleAgents.length === 0 ? (
         <div style={{ textAlign: 'center', padding: 48, color: 'var(--text-muted)' }}>
           {t('dashboard.empty')}
@@ -339,17 +395,27 @@ export function Dashboard() {
                   <span className="card-meta-icon">&#128193;</span>
                   {agent.projectName || agent.config.directory.split('/').pop()}
                   {agent.workspaceMode === 'direct' ? (
-                    <span className="card-direct" title={t('workspaceMode.directTooltip')}>
-                      <span className="direct-icon" aria-hidden>🔗</span>
-                      {t('workspaceMode.direct')}
-                    </span>
+                    <>
+                      <span className="card-direct" title={t('workspaceMode.directTooltip')}>
+                        <span className="direct-icon" aria-hidden>🔗</span>
+                        {t('workspaceMode.direct')}
+                      </span>
+                      {agent.status !== 'running' && (now - agent.lastActivity > STALE_MS) && (
+                        <span className="stale-worktree-badge">{t('dashboard.staleDirectBadge')}</span>
+                      )}
+                    </>
                   ) : agent.worktreeBranch ? (
-                    <span className="card-branch" title={agent.worktreeBranch}>
-                      <svg className="branch-icon" viewBox="0 0 16 16" width="12" height="12" fill="currentColor">
-                        <path d="M9.5 3.25a2.25 2.25 0 1 1 3 2.122V6A2.5 2.5 0 0 1 10 8.5H6a1 1 0 0 0-1 1v1.128a2.251 2.251 0 1 1-1.5 0V5.372a2.25 2.25 0 1 1 1.5 0v1.836A2.492 2.492 0 0 1 6 7h4a1 1 0 0 0 1-1v-.628A2.25 2.25 0 0 1 9.5 3.25Zm-6 0a.75.75 0 1 0 1.5 0 .75.75 0 0 0-1.5 0Zm8.25-.75a.75.75 0 1 0 0 1.5.75.75 0 0 0 0-1.5ZM4.25 12a.75.75 0 1 0 0 1.5.75.75 0 0 0 0-1.5Z" />
-                      </svg>
-                      {t('workspaceMode.worktreeChip', { branch: agent.worktreeBranch.replace(/^agent-/, '') })}
-                    </span>
+                    <>
+                      <span className="card-branch" title={agent.worktreeBranch}>
+                        <svg className="branch-icon" viewBox="0 0 16 16" width="12" height="12" fill="currentColor">
+                          <path d="M9.5 3.25a2.25 2.25 0 1 1 3 2.122V6A2.5 2.5 0 0 1 10 8.5H6a1 1 0 0 0-1 1v1.128a2.251 2.251 0 1 1-1.5 0V5.372a2.25 2.25 0 1 1 1.5 0v1.836A2.492 2.492 0 0 1 6 7h4a1 1 0 0 0 1-1v-.628A2.25 2.25 0 0 1 9.5 3.25Zm-6 0a.75.75 0 1 0 1.5 0 .75.75 0 0 0-1.5 0Zm8.25-.75a.75.75 0 1 0 0 1.5.75.75 0 0 0 0-1.5ZM4.25 12a.75.75 0 1 0 0 1.5.75.75 0 0 0 0-1.5Z" />
+                        </svg>
+                        {t('workspaceMode.worktreeChip', { branch: agent.worktreeBranch.replace(/^agent-/, '') })}
+                      </span>
+                      {agent.status !== 'running' && (now - agent.lastActivity > STALE_MS) && (
+                        <span className="stale-worktree-badge">{t('dashboard.staleWorktreeBadge')}</span>
+                      )}
+                    </>
                   ) : null}
                 </span>
                 {agent.prUrl && (

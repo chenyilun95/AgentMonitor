@@ -22,14 +22,14 @@ function NavBar({ onLogout }: { onLogout?: () => void }) {
         <Link to="/" className={location.pathname === '/' ? 'active' : ''}>
           {t('nav.dashboard')}
         </Link>
-        <Link to="/servers" className={location.pathname === '/servers' ? 'active' : ''}>
-          {t('nav.servers')}
-        </Link>
         <Link to="/pipeline" className={location.pathname === '/pipeline' ? 'active' : ''}>
           {t('nav.pipeline')}
         </Link>
         <Link to="/templates" className={location.pathname === '/templates' ? 'active' : ''}>
           {t('nav.templates')}
+        </Link>
+        <Link to="/servers" className={location.pathname === '/servers' ? 'active' : ''}>
+          {t('nav.servers')}
         </Link>
       </div>
       <button

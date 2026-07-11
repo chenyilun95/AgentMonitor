@@ -1,8 +1,8 @@
 export const zh: Record<string, string> = {
     // Nav
     'nav.brand': 'Agent Monitor',
-    'nav.dashboard': '代理',
-    'nav.pipeline': '代理团队',
+    'nav.dashboard': '代理面板',
+    'nav.pipeline': '代理团队面板',
     'nav.newAgent': '新建代理',
     'nav.templates': '模板',
     'nav.help': '文档',
@@ -45,6 +45,9 @@ export const zh: Record<string, string> = {
     'dashboard.externalHidden': '外部代理 ({{count}} 已隐藏)',
     'dashboard.externalBadge': '外部',
     'dashboard.needsInputCount': '等待输入 ({{count}})',
+    'dashboard.staleAgentCount': '闲置超过1天的代理 ({{count}})',
+    'dashboard.staleWorktreeBadge': '未合并',
+    'dashboard.staleDirectBadge': '闲置',
     'dashboard.status.running': '运行中',
     'dashboard.status.stopped': '已停止',
     'dashboard.status.error': '错误',
@@ -318,7 +321,7 @@ export const zh: Record<string, string> = {
     'common.close': '关闭',
 
     // Nav (additions)
-    'nav.servers': '服务器',
+    'nav.servers': 'GPU服务器',
 
     // GPU Monitor
     'gpu.title': 'GPU 监控',
