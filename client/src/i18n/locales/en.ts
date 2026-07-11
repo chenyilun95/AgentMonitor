@@ -1,8 +1,8 @@
 export const en: Record<string, string> = {
     // Nav
     'nav.brand': 'Agent Monitor',
-    'nav.dashboard': 'Dashboard',
-    'nav.pipeline': 'Agent Manager',
+    'nav.dashboard': 'Agents',
+    'nav.pipeline': 'Agent Team',
     'nav.newAgent': 'New Agent',
     'nav.templates': 'Templates',
     'nav.help': 'Docs',
@@ -30,7 +30,7 @@ export const en: Record<string, string> = {
     'common.codex': 'Codex',
 
     // Dashboard
-    'dashboard.title': 'Dashboard',
+    'dashboard.title': 'Agents',
     'dashboard.newAgent': '+ New Agent',
     'dashboard.stopAll': 'Stop All',
     'dashboard.empty': 'No agents running. Create one to get started.',
@@ -88,6 +88,7 @@ export const en: Record<string, string> = {
     'create.newSession': 'New session',
     'create.claudeMd': 'CLAUDE.md',
     'create.loadTemplate': 'Load template...',
+    'create.emptyTemplate': '(Empty)',
     'create.claudeMdPlaceholder': 'Optional CLAUDE.md content for the agent',
     'create.adminEmail': 'Admin Email (for notifications)',
     'create.adminEmailPlaceholder': 'admin@example.com',
@@ -98,7 +99,7 @@ export const en: Record<string, string> = {
     'create.creating': 'Creating...',
     'create.createAgent': 'Create Agent',
     'create.requiredFields': 'Name and directory are required',
-    'create.selectCurrent': 'Select current:',
+    'create.pathWillCreate': 'Path does not exist — it will be created automatically.',
     'create.claudeMdFound': 'CLAUDE.md found in this directory',
     'create.loadExisting': 'Load existing CLAUDE.md',
     'create.keepCustom': 'Keep custom',
@@ -237,7 +238,7 @@ export const en: Record<string, string> = {
     'templates.empty': 'No templates yet. Create one to get started.',
 
     // Pipeline
-    'pipeline.title': 'Agent Manager',
+    'pipeline.title': 'Agent Team',
     'pipeline.manager': 'Manager:',
     'pipeline.running': 'Running',
     'pipeline.stopped': 'Stopped',
@@ -288,7 +289,9 @@ export const en: Record<string, string> = {
 
     // Harness mode
     'pipeline.modeSimple': 'Simple Pipeline',
+    'pipeline.modeSimpleDesc': 'Manually define tasks with execution order. Same-step tasks run in parallel; steps execute sequentially. Each task launches one agent.',
     'pipeline.modeHarness': 'Harness Mode',
+    'pipeline.modeHarnessDesc': 'Provide a high-level goal. A Planner agent decomposes it into sub-tasks, Generator agents execute them in parallel, then an Evaluator agent reviews the results. Failed tasks are automatically revised (up to N times).',
     'pipeline.harnessGoal': 'Goal',
     'pipeline.harnessGoalPlaceholder': 'Describe the high-level goal for the agent harness...',
     'pipeline.harnessEvalCriteria': 'Evaluation Criteria (optional)',

@@ -1,6 +1,6 @@
 import { useState, useEffect } from 'react';
 import { useNavigate, useSearchParams } from 'react-router-dom';
-import { api, type AgentProvider, type Template, type SessionInfo, type DirListing, type RuntimeCapabilities } from '../api/client';
+import { api, type AgentProvider, type Template, type SessionInfo, type RuntimeCapabilities } from '../api/client';
 import { useTranslation } from '../i18n';
 import { getInstructionFileName, replaceInstructionFileName } from '../lib/instructionFiles';
 import {
@@ -47,9 +47,8 @@ export function CreateAgent() {
   const [creating, setCreating] = useState(false);
   const [error, setError] = useState('');
 
-  // Directory browser
-  const [dirListing, setDirListing] = useState<DirListing | null>(null);
-  const [showDirBrowser, setShowDirBrowser] = useState(false);
+  // Directory validation
+  const [dirExists, setDirExists] = useState<boolean | null>(null);
   const [claudeMdPrompt, setClaudeMdPrompt] = useState<{ content: string; fileName: string } | null>(null);
 
   // Templates, sessions, and prompt suggestions
@@ -161,13 +160,16 @@ export function CreateAgent() {
     try { await api.updateSettings({ promptSuggestions: updated }); } catch {}
   };
 
-  const browseTo = async (path?: string) => {
+  const validateDir = async (dirPath: string) => {
+    if (!dirPath.trim()) {
+      setDirExists(null);
+      return;
+    }
     try {
-      const listing = await api.listDirectory(path);
-      setDirListing(listing);
-      setShowDirBrowser(true);
-    } catch (err) {
-      setError(String(err));
+      const { exists } = await api.validateDirectory(dirPath);
+      setDirExists(exists);
+    } catch {
+      setDirExists(null);
     }
   };
 
@@ -193,13 +195,12 @@ export function CreateAgent() {
     }
   };
 
-  const selectDir = async (path: string) => {
-    setDirectory(path);
-    setShowDirBrowser(false);
-    await checkInstructionFile(path);
-  };
-
   const handleTemplateSelect = (templateId: string) => {
+    if (templateId === '__empty__') {
+      setClaudeMd('');
+      setInstructionTouched(false);
+      return;
+    }
     const tmpl = templates.find((t) => t.id === templateId);
     if (tmpl) {
       setClaudeMd(tmpl.content);
@@ -319,20 +320,24 @@ export function CreateAgent() {
 
       <div className="form-group">
         <label>{t('create.workingDir')}</label>
-        <div style={{ display: 'flex', gap: 8, position: 'relative' }}>
+        <div style={{ position: 'relative' }}>
           <input
             value={directory}
             onChange={(e) => {
               setDirectory(e.target.value);
+              setDirExists(null);
               setShowPathDropdown(true);
             }}
             onFocus={() => setShowPathDropdown(true)}
-            onBlur={() => setTimeout(() => setShowPathDropdown(false), 200)}
+            onBlur={() => {
+              setTimeout(() => setShowPathDropdown(false), 200);
+              if (directory.trim()) {
+                validateDir(directory);
+                checkInstructionFile(directory);
+              }
+            }}
             placeholder={t('create.workingDirPlaceholder')}
           />
-          <button className="btn btn-outline" onClick={() => showDirBrowser ? setShowDirBrowser(false) : browseTo(directory || undefined)}>
-            {t('common.browse')}
-          </button>
           {showPathDropdown && (() => {
             const allPaths = Object.entries(pathHistory).flatMap(([machine, paths]) =>
               paths.map(p => ({ machine, path: p }))
@@ -359,6 +364,7 @@ export function CreateAgent() {
                           e.preventDefault();
                           setDirectory(p);
                           setShowPathDropdown(false);
+                          setDirExists(true);
                           checkInstructionFile(p);
                         }}
                       >
@@ -371,6 +377,11 @@ export function CreateAgent() {
             );
           })()}
         </div>
+        {directory.trim() && dirExists === false && (
+          <small style={{ color: 'var(--yellow, #e2b714)', marginTop: 4, display: 'block' }}>
+            {t('create.pathWillCreate')}
+          </small>
+        )}
       </div>
 
       <div className="form-group">
@@ -405,34 +416,6 @@ export function CreateAgent() {
           </small>
         )}
       </div>
-
-      {showDirBrowser && dirListing && (
-        <div className="dir-browser" style={{ marginBottom: 16 }}>
-          <div
-            className="dir-entry is-dir"
-            onClick={() => browseTo(dirListing.parent)}
-          >
-            ..
-          </div>
-          {dirListing.entries
-            .filter((e) => e.isDirectory)
-            .map((entry) => (
-              <div key={entry.path} className="dir-entry is-dir" style={{ display: 'flex', gap: 8 }}>
-                <span onClick={() => browseTo(entry.path)} style={{ flex: 1 }}>
-                  {entry.name}/
-                </span>
-                <button className="btn btn-sm" onClick={() => selectDir(entry.path)}>
-                  {t('common.select')}
-                </button>
-              </div>
-            ))}
-          <div style={{ padding: '6px 12px' }}>
-            <button className="btn btn-sm" onClick={() => selectDir(dirListing.path)}>
-              {t('create.selectCurrent')} {dirListing.path}
-            </button>
-          </div>
-        </div>
-      )}
 
       {claudeMdPrompt && (
         <div style={{ padding: 12, background: 'var(--bg-card)', border: '1px solid var(--border)', borderRadius: 'var(--radius)', marginBottom: 16 }}>
@@ -691,6 +674,7 @@ export function CreateAgent() {
               defaultValue=""
             >
               <option value="" disabled>{t('create.loadTemplate')}</option>
+              <option value="__empty__">{t('create.emptyTemplate')}</option>
               {templates.map((tmpl) => (
                 <option key={tmpl.id} value={tmpl.id}>{tmpl.name}</option>
               ))}

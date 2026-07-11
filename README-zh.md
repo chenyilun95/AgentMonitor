@@ -410,7 +410,7 @@ npm run dev    # 同时启动服务端（tsx watch）+ 客户端（vite dev）
 | | Claude Code | Codex |
 |---|---|---|
 | **二进制文件** | `claude` | `codex` |
-| **参数选项** | `--dangerously-skip-permissions`、`--permission-mode`、`--chrome`、`--max-budget-usd`、`--allowedTools`、`--disallowedTools`、`--add-dir`、`--mcp-config`、`--resume`、`--model` | `--dangerously-bypass-approvals-and-sandbox`、`--full-auto` |
+| **参数选项** | `--dangerously-skip-permissions`、`--permission-mode`、`--chrome`、`--max-budget-usd`、`--allowedTools`、`--disallowedTools`、`--add-dir`、`--mcp-config`、`--resume`、`--model` | `--dangerously-bypass-approvals-and-sandbox`、`--sandbox danger-full-access`、`-c approval_policy="never"` |
 | **模型选择** | 运行时探测下拉，启动时用 `--model` 应用 | 运行时探测下拉，首轮任务前用 `/model <name>` 应用 |
 | **追踪** | 费用（USD） | Token 使用量 |
 

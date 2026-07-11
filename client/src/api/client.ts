@@ -114,6 +114,7 @@ export interface Agent {
       options: Array<{ label: string; description?: string; preview?: string }>;
     }>;
   };
+  preRestoreUserTurns?: Array<{ id: string; content: string; timestamp: number }>;
 }
 
 export interface Template {
@@ -374,6 +375,8 @@ export const api = {
     request<{ exists: boolean; content?: string; fileName?: string; matchedProvider?: AgentProvider }>(
       `/directories/claude-md?path=${encodeURIComponent(path)}&provider=${encodeURIComponent(provider)}`,
     ),
+  validateDirectory: (path: string) =>
+    request<{ exists: boolean }>(`/directories/validate?path=${encodeURIComponent(path)}`),
 
   // Pipeline Tasks
   getTasks: () => request<PipelineTask[]>('/tasks'),

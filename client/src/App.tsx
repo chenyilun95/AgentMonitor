@@ -10,13 +10,10 @@ import { Login } from './pages/Login';
 import { useAuth } from './hooks/useAuth';
 import { LanguageProvider, useTranslation } from './i18n';
 
-type ColorScheme = 'default' | 'terra';
-
 function NavBar({ onLogout }: { onLogout?: () => void }) {
   const location = useLocation();
-  const { lang, setLang, t } = useTranslation();
+  const { t } = useTranslation();
   const [theme, setTheme] = useState(() => localStorage.getItem('agentmonitor-theme') || 'dark');
-  const [scheme, setScheme] = useState<ColorScheme>(() => (localStorage.getItem('agentmonitor-scheme') as ColorScheme) || 'default');
 
   return (
     <nav className="nav">
@@ -30,9 +27,6 @@ function NavBar({ onLogout }: { onLogout?: () => void }) {
         </Link>
         <Link to="/pipeline" className={location.pathname === '/pipeline' ? 'active' : ''}>
           {t('nav.pipeline')}
-        </Link>
-        <Link to="/create" className={location.pathname === '/create' ? 'active' : ''}>
-          {t('nav.newAgent')}
         </Link>
         <Link to="/templates" className={location.pathname === '/templates' ? 'active' : ''}>
           {t('nav.templates')}
@@ -49,44 +43,6 @@ function NavBar({ onLogout }: { onLogout?: () => void }) {
         title={t('nav.theme')}
       >
         {theme === 'light' ? '\u263D' : '\u2600'}
-      </button>
-      <a
-        href="/docs/"
-        target="_blank"
-        rel="noopener noreferrer"
-        className="help-btn"
-        title={t('nav.help')}
-      >
-        ?
-      </a>
-      <select
-        className="lang-toggle"
-        value={lang}
-        onChange={(e) => setLang(e.target.value as typeof lang)}
-      >
-        <option value="en">EN</option>
-        <option value="zh">中文</option>
-        <option value="ja">日本語</option>
-        <option value="ko">한국어</option>
-        <option value="es">ES</option>
-        <option value="fr">FR</option>
-        <option value="de">DE</option>
-      </select>
-      <button
-        className="nav-control"
-        onClick={() => {
-          const next = scheme === 'default' ? 'terra' : 'default';
-          if (next === 'default') {
-            document.documentElement.removeAttribute('data-scheme');
-          } else {
-            document.documentElement.setAttribute('data-scheme', next);
-          }
-          localStorage.setItem('agentmonitor-scheme', next);
-          setScheme(next);
-        }}
-        title={t('nav.scheme')}
-      >
-        {scheme === 'default' ? t('nav.schemeDefault') : t('nav.schemeTerra')}
       </button>
       {onLogout && (
         <button

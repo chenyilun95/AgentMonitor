@@ -21,7 +21,7 @@ export function Dashboard() {
   const [showExternal, setShowExternal] = useState(() => localStorage.getItem('agentmonitor-show-external') !== 'false');
   const [labelFilter, setLabelFilter] = useState('');
   const navigate = useNavigate();
-  const { t } = useTranslation();
+  const { t, lang, setLang } = useTranslation();
 
   const fetchAgents = async () => {
     try {
@@ -491,6 +491,39 @@ export function Dashboard() {
                 <option value="ask">{t('dashboard.deleteSessionPolicy.ask')}</option>
                 <option value="keep">{t('dashboard.deleteSessionPolicy.keep')}</option>
                 <option value="purge">{t('dashboard.deleteSessionPolicy.purge')}</option>
+              </select>
+            </div>
+            <div className="form-group">
+              <label>{t('nav.language') || 'Language'}</label>
+              <select
+                value={lang}
+                onChange={(e) => setLang(e.target.value as typeof lang)}
+              >
+                <option value="en">EN</option>
+                <option value="zh">中文</option>
+                <option value="ja">日本語</option>
+                <option value="ko">한국어</option>
+                <option value="es">ES</option>
+                <option value="fr">FR</option>
+                <option value="de">DE</option>
+              </select>
+            </div>
+            <div className="form-group">
+              <label>{t('nav.scheme') || 'Color Scheme'}</label>
+              <select
+                value={localStorage.getItem('agentmonitor-scheme') || 'default'}
+                onChange={(e) => {
+                  const next = e.target.value;
+                  if (next === 'default') {
+                    document.documentElement.removeAttribute('data-scheme');
+                  } else {
+                    document.documentElement.setAttribute('data-scheme', next);
+                  }
+                  localStorage.setItem('agentmonitor-scheme', next);
+                }}
+              >
+                <option value="default">{t('nav.schemeDefault') || 'Default'}</option>
+                <option value="terra">{t('nav.schemeTerra') || 'Terra'}</option>
               </select>
             </div>
             <div style={{ display: 'flex', gap: 8, justifyContent: 'flex-end', marginTop: 16 }}>

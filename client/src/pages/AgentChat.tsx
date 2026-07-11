@@ -7,7 +7,6 @@ import { TerminalView } from '../components/TerminalView';
 import { FileBrowserView } from '../components/FileBrowserView';
 import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
-import { getInstructionFileName, replaceInstructionFileName } from '../lib/instructionFiles';
 import { getAgentStatusClass, getAgentStatusLabel } from '../lib/agentStatus';
 import {
   getReasoningEffortLabel,
@@ -94,7 +93,6 @@ function buildResumeCommand(agent: Agent | null, runtimeCapabilities?: RuntimeCa
   if (!agent) return undefined;
   const provider = agent.config.provider || 'claude';
   if (!agent.sessionId) return undefined;
-  if (agent.status === 'stopped' || agent.status === 'error') return undefined;
 
   // Convert camelCase flag keys to kebab-case for CLI
   const toKebab = (s: string) => s.replace(/([a-z])([A-Z])/g, '$1-$2').toLowerCase();
@@ -162,12 +160,24 @@ function buildResumeCommand(agent: Agent | null, runtimeCapabilities?: RuntimeCa
 
   const parts = ['claude', '--resume', agent.sessionId];
   const flags = agent.config.flags || {};
+  const codexOnlyFlags = new Set(['fullAuto', 'askForApprovalNever', 'sandboxDangerFullAccess', 'outputSchema']);
   for (const [key, value] of Object.entries(flags)) {
-    if (key === 'resume') continue; // already added
+    if (key === 'resume') continue;
+    if (codexOnlyFlags.has(key)) continue;
     if (key === 'reasoningEffort') {
       if (isReasoningEffortSupported(provider, value, runtimeCapabilities)) {
         parts.push('--effort', String(value));
       }
+      continue;
+    }
+    if (key === 'addDirs' && typeof value === 'string') {
+      for (const dir of value.split(/[,\s]+/).filter(Boolean)) {
+        parts.push('--add-dir', dir);
+      }
+      continue;
+    }
+    if (key === 'mcpConfig' && value) {
+      parts.push('--mcp-config', String(value));
       continue;
     }
     const flag = toKebab(key);
@@ -336,8 +346,6 @@ export function AgentChat() {
   const [showSlash, setShowSlash] = useState(false);
   const [slashFilter, setSlashFilter] = useState('');
   const [selectedHint, setSelectedHint] = useState(0);
-  const [editingClaudeMd, setEditingClaudeMd] = useState(false);
-  const [claudeMdContent, setClaudeMdContent] = useState('');
   const [localMessages, setLocalMessages] = useState<LocalMessage[]>([]);
   const [inputRequired, setInputRequired] = useState<{ prompt: string; choices?: string[] } | null>(null);
   const [expandedTools, setExpandedTools] = useState<Set<string>>(new Set());
@@ -359,7 +367,6 @@ export function AgentChat() {
   const savedInputRef = useRef('');
   const [showHistoryPicker, setShowHistoryPicker] = useState(false);
   const [historyPickerIdx, setHistoryPickerIdx] = useState(0);
-  const [historyRestoreTarget, setHistoryRestoreTarget] = useState<number | null>(null);
   const [historyRestoringIdx, setHistoryRestoringIdx] = useState<number | null>(null);
   const [attachedFiles, setAttachedFiles] = useState<File[]>([]);
   const [uploadingCount, setUploadingCount] = useState(0);
@@ -496,8 +503,8 @@ export function AgentChat() {
           contextWindow: data.delta.contextWindow ?? prev.contextWindow,
           lastActivity: data.delta.lastActivity,
           interactionMode: data.delta.interactionMode ?? prev.interactionMode,
-          pendingPlan: data.delta.pendingPlan ?? prev.pendingPlan,
-          pendingQuestion: data.delta.pendingQuestion ?? prev.pendingQuestion,
+          pendingPlan: data.delta.pendingPlan === undefined ? prev.pendingPlan : (data.delta.pendingPlan || undefined),
+          pendingQuestion: data.delta.pendingQuestion === undefined ? prev.pendingQuestion : (data.delta.pendingQuestion || undefined),
         };
       });
     };
@@ -622,7 +629,6 @@ export function AgentChat() {
         addStatusNotice(t('chat.rewindRestored'));
       }
       setShowHistoryPicker(false);
-      setHistoryRestoreTarget(null);
       setTimeout(() => inputRef.current?.focus(), 100);
     } catch (err) {
       addLocalMessage(`[Error] ${String(err)}`);
@@ -635,11 +641,10 @@ export function AgentChat() {
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
       if (e.key === 'Escape') {
-        // If history picker or restore confirm is open, close them
-        if (historyRestoreTarget !== null) {
-          setHistoryRestoreTarget(null);
-          return;
-        }
+        // Ignore Esc during IME composition (e.g. cancelling Chinese input candidates)
+        if (composingRef.current || e.isComposing) return;
+
+        // If history picker is open, close it
         if (showHistoryPicker) {
           setShowHistoryPicker(false);
           lastEscRef.current = 0;
@@ -673,8 +678,8 @@ export function AgentChat() {
         return;
       }
       // Arrow-key navigation inside history picker
-      if (showHistoryPicker && historyRestoreTarget === null) {
-        const userTurns = agent?.messages.filter(m => m.role === 'user') || [];
+      if (showHistoryPicker) {
+        const userTurns = (agent as any)?.preRestoreUserTurns ?? agent?.messages.filter(m => m.role === 'user') ?? [];
         if (e.key === 'ArrowDown') {
           e.preventDefault();
           setHistoryPickerIdx(i => Math.max(i - 1, 0));
@@ -683,9 +688,7 @@ export function AgentChat() {
           setHistoryPickerIdx(i => Math.min(i + 1, userTurns.length - 1));
         } else if (e.key === 'Enter') {
           e.preventDefault();
-          if (userTurns[historyPickerIdx]) {
-            void restoreHistoryTurn(historyPickerIdx);
-          }
+          void restoreHistoryTurn(historyPickerIdx);
         }
       }
     };
@@ -693,7 +696,7 @@ export function AgentChat() {
     return () => {
       window.removeEventListener('keydown', handleKeyDown);
     };
-  }, [id, agent, showHistoryPicker, historyPickerIdx, historyRestoreTarget, navigate, restoreHistoryTurn, t]);
+  }, [id, agent, showHistoryPicker, historyPickerIdx, navigate, restoreHistoryTurn, t]);
 
   const handleInputChange = (value: string) => {
     setInput(value);
@@ -787,8 +790,7 @@ export function AgentChat() {
       }
       case '/memory':
         if (agent) {
-          setClaudeMdContent(agent.config.claudeMd || '');
-          setEditingClaudeMd(true);
+          addLocalMessage(`CLAUDE.md:\n${agent.config.claudeMd || '(empty)'}`);
         }
         break;
       case '/model':
@@ -1127,9 +1129,23 @@ export function AgentChat() {
 
     if (!text) return;
 
-    // Optimistic: show user message immediately
+    const isRunning = agent?.status === 'running';
+
+    // Optimistic update: if agent is idle, show user message immediately.
+    // If running, the server queues the message — show a system notice instead.
     setAgent(prev => {
       if (!prev) return prev;
+      if (isRunning) {
+        return {
+          ...prev,
+          messages: [...prev.messages, {
+            id: `pending-${Date.now()}`,
+            role: 'system',
+            content: `[Queued] "${text.length > 80 ? text.slice(0, 80) + '...' : text}"`,
+            timestamp: Date.now(),
+          }],
+        };
+      }
       return {
         ...prev,
         status: 'running' as Agent['status'],
@@ -1224,12 +1240,6 @@ export function AgentChat() {
     }
   };
 
-  const handleSaveClaudeMd = async () => {
-    if (!id) return;
-    await api.updateClaudeMd(id, claudeMdContent);
-    setEditingClaudeMd(false);
-  };
-
   const handleReasoningEffortChange = async (nextValue: ReasoningEffortSelection) => {
     if (!id || !agent) return;
 
@@ -1274,9 +1284,6 @@ export function AgentChat() {
 
   if (!agent) return <div>{t('common.loading')}</div>;
 
-  const instructionFileName = getInstructionFileName(agent.config.provider || 'claude');
-  const editInstructionLabel = replaceInstructionFileName(t('chat.editClaudeMd'), instructionFileName);
-  const editInstructionTitle = replaceInstructionFileName(t('chat.editClaudeMdTitle'), instructionFileName);
   const reasoningEffortOptions = getReasoningEffortOptions(agent.config.provider, runtimeCapabilities);
   const interactionMode = agent.interactionMode || 'default';
   const isPlanMode = interactionMode === 'plan';
@@ -1364,22 +1371,6 @@ export function AgentChat() {
             <span className="status-dot" />
             {getAgentStatusLabel(agent.status)}
           </span>
-          <button
-            className="btn btn-sm btn-outline"
-            onClick={() => navigate(`/create?from=${id}`)}
-            title={t('dashboard.cloneAgent')}
-          >
-            {t('dashboard.clone')}
-          </button>
-          <button
-            className="btn btn-sm btn-outline"
-            onClick={() => {
-              setClaudeMdContent(agent.config.claudeMd || '');
-              setEditingClaudeMd(true);
-            }}
-          >
-            {editInstructionLabel}
-          </button>
           <button
             className={`btn btn-sm ${renderMarkdown ? 'btn-primary' : 'btn-outline'}`}
             onClick={() => {
@@ -1737,104 +1728,42 @@ export function AgentChat() {
 
       {/* Conversation history picker (double-Esc) */}
       {showHistoryPicker && (() => {
-        const userTurns = agent?.messages.filter(m => m.role === 'user') || [];
+        const currentUserTurns = agent?.messages.filter(m => m.role === 'user') || [];
+        const userTurns: Array<{ id: string; content: string; timestamp: number }> =
+          (agent as any)?.preRestoreUserTurns ?? currentUserTurns;
+        const currentTurnCount = currentUserTurns.length;
         return (
-          <div className="modal-overlay" onClick={() => { setShowHistoryPicker(false); setHistoryRestoreTarget(null); }}>
+          <div className="modal-overlay" onClick={() => { setShowHistoryPicker(false); }}>
             <div className="modal" onClick={(e) => e.stopPropagation()} style={{ maxWidth: 560, maxHeight: '75vh', display: 'flex', flexDirection: 'column' }}>
               <div className="modal-header">
                 <span className="modal-title">{t('chat.historyPickerTitle')}</span>
                 <span style={{ fontSize: 12, color: 'var(--text-muted)' }}>{t('chat.historyPickerHint')}</span>
-                <button className="btn btn-sm btn-outline" onClick={() => { setShowHistoryPicker(false); setHistoryRestoreTarget(null); }}>{t('common.cancel')}</button>
+                <button className="btn btn-sm btn-outline" onClick={() => { setShowHistoryPicker(false); }}>{t('common.cancel')}</button>
               </div>
 
-              {/* Restore options panel (matches local Claude CLI) */}
-              {historyRestoreTarget !== null && (() => {
-                const turnContent = userTurns[historyRestoreTarget]?.content || '';
-                const doRestore = async (restoreCode: boolean, restoreConv: boolean) => {
-                  if (historyRestoreTarget === null) return;
-                  if (restoreCode || restoreConv) {
-                    await restoreHistoryTurn(historyRestoreTarget, restoreCode, restoreConv);
-                    return;
-                  }
-                  setShowHistoryPicker(false);
-                  setHistoryRestoreTarget(null);
-                  setTimeout(() => inputRef.current?.focus(), 100);
-                };
-                const options = [
-                  { label: t('chat.restoreCodeAndConv'), action: () => doRestore(true, true) },
-                  { label: t('chat.restoreConversation'), action: () => doRestore(false, true) },
-                  { label: t('chat.restoreCodeOnly'), action: () => doRestore(true, false) },
-                  { label: t('chat.summarizeFromHere'), action: () => {
-                    if (id) {
-                      api.sendMessage(id, `/compact Summarize conversation up to this point`);
-                    }
-                    setShowHistoryPicker(false);
-                    setHistoryRestoreTarget(null);
-                  }},
-                  { label: t('chat.neverMind'), action: () => setHistoryRestoreTarget(null) },
-                ];
-                return (
-                  <div style={{ padding: '14px 16px', background: 'var(--bg-card)', borderBottom: '1px solid var(--border)' }}>
-                    <div style={{ fontSize: 12, color: 'var(--text-muted)', marginBottom: 10, fontFamily: 'monospace', whiteSpace: 'pre-wrap', maxHeight: 48, overflow: 'hidden', textOverflow: 'ellipsis' }}>
-                      Turn {historyRestoreTarget + 1}: {turnContent.slice(0, 100)}{turnContent.length > 100 ? '…' : ''}
-                    </div>
-                    <div style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
-                      {options.map((opt, i) => (
-                        <button
-                          key={i}
-                          className="btn btn-sm btn-outline"
-                          disabled={historyRestoringIdx !== null}
-                          style={{ textAlign: 'left', justifyContent: 'flex-start', fontWeight: 400 }}
-                          onClick={opt.action}
-                        >
-                          {i + 1}. {opt.label}
-                        </button>
-                      ))}
-                    </div>
-                  </div>
-                );
-              })()}
-
               <div style={{ overflowY: 'auto', flex: 1 }}>
-                {!agent?.sessionId && (
-                  <div style={{ padding: '8px 16px', fontSize: 12, color: 'var(--text-muted)', background: 'var(--bg-card)', borderBottom: '1px solid var(--border)' }}>
-                    Note: No session ID — restore will not resume JSONL.
-                  </div>
-                )}
                 {userTurns.length === 0 ? (
                   <div style={{ padding: 24, textAlign: 'center', color: 'var(--text-muted)' }}>{t('chat.noHistory')}</div>
-                ) : [...userTurns].reverse().map((msg, ri) => { const i = userTurns.length - 1 - ri; return (
+                ) : [...userTurns].reverse().map((msg, ri) => { const i = userTurns.length - 1 - ri; const isCurrentOrBefore = i < currentTurnCount; return (
                   <div
                     key={msg.id}
-                    onClick={() => void restoreHistoryTurn(i)}
+                    onClick={() => { if (historyRestoringIdx === null) void restoreHistoryTurn(i); }}
                     style={{
                       padding: '10px 16px',
-                      cursor: 'pointer',
-                      background: i === historyPickerIdx ? 'var(--primary)' : 'transparent',
-                      color: i === historyPickerIdx ? '#fff' : 'var(--text)',
+                      cursor: historyRestoringIdx !== null ? 'wait' : 'pointer',
+                      background: i === historyPickerIdx ? 'rgba(var(--primary-rgb, 79,140,255), 0.15)' : 'transparent',
+                      color: 'var(--text)',
+                      opacity: isCurrentOrBefore ? 1 : 0.6,
                       borderBottom: '1px solid var(--border)',
-                      borderLeft: historyRestoreTarget === i ? '3px solid var(--yellow, #f59e0b)' : '3px solid transparent',
                     }}
                     onMouseEnter={() => setHistoryPickerIdx(i)}
                   >
-                    <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-                      <div style={{ fontSize: 13, fontFamily: 'monospace', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', flex: 1 }}>
-                        {historyRestoringIdx === i ? t('chat.rewinding') : `${msg.content.slice(0, 80)}${msg.content.length > 80 ? '…' : ''}`}
-                      </div>
-                      <button
-                        className="btn btn-sm btn-outline"
-                        disabled={historyRestoringIdx !== null}
-                        onClick={(e) => {
-                          e.stopPropagation();
-                          setHistoryRestoreTarget(i);
-                        }}
-                        style={{ padding: '2px 7px', lineHeight: 1.2 }}
-                      >
-                        {t('chat.restoreOptions')}
-                      </button>
+                    <div style={{ fontSize: 13, fontFamily: 'monospace', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
+                      {historyRestoringIdx === i ? t('chat.rewinding') : `${msg.content.slice(0, 80)}${msg.content.length > 80 ? '…' : ''}`}
                     </div>
-                    <div style={{ fontSize: 11, color: i === historyPickerIdx ? 'rgba(255,255,255,0.7)' : 'var(--text-muted)', marginTop: 2 }}>
+                    <div style={{ fontSize: 11, color: 'var(--text-muted)', marginTop: 2 }}>
                       Turn {i + 1} &nbsp;·&nbsp; {new Date(msg.timestamp).toLocaleString()}
+                      {!isCurrentOrBefore && ' (restored)'}
                     </div>
                   </div>
                 ); })}
@@ -1844,42 +1773,6 @@ export function AgentChat() {
         );
       })()}
 
-      {editingClaudeMd && (
-        <div className="modal-overlay" onClick={() => setEditingClaudeMd(false)}>
-          <div className="modal" onClick={(e) => e.stopPropagation()}>
-            <div className="modal-header">
-              <span className="modal-title">{editInstructionTitle}</span>
-              <button
-                className="btn btn-sm btn-outline"
-                onClick={() => setEditingClaudeMd(false)}
-              >
-                {t('common.cancel')}
-              </button>
-            </div>
-            <textarea
-              value={claudeMdContent}
-              onChange={(e) => setClaudeMdContent(e.target.value)}
-              style={{
-                width: '100%',
-                minHeight: 300,
-                padding: 12,
-                background: 'var(--bg-input)',
-                border: '1px solid var(--border)',
-                borderRadius: 'var(--radius)',
-                color: 'var(--text)',
-                fontFamily: 'monospace',
-                fontSize: 13,
-                resize: 'vertical',
-              }}
-            />
-            <div style={{ marginTop: 12, display: 'flex', justifyContent: 'flex-end' }}>
-              <button className="btn" onClick={handleSaveClaudeMd}>
-                {t('common.save')}
-              </button>
-            </div>
-          </div>
-        </div>
-      )}
     </div>
   );
 }

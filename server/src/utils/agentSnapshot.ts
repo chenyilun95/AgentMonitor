@@ -13,23 +13,32 @@ function truncateText(text: string): string {
  * Older data may contain cumulative tokens in `used`, which can exceed `total`.
  */
 export function sanitizeAgentSnapshot(agent: Agent): Agent {
-  const context = agent.contextWindow;
-  if (!context) return agent;
+  const { preRestoreSnapshot, ...rest } = agent;
+  let result = rest as Agent;
+
+  if (preRestoreSnapshot) {
+    (result as any).preRestoreUserTurns = preRestoreSnapshot.messages
+      .filter(m => m.role === 'user')
+      .map(m => ({ id: m.id, content: m.content, timestamp: m.timestamp }));
+  }
+
+  const context = result.contextWindow;
+  if (!context) return result;
 
   const total = Number(context.total);
   const used = Number(context.used);
   if (!Number.isFinite(total) || total <= 0) {
-    const { contextWindow: _drop, ...rest } = agent;
-    return rest;
+    const { contextWindow: _drop, ...r } = result;
+    return r;
   }
 
   const normalizedUsed = Math.min(total, Math.max(0, Number.isFinite(used) ? used : 0));
   if (normalizedUsed === used && total === context.total) {
-    return agent;
+    return result;
   }
 
   return {
-    ...agent,
+    ...result,
     contextWindow: {
       used: Math.round(normalizedUsed),
       total: Math.round(total),

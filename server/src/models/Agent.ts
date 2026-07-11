@@ -105,6 +105,11 @@ export interface Agent {
     createdAt: number;
     answeredAt?: number;
   };
+  preRestoreSnapshot?: {
+    messages: AgentMessage[];
+    sessionId?: string;
+    jsonlBackupPath?: string;
+  };
 }
 
 export interface PendingQuestionOption {

@@ -1,8 +1,8 @@
 export const ko: Record<string, string> = {
     // Nav
     'nav.brand': 'Agent Monitor',
-    'nav.dashboard': '대시보드',
-    'nav.pipeline': '에이전트 매니저',
+    'nav.dashboard': '에이전트',
+    'nav.pipeline': '에이전트 팀',
     'nav.newAgent': '새 에이전트',
     'nav.templates': '템플릿',
     'nav.help': '문서',
@@ -30,7 +30,7 @@ export const ko: Record<string, string> = {
     'common.codex': 'Codex',
 
     // Dashboard
-    'dashboard.title': '대시보드',
+    'dashboard.title': '에이전트',
     'dashboard.newAgent': '+ 새 에이전트',
     'dashboard.stopAll': '모두 중지',
     'dashboard.empty': '실행 중인 에이전트가 없습니다. 하나를 생성하여 시작하세요.',
@@ -88,6 +88,7 @@ export const ko: Record<string, string> = {
     'create.newSession': '새 세션',
     'create.claudeMd': 'CLAUDE.md',
     'create.loadTemplate': '템플릿 불러오기...',
+    'create.emptyTemplate': '(비어 있음)',
     'create.claudeMdPlaceholder': '에이전트용 CLAUDE.md 내용 (선택사항)',
     'create.adminEmail': '관리자 이메일 (알림용)',
     'create.adminEmailPlaceholder': 'admin@example.com',
@@ -98,7 +99,7 @@ export const ko: Record<string, string> = {
     'create.creating': '생성 중...',
     'create.createAgent': '에이전트 생성',
     'create.requiredFields': '이름과 디렉토리는 필수입니다',
-    'create.selectCurrent': '현재 디렉토리 선택:',
+    'create.pathWillCreate': '경로가 존재하지 않습니다 — 자동으로 생성됩니다.',
     'create.claudeMdFound': '이 디렉토리에서 CLAUDE.md를 발견했습니다',
     'create.loadExisting': '기존 CLAUDE.md 불러오기',
     'create.keepCustom': '사용자 정의 유지',
@@ -237,7 +238,7 @@ export const ko: Record<string, string> = {
     'templates.empty': '아직 템플릿이 없습니다. 하나를 생성하여 시작하세요.',
 
     // Pipeline
-    'pipeline.title': '에이전트 매니저',
+    'pipeline.title': '에이전트 팀',
     'pipeline.manager': '관리자:',
     'pipeline.running': '실행 중',
     'pipeline.stopped': '중지됨',

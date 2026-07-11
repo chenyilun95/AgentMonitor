@@ -1,8 +1,8 @@
 export const zh: Record<string, string> = {
     // Nav
     'nav.brand': 'Agent Monitor',
-    'nav.dashboard': '仪表盘',
-    'nav.pipeline': '代理管理器',
+    'nav.dashboard': '代理',
+    'nav.pipeline': '代理团队',
     'nav.newAgent': '新建代理',
     'nav.templates': '模板',
     'nav.help': '文档',
@@ -30,7 +30,7 @@ export const zh: Record<string, string> = {
     'common.codex': 'Codex',
 
     // Dashboard
-    'dashboard.title': '仪表盘',
+    'dashboard.title': '代理',
     'dashboard.newAgent': '+ 新建代理',
     'dashboard.stopAll': '全部停止',
     'dashboard.empty': '暂无运行中的代理。创建一个开始使用。',
@@ -88,6 +88,7 @@ export const zh: Record<string, string> = {
     'create.newSession': '新会话',
     'create.claudeMd': 'CLAUDE.md',
     'create.loadTemplate': '加载模板...',
+    'create.emptyTemplate': '（空模板）',
     'create.claudeMdPlaceholder': '可选的 CLAUDE.md 内容',
     'create.adminEmail': '管理员邮箱（用于通知）',
     'create.adminEmailPlaceholder': 'admin@example.com',
@@ -98,7 +99,7 @@ export const zh: Record<string, string> = {
     'create.creating': '创建中...',
     'create.createAgent': '创建代理',
     'create.requiredFields': '名称和目录为必填项',
-    'create.selectCurrent': '选择当前目录:',
+    'create.pathWillCreate': '路径不存在，创建时将自动创建该目录。',
     'create.claudeMdFound': '在此目录中发现 CLAUDE.md',
     'create.loadExisting': '加载已有的 CLAUDE.md',
     'create.keepCustom': '保留自定义',
@@ -237,7 +238,7 @@ export const zh: Record<string, string> = {
     'templates.empty': '暂无模板。创建一个开始使用。',
 
     // Pipeline
-    'pipeline.title': '代理管理器',
+    'pipeline.title': '代理团队',
     'pipeline.manager': '管理器:',
     'pipeline.running': '运行中',
     'pipeline.stopped': '已停止',
@@ -285,6 +286,33 @@ export const zh: Record<string, string> = {
     'pipeline.slackWebhookPlaceholder': 'https://hooks.slack.com/services/...',
     'pipeline.stuckTimeout': '卡住代理超时（分钟）',
     'pipeline.saveConfig': '保存配置',
+
+    // Harness mode
+    'pipeline.modeSimple': '简单流水线',
+    'pipeline.modeSimpleDesc': '手动定义任务和执行顺序。同一步骤的任务并行执行，步骤之间顺序执行。每个任务启动一个独立的 Agent。',
+    'pipeline.modeHarness': '评估闭环',
+    'pipeline.modeHarnessDesc': '只需提供高层目标。Planner Agent 自动拆解为子任务，Generator Agent 并行执行，Evaluator Agent 审查结果。未通过的任务自动带反馈修订（最多 N 次）。',
+    'pipeline.harnessGoal': '目标',
+    'pipeline.harnessGoalPlaceholder': '描述代理团队需要达成的高层目标...',
+    'pipeline.harnessEvalCriteria': '评估标准（可选）',
+    'pipeline.harnessEvalCriteriaPlaceholder': '自定义评估任务质量的标准...',
+    'pipeline.harnessMaxRevisions': '每个任务最大修订次数',
+    'pipeline.harnessStart': '启动评估闭环',
+    'pipeline.harnessStop': '停止评估闭环',
+    'pipeline.harnessStatus': '状态',
+    'pipeline.harnessPlanning': '规划中',
+    'pipeline.harnessGenerating': '执行中',
+    'pipeline.harnessEvaluating': '评估中',
+    'pipeline.harnessComplete': '已完成',
+    'pipeline.harnessFailed': '失败',
+    'pipeline.harnessIdle': '空闲',
+    'pipeline.rolePlanner': '规划',
+    'pipeline.roleGenerator': '执行',
+    'pipeline.roleEvaluator': '评审',
+    'pipeline.evalPass': '通过',
+    'pipeline.evalFail': '未通过',
+    'pipeline.revision': '修订',
+    'pipeline.revisionCount': '修订次数',
 
     // Common (additions)
     'common.close': '关闭',

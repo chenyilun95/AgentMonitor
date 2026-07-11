@@ -1,8 +1,8 @@
 export const ja: Record<string, string> = {
     // Nav
     'nav.brand': 'Agent Monitor',
-    'nav.dashboard': 'ダッシュボード',
-    'nav.pipeline': 'エージェントマネージャー',
+    'nav.dashboard': 'エージェント',
+    'nav.pipeline': 'エージェントチーム',
     'nav.newAgent': '新規エージェント',
     'nav.templates': 'テンプレート',
     'nav.help': 'ドキュメント',
@@ -30,7 +30,7 @@ export const ja: Record<string, string> = {
     'common.codex': 'Codex',
 
     // Dashboard
-    'dashboard.title': 'ダッシュボード',
+    'dashboard.title': 'エージェント',
     'dashboard.newAgent': '+ 新規エージェント',
     'dashboard.stopAll': 'すべて停止',
     'dashboard.empty': '実行中のエージェントはありません。作成して始めましょう。',
@@ -88,6 +88,7 @@ export const ja: Record<string, string> = {
     'create.newSession': '新しいセッション',
     'create.claudeMd': 'CLAUDE.md',
     'create.loadTemplate': 'テンプレートを読み込む...',
+    'create.emptyTemplate': '（空）',
     'create.claudeMdPlaceholder': 'エージェント用のCLAUDE.md内容（任意）',
     'create.adminEmail': '管理者メール（通知用）',
     'create.adminEmailPlaceholder': 'admin@example.com',
@@ -98,7 +99,7 @@ export const ja: Record<string, string> = {
     'create.creating': '作成中...',
     'create.createAgent': 'エージェントを作成',
     'create.requiredFields': '名前とディレクトリは必須です',
-    'create.selectCurrent': '現在のディレクトリを選択:',
+    'create.pathWillCreate': 'パスが存在しません — 自動的に作成されます。',
     'create.claudeMdFound': 'このディレクトリにCLAUDE.mdが見つかりました',
     'create.loadExisting': '既存のCLAUDE.mdを読み込む',
     'create.keepCustom': 'カスタムを保持',
@@ -237,7 +238,7 @@ export const ja: Record<string, string> = {
     'templates.empty': 'テンプレートはまだありません。作成して始めましょう。',
 
     // Pipeline
-    'pipeline.title': 'エージェントマネージャー',
+    'pipeline.title': 'エージェントチーム',
     'pipeline.manager': 'マネージャー:',
     'pipeline.running': '実行中',
     'pipeline.stopped': '停止',

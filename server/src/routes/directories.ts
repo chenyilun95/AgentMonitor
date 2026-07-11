@@ -1,4 +1,5 @@
 import { Router } from 'express';
+import { existsSync } from 'fs';
 import { DirectoryBrowser, FileReadError } from '../services/DirectoryBrowser.js';
 import type { AgentProvider } from '../models/Agent.js';
 import { findInstructionFile } from '../utils/instructionFiles.js';
@@ -6,6 +7,15 @@ import { findInstructionFile } from '../utils/instructionFiles.js';
 export function directoryRoutes(): Router {
   const router = Router();
   const browser = new DirectoryBrowser();
+
+  router.get('/validate', (req, res) => {
+    const dirPath = req.query.path as string;
+    if (!dirPath) {
+      res.json({ exists: false });
+      return;
+    }
+    res.json({ exists: existsSync(dirPath) });
+  });
 
   router.get('/', (req, res) => {
     try {

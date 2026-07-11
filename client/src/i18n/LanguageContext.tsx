@@ -16,7 +16,7 @@ function getInitialLang(): Language {
     const stored = localStorage.getItem(STORAGE_KEY);
     if (['en', 'zh', 'ja', 'ko', 'es', 'fr', 'de'].includes(stored!)) return stored as Language;
   } catch {}
-  return 'en';
+  return 'zh';
 }
 
 export function LanguageProvider({ children }: { children: ReactNode }) {

@@ -80,8 +80,7 @@ describe('CreateAgent', () => {
     await waitFor(() => {
       expect(screen.getByLabelText('--dangerously-bypass-approvals-and-sandbox')).toBeChecked();
     });
-    expect(screen.getByLabelText('--full-auto')).toBeChecked();
-    expect(screen.getByLabelText('--ask-for-approval never')).toBeChecked();
+    expect(screen.getByLabelText('approval_policy="never"')).toBeChecked();
     expect(screen.getByLabelText('--sandbox danger-full-access')).toBeChecked();
   });
 
@@ -121,7 +120,7 @@ describe('CreateAgent', () => {
     fireEvent.change(screen.getByPlaceholderText('/path/to/project'), {
       target: { value: '/tmp/project' },
     });
-    fireEvent.click(screen.getByRole('button', { name: 'Create Agent' }));
+    fireEvent.click(screen.getByRole('button', { name: /Create Agent|创建代理/ }));
 
     await waitFor(() => {
       expect(api.createAgent).toHaveBeenCalledWith(expect.objectContaining({
@@ -131,7 +130,6 @@ describe('CreateAgent', () => {
         flags: expect.objectContaining({
           dangerouslySkipPermissions: true,
           fullAuto: true,
-          askForApprovalNever: true,
           sandboxDangerFullAccess: true,
         }),
       }));

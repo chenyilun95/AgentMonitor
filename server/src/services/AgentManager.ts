@@ -1,7 +1,7 @@
 import { v4 as uuid } from 'uuid';
 import { EventEmitter } from 'events';
 import { execSync } from 'child_process';
-import { readFileSync, readdirSync, existsSync, mkdirSync, writeFileSync, statSync, unlinkSync } from 'fs';
+import { readFileSync, readdirSync, existsSync, mkdirSync, writeFileSync, statSync, unlinkSync, copyFileSync } from 'fs';
 import path, { basename } from 'path';
 import os from 'os';
 import type { Agent, AgentConfig, AgentInteractionMode, AgentLogEntry, AgentMessage, AgentStatus, AgentWorkspaceMode, PendingQuestionItem, PendingQuestionOption, ReasoningEffort } from '../models/Agent.js';
@@ -81,7 +81,7 @@ export class AgentManager extends EventEmitter {
   private feishuNotifier: FeishuNotifier;
   /** Track when a user message was sent per agent (agentId → timestamp) */
   private pendingUserMessage: Map<string, number> = new Map();
-  private queuedUserMessages: Map<string, string[]> = new Map();
+  private queuedUserMessages: Map<string, Array<{ displayText: string; processText: string }>> = new Map();
   private stuckCheckInterval: ReturnType<typeof setInterval> | null = null;
 
   constructor(store: AgentStore, worktreeManager?: WorktreeManager, emailNotifier?: EmailNotifier, whatsappNotifier?: WhatsAppNotifier, slackNotifier?: SlackNotifier, feishuNotifier?: FeishuNotifier) {
@@ -657,6 +657,15 @@ export class AgentManager extends EventEmitter {
     sourceMessageId: string,
   ): void {
     if (!block.id || !block.name) return;
+
+    // When --dangerously-skip-permissions is active, Claude Code handles ALL
+    // interactive tools internally (including AskUserQuestion / ExitPlanMode).
+    // The tool_use in the stream is a LOG of what already happened — Claude
+    // auto-answered and continued. Setting waiting_input here would be wrong
+    // (agent keeps running) and sending a tool_result would inject an
+    // unexpected duplicate response.
+    if (agent.config.flags.dangerouslySkipPermissions) return;
+
     const input = block.input as Record<string, unknown> | undefined;
 
     if (block.name === 'AskUserQuestion') {
@@ -1471,11 +1480,49 @@ export class AgentManager extends EventEmitter {
     if (!agent) return;
     const processText = this.wrapPlanModeMessage(agent, text);
 
-    // Take a code snapshot before this turn so we can restore to it later.
+    const proc = this.processes.get(agentId);
+    if (proc && agent.status !== 'waiting_input') {
+      // Agent is running — queue the message for later. Don't add to message
+      // history yet so it doesn't appear mid-conversation (matches TUI /btw).
+      this.enqueueUserMessage(agentId, text, processText);
+      agent.messages.push({
+        id: uuid(),
+        role: 'system',
+        content: `[Queued] "${text.length > 80 ? text.slice(0, 80) + '...' : text}"`,
+        timestamp: Date.now(),
+      });
+      agent.lastActivity = Date.now();
+      this.store.saveAgent(agent);
+      this.emit('agent:update', agentId, agent);
+      return;
+    }
+
+    // Message will be sent immediately — add to history now.
+    this.addUserMessageToHistory(agent, text);
+
+    if (proc) {
+      // status === 'waiting_input' with a live process
+      this.updateAgentStatus(agentId, 'running');
+      this.pendingUserMessage.set(agentId, Date.now());
+      proc.sendMessage(processText);
+      this.emit('agent:message', agentId, { type: 'user', text });
+    } else if (agent.status === 'waiting_input') {
+      agent.originalPrompt = text;
+      this.resumeAgent(agent, processText);
+    } else if (agent.status === 'stopped' || agent.status === 'error') {
+      this.resumeAgent(agent, processText);
+    }
+  }
+
+  private addUserMessageToHistory(agent: Agent, text: string): void {
+    if (agent.preRestoreSnapshot) {
+      if (agent.preRestoreSnapshot.jsonlBackupPath) {
+        try { unlinkSync(agent.preRestoreSnapshot.jsonlBackupPath); } catch { /* ok */ }
+      }
+      delete agent.preRestoreSnapshot;
+    }
     const turnIndex = agent.messages.filter(m => m.role === 'user').length;
     this.takeCodeSnapshot(agent, turnIndex);
-
-    // Add user message to history
     agent.messages.push({
       id: uuid(),
       role: 'user',
@@ -1490,36 +1537,12 @@ export class AgentManager extends EventEmitter {
     });
     agent.lastActivity = Date.now();
     this.store.saveAgent(agent);
-    // Emit full snapshot so chat UI updates immediately with user message
-    this.emit('agent:update', agentId, agent);
-
-    const proc = this.processes.get(agentId);
-    if (proc) {
-      if (agent.status === 'waiting_input') {
-        this.updateAgentStatus(agentId, 'running');
-        this.pendingUserMessage.set(agentId, Date.now());
-        proc.sendMessage(processText);
-        this.emit('agent:message', agentId, {
-          type: 'user',
-          text,
-        });
-        return;
-      }
-
-      this.enqueueUserMessage(agentId, processText);
-    } else if (agent.status === 'waiting_input') {
-      // Agent created without a prompt — start it with this message
-      agent.originalPrompt = text;
-      this.resumeAgent(agent, processText);
-    } else if (agent.status === 'stopped' || agent.status === 'error') {
-      // Agent is stopped — resume with new prompt
-      this.resumeAgent(agent, processText);
-    }
+    this.emit('agent:update', agent.id, agent);
   }
 
-  private enqueueUserMessage(agentId: string, text: string): void {
+  private enqueueUserMessage(agentId: string, displayText: string, processText: string): void {
     const queued = this.queuedUserMessages.get(agentId) || [];
-    queued.push(text);
+    queued.push({ displayText, processText });
     this.queuedUserMessages.set(agentId, queued);
   }
 
@@ -1529,7 +1552,7 @@ export class AgentManager extends EventEmitter {
       this.queuedUserMessages.delete(agentId);
       return;
     }
-    const nextText = queued.shift()!;
+    const next = queued.shift()!;
 
     if (queued.length === 0) {
       this.queuedUserMessages.delete(agentId);
@@ -1538,8 +1561,9 @@ export class AgentManager extends EventEmitter {
     const agent = this.store.getAgent(agentId);
     if (!agent || agent.status === 'error') return;
 
+    this.addUserMessageToHistory(agent, next.displayText);
     this.pendingUserMessage.set(agentId, Date.now());
-    this.resumeAgent(agent, nextText);
+    this.resumeAgent(agent, next.processText);
   }
 
   private resumeAgent(agent: Agent, newPrompt: string): void {
@@ -1880,10 +1904,33 @@ export class AgentManager extends EventEmitter {
       this.processes.delete(agentId);
     }
 
-    // Find the user message text to return for pre-fill
+    // Save pre-restore snapshot on first restore so user can re-select later turns
+    const sourceMessages = agent.preRestoreSnapshot?.messages ?? agent.messages;
+    const sourceSessionId = agent.preRestoreSnapshot?.sessionId ?? agent.sessionId;
+
+    if (!agent.preRestoreSnapshot) {
+      let jsonlBackupPath: string | undefined;
+      if (agent.sessionId && agent.config.provider === 'claude') {
+        const jsonlPath = this.findSessionJsonlPath(agent.sessionId);
+        if (jsonlPath) {
+          try {
+            const backupPath = jsonlPath + '.pre-restore';
+            copyFileSync(jsonlPath, backupPath);
+            jsonlBackupPath = backupPath;
+          } catch { /* best effort */ }
+        }
+      }
+      agent.preRestoreSnapshot = {
+        messages: [...agent.messages],
+        sessionId: agent.sessionId,
+        jsonlBackupPath,
+      };
+    }
+
+    // Find the user message text from the full (pre-restore) source
     let restoredPrompt = '';
     let userMsgCount = 0;
-    for (const msg of agent.messages) {
+    for (const msg of sourceMessages) {
       if (msg.role === 'user') {
         if (userMsgCount === turnIndex) {
           restoredPrompt = msg.content;
@@ -1893,12 +1940,16 @@ export class AgentManager extends EventEmitter {
       }
     }
 
-    // Truncate Claude's JSONL session file — keep everything BEFORE the selected user turn.
-    // Codex session files are not currently mutated; we seed a fresh session below instead.
-    if (restoreConv && agent.sessionId && agent.config.provider === 'claude') {
-      const jsonlPath = this.findSessionJsonlPath(agent.sessionId);
+    // Truncate Claude's JSONL session file from the backup (not the already-truncated file)
+    if (restoreConv && sourceSessionId && agent.config.provider === 'claude') {
+      const jsonlPath = this.findSessionJsonlPath(sourceSessionId);
       if (jsonlPath) {
         try {
+          // Restore from backup first if available
+          const backupPath = agent.preRestoreSnapshot?.jsonlBackupPath;
+          if (backupPath) {
+            try { copyFileSync(backupPath, jsonlPath); } catch { /* backup may not exist */ }
+          }
           const content = readFileSync(jsonlPath, 'utf-8');
           const lines = content.split('\n').filter(l => l.trim() !== '');
           let userCount = 0;
@@ -1908,7 +1959,6 @@ export class AgentManager extends EventEmitter {
               const parsed = JSON.parse(lines[i]);
               if (parsed.type === 'user') {
                 if (userCount === turnIndex) {
-                  // Cut BEFORE this user turn
                   cutLine = i;
                   break;
                 }
@@ -1926,12 +1976,12 @@ export class AgentManager extends EventEmitter {
       }
     }
 
-    // Truncate agent.messages to BEFORE the Nth user-role message
+    // Truncate messages from the full source list
     if (restoreConv) {
       userMsgCount = 0;
-      let keepUntil = agent.messages.length;
-      for (let i = 0; i < agent.messages.length; i++) {
-        if (agent.messages[i].role === 'user') {
+      let keepUntil = sourceMessages.length;
+      for (let i = 0; i < sourceMessages.length; i++) {
+        if (sourceMessages[i].role === 'user') {
           if (userMsgCount === turnIndex) {
             keepUntil = i;
             break;
@@ -1939,7 +1989,7 @@ export class AgentManager extends EventEmitter {
           userMsgCount++;
         }
       }
-      agent.messages = agent.messages.slice(0, keepUntil);
+      agent.messages = sourceMessages.slice(0, keepUntil);
     }
 
     // Optionally restore git worktree to the snapshot before this turn
@@ -1954,10 +2004,6 @@ export class AgentManager extends EventEmitter {
       }
     }
 
-    // After truncating the JSONL, the old session is no longer valid for --resume.
-    // Clear sessionId so the next send starts a fresh session instead of hitting
-    // "No conversation found with session ID".
-    // Build a conversation seed so the fresh session still has prior context.
     if (restoreConv) {
       if (agent.messages.length > 0) {
         agent.restoredConversationSeed = agent.messages
@@ -1967,11 +2013,11 @@ export class AgentManager extends EventEmitter {
       agent.sessionId = undefined;
       delete agent.config.flags.resume;
     } else if (agent.sessionId && agent.config.provider === 'claude') {
-      // Code-only restore: session is intact, keep resume flag
       agent.config.flags.resume = agent.sessionId;
     }
     agent.interactionMode = 'default';
     delete agent.pendingPlan;
+    delete agent.pendingQuestion;
     agent.status = 'stopped';
     agent.lastActivity = Date.now();
     this.store.saveAgent(agent);

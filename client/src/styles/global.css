@@ -1160,6 +1160,8 @@ body::after {
   margin-left: 60px;
   font-weight: 500;
   border-bottom-right-radius: 4px;
+  max-height: 30vh;
+  overflow-y: auto;
 }
 
 [data-scheme="terra"] .chat-message.user {

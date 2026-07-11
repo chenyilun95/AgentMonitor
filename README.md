@@ -469,7 +469,7 @@ Once attached, send free text to forward it directly to the agent. When the agen
 | | Claude Code | Codex |
 |---|---|---|
 | **Binary** | `claude` | `codex` |
-| **Flags** | `--dangerously-skip-permissions`, `--permission-mode`, `--chrome`, `--max-budget-usd`, `--allowedTools`, `--disallowedTools`, `--add-dir`, `--mcp-config`, `--resume`, `--model` | `--dangerously-bypass-approvals-and-sandbox`, `--full-auto` |
+| **Flags** | `--dangerously-skip-permissions`, `--permission-mode`, `--chrome`, `--max-budget-usd`, `--allowedTools`, `--disallowedTools`, `--add-dir`, `--mcp-config`, `--resume`, `--model` | `--dangerously-bypass-approvals-and-sandbox`, `--sandbox danger-full-access`, `-c approval_policy="never"` |
 | **Model Selection** | Runtime-detected dropdown, applied via `--model` on start | Runtime-detected dropdown, applied via `/model <name>` at the beginning of the first turn |
 | **Tracking** | Cost (USD) | Token usage |
 

@@ -1,8 +1,8 @@
 export const de: Record<string, string> = {
     // Nav
     'nav.brand': 'Agent Monitor',
-    'nav.dashboard': 'Dashboard',
-    'nav.pipeline': 'Agent-Manager',
+    'nav.dashboard': 'Agenten',
+    'nav.pipeline': 'Agent-Team',
     'nav.newAgent': 'Neuer Agent',
     'nav.templates': 'Vorlagen',
     'nav.help': 'Dokumentation',
@@ -30,7 +30,7 @@ export const de: Record<string, string> = {
     'common.codex': 'Codex',
 
     // Dashboard
-    'dashboard.title': 'Dashboard',
+    'dashboard.title': 'Agenten',
     'dashboard.newAgent': '+ Neuer Agent',
     'dashboard.stopAll': 'Alle Stoppen',
     'dashboard.empty': 'Keine laufenden Agenten. Erstellen Sie einen, um zu beginnen.',
@@ -88,6 +88,7 @@ export const de: Record<string, string> = {
     'create.newSession': 'Neue Sitzung',
     'create.claudeMd': 'CLAUDE.md',
     'create.loadTemplate': 'Vorlage laden...',
+    'create.emptyTemplate': '(Leer)',
     'create.claudeMdPlaceholder': 'Optionaler CLAUDE.md-Inhalt für den Agenten',
     'create.adminEmail': 'Admin-E-Mail (für Benachrichtigungen)',
     'create.adminEmailPlaceholder': 'admin@beispiel.com',
@@ -98,7 +99,7 @@ export const de: Record<string, string> = {
     'create.creating': 'Wird erstellt...',
     'create.createAgent': 'Agent Erstellen',
     'create.requiredFields': 'Name und Verzeichnis sind erforderlich',
-    'create.selectCurrent': 'Aktuelles auswählen:',
+    'create.pathWillCreate': 'Pfad existiert nicht — wird automatisch erstellt.',
     'create.claudeMdFound': 'CLAUDE.md in diesem Verzeichnis gefunden',
     'create.loadExisting': 'Vorhandene CLAUDE.md laden',
     'create.keepCustom': 'Benutzerdefiniert beibehalten',
@@ -237,7 +238,7 @@ export const de: Record<string, string> = {
     'templates.empty': 'Noch keine Vorlagen. Erstellen Sie eine, um zu beginnen.',
 
     // Pipeline
-    'pipeline.title': 'Agent-Manager',
+    'pipeline.title': 'Agent-Team',
     'pipeline.manager': 'Manager:',
     'pipeline.running': 'Läuft',
     'pipeline.stopped': 'Gestoppt',

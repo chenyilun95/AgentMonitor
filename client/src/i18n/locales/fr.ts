@@ -1,8 +1,8 @@
 export const fr: Record<string, string> = {
     // Nav
     'nav.brand': 'Agent Monitor',
-    'nav.dashboard': 'Tableau de bord',
-    'nav.pipeline': 'Gestionnaire d\'Agents',
+    'nav.dashboard': 'Agents',
+    'nav.pipeline': 'Équipe d\'Agents',
     'nav.newAgent': 'Nouvel Agent',
     'nav.templates': 'Modèles',
     'nav.help': 'Documentation',
@@ -30,7 +30,7 @@ export const fr: Record<string, string> = {
     'common.codex': 'Codex',
 
     // Dashboard
-    'dashboard.title': 'Tableau de bord',
+    'dashboard.title': 'Agents',
     'dashboard.newAgent': '+ Nouvel Agent',
     'dashboard.stopAll': 'Tout Arrêter',
     'dashboard.empty': 'Aucun agent en cours d\'exécution. Créez-en un pour commencer.',
@@ -88,6 +88,7 @@ export const fr: Record<string, string> = {
     'create.newSession': 'Nouvelle session',
     'create.claudeMd': 'CLAUDE.md',
     'create.loadTemplate': 'Charger un modèle...',
+    'create.emptyTemplate': '(Vide)',
     'create.claudeMdPlaceholder': 'Contenu CLAUDE.md optionnel pour l\'agent',
     'create.adminEmail': 'Email administrateur (pour les notifications)',
     'create.adminEmailPlaceholder': 'admin@exemple.com',
@@ -98,7 +99,7 @@ export const fr: Record<string, string> = {
     'create.creating': 'Création en cours...',
     'create.createAgent': 'Créer l\'Agent',
     'create.requiredFields': 'Le nom et le répertoire sont obligatoires',
-    'create.selectCurrent': 'Sélectionner le répertoire actuel :',
+    'create.pathWillCreate': 'Le chemin n\'existe pas — il sera créé automatiquement.',
     'create.claudeMdFound': 'CLAUDE.md trouvé dans ce répertoire',
     'create.loadExisting': 'Charger le CLAUDE.md existant',
     'create.keepCustom': 'Garder la personnalisation',
@@ -237,7 +238,7 @@ export const fr: Record<string, string> = {
     'templates.empty': 'Aucun modèle pour le moment. Créez-en un pour commencer.',
 
     // Pipeline
-    'pipeline.title': 'Gestionnaire d\'Agents',
+    'pipeline.title': 'Équipe d\'Agents',
     'pipeline.manager': 'Gestionnaire :',
     'pipeline.running': 'En cours',
     'pipeline.stopped': 'Arrêté',

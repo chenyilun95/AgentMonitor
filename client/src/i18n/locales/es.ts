@@ -1,8 +1,8 @@
 export const es: Record<string, string> = {
     // Nav
     'nav.brand': 'Agent Monitor',
-    'nav.dashboard': 'Panel',
-    'nav.pipeline': 'Gestor de Agentes',
+    'nav.dashboard': 'Agentes',
+    'nav.pipeline': 'Equipo de Agentes',
     'nav.newAgent': 'Nuevo Agente',
     'nav.templates': 'Plantillas',
     'nav.help': 'Documentación',
@@ -30,7 +30,7 @@ export const es: Record<string, string> = {
     'common.codex': 'Codex',
 
     // Dashboard
-    'dashboard.title': 'Panel',
+    'dashboard.title': 'Agentes',
     'dashboard.newAgent': '+ Nuevo Agente',
     'dashboard.stopAll': 'Detener Todos',
     'dashboard.empty': 'No hay agentes en ejecución. Crea uno para comenzar.',
@@ -88,6 +88,7 @@ export const es: Record<string, string> = {
     'create.newSession': 'Nueva sesión',
     'create.claudeMd': 'CLAUDE.md',
     'create.loadTemplate': 'Cargar plantilla...',
+    'create.emptyTemplate': '(Vacío)',
     'create.claudeMdPlaceholder': 'Contenido opcional de CLAUDE.md para el agente',
     'create.adminEmail': 'Email del Administrador (para notificaciones)',
     'create.adminEmailPlaceholder': 'admin@ejemplo.com',
@@ -98,7 +99,7 @@ export const es: Record<string, string> = {
     'create.creating': 'Creando...',
     'create.createAgent': 'Crear Agente',
     'create.requiredFields': 'El nombre y el directorio son obligatorios',
-    'create.selectCurrent': 'Seleccionar actual:',
+    'create.pathWillCreate': 'La ruta no existe — se creará automáticamente.',
     'create.claudeMdFound': 'Se encontró CLAUDE.md en este directorio',
     'create.loadExisting': 'Cargar CLAUDE.md existente',
     'create.keepCustom': 'Mantener personalizado',
@@ -237,7 +238,7 @@ export const es: Record<string, string> = {
     'templates.empty': 'Aún no hay plantillas. Crea una para comenzar.',
 
     // Pipeline
-    'pipeline.title': 'Gestor de Agentes',
+    'pipeline.title': 'Equipo de Agentes',
     'pipeline.manager': 'Gestor:',
     'pipeline.running': 'En ejecución',
     'pipeline.stopped': 'Detenido',

@@ -89,7 +89,7 @@ When creating an agent, you can configure these flags:
 
 ### Codex Flags
 - **dangerouslySkipPermissions**: Auto-approve all operations
-- **fullAuto**: Enable full-auto mode
+- **fullAuto**: Compatibility setting that maps to `approval_policy="never"` for current Codex CLI versions
 - **model**: Select from runtime-detected model options in Create Agent (applied by `/model <name>` at the start of the first turn)
 
 ## Runtime Capabilities

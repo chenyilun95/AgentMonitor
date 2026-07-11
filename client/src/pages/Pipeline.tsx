@@ -286,6 +286,10 @@ export function Pipeline() {
             </button>
           </div>
 
+          <span style={{ fontSize: 12, color: 'var(--text-muted)', maxWidth: 420 }}>
+            {mode === 'simple' ? t('pipeline.modeSimpleDesc') : t('pipeline.modeHarnessDesc')}
+          </span>
+
           {mode === 'simple' && (
             <>
               <button className="btn btn-sm" onClick={() => setShowAddTask(true)}>

@@ -3,9 +3,8 @@ import { EventEmitter } from 'events';
 import { existsSync, readFileSync } from 'fs';
 import path from 'path';
 import { fileURLToPath } from 'url';
-import { config } from '../config.js';
 import type { AgentProvider, ReasoningEffort } from '../models/Agent.js';
-import { runtimeCapabilities } from './RuntimeCapabilities.js';
+import { claudeRunner, codexRunner, getAgentRunner, type AgentRunner } from './agentRunners/index.js';
 
 export interface StreamMessage {
   type: string;
@@ -63,11 +62,6 @@ export interface ProcessStartOpts {
   reasoningEffort?: ReasoningEffort;
 }
 
-/** Shell-escape a string for use with spawn shell: true */
-function shellEscape(s: string): string {
-  return "'" + s.replace(/'/g, "'\\''") + "'";
-}
-
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const serverRoot = path.resolve(__dirname, '..', '..');
 const projectRoot = path.resolve(serverRoot, '..');
@@ -119,6 +113,7 @@ export class AgentProcess extends EventEmitter {
   private buffer = '';
   private _pid: number | undefined;
   private _provider: AgentProvider = 'claude';
+  private runner: AgentRunner = claudeRunner;
 
   get pid(): number | undefined {
     return this._pid;
@@ -133,7 +128,9 @@ export class AgentProcess extends EventEmitter {
   }
 
   start(opts: ProcessStartOpts): void {
-    this._provider = opts.provider;
+    const provider = opts.provider || 'claude';
+    this._provider = provider;
+    this.runner = getAgentRunner(provider);
 
     const { bin, args } = this.buildCommand(opts);
 
@@ -162,18 +159,7 @@ export class AgentProcess extends EventEmitter {
 
     this._pid = this.process.pid;
 
-    // With --input-format stream-json, Claude waits for user messages on stdin.
-    // Send the initial prompt immediately so processing starts right away.
-    // stdin stays open so permission responses and follow-ups can be delivered.
-    if (opts.provider !== 'codex' && this.process.stdin?.writable) {
-      const msg = JSON.stringify({ type: 'user', message: { role: 'user', content: opts.prompt } });
-      this.process.stdin.write(msg + '\n');
-    } else if (opts.provider === 'codex' && this.process.stdin?.writable) {
-      // Codex treats piped stdin as additional prompt input and waits for EOF.
-      // We pass prompt via argv, so close stdin immediately to avoid hanging
-      // on "Reading additional input from stdin...".
-      this.process.stdin.end();
-    }
+    this.runner.handleStartInput(this.process.stdin, opts);
 
     this.process.stdout?.on('data', (data: Buffer) => {
       this.buffer += data.toString();
@@ -199,119 +185,15 @@ export class AgentProcess extends EventEmitter {
   }
 
   private buildCommand(opts: ProcessStartOpts): { bin: string; args: string[] } {
-    if (opts.provider === 'codex') {
-      return this.buildCodexCommand(opts);
-    }
-    return this.buildClaudeCommand(opts);
+    return getAgentRunner(opts.provider || 'claude').buildCommand({ ...opts, provider: opts.provider || 'claude' });
   }
 
   private buildClaudeCommand(opts: ProcessStartOpts): { bin: string; args: string[] } {
-    const reasoningEffort = runtimeCapabilities.normalizeReasoningEffort('claude', opts.reasoningEffort);
-    // -p is required for --resume to work in non-interactive mode.
-    // --input-format stream-json keeps stdin open so the actual prompt (and any
-    // permission approvals / follow-up messages) are sent via stdin after start.
-    const args: string[] = [
-      '-p', shellEscape(opts.prompt),
-      '--output-format', 'stream-json',
-      '--input-format', 'stream-json',
-      '--verbose',
-    ];
-
-    if (opts.dangerouslySkipPermissions) {
-      args.push('--dangerously-skip-permissions');
-    }
-
-    if (opts.resume) {
-      args.push('--resume', shellEscape(opts.resume));
-    }
-
-    if (opts.model) {
-      args.push('--model', shellEscape(opts.model));
-    }
-
-    if (reasoningEffort) {
-      args.push('--effort', shellEscape(reasoningEffort));
-    }
-
-    if (opts.chrome) {
-      args.push('--chrome');
-    }
-
-    if (opts.permissionMode) {
-      args.push('--permission-mode', shellEscape(opts.permissionMode));
-    }
-
-    if (opts.maxBudgetUsd && opts.maxBudgetUsd > 0) {
-      args.push('--max-budget-usd', String(opts.maxBudgetUsd));
-    }
-
-    if (opts.allowedTools) {
-      args.push('--allowedTools', shellEscape(opts.allowedTools));
-    }
-
-    if (opts.disallowedTools) {
-      args.push('--disallowedTools', shellEscape(opts.disallowedTools));
-    }
-
-    if (opts.addDirs) {
-      // Support multiple dirs separated by commas or spaces
-      for (const dir of opts.addDirs.split(/[,\s]+/).filter(Boolean)) {
-        args.push('--add-dir', shellEscape(dir));
-      }
-    }
-
-    if (opts.mcpConfig) {
-      args.push('--mcp-config', shellEscape(opts.mcpConfig));
-    }
-
-    return { bin: config.claudeBin, args };
+    return claudeRunner.buildCommand(opts);
   }
 
   private buildCodexCommand(opts: ProcessStartOpts): { bin: string; args: string[] } {
-    const reasoningEffort = runtimeCapabilities.normalizeReasoningEffort('codex', opts.reasoningEffort);
-    // Shell-escape values that may contain spaces since we use shell: true
-    const isResume = !!opts.resume;
-    const args: string[] = isResume
-      ? ['exec', 'resume', '--json']
-      : ['exec', '--json'];
-
-    if (opts.dangerouslySkipPermissions) {
-      args.push('--dangerously-bypass-approvals-and-sandbox');
-    } else if (opts.fullAuto) {
-      args.push('--full-auto');
-    }
-
-    if (!isResume && opts.askForApprovalNever) {
-      args.push('--ask-for-approval', 'never');
-    }
-    if (!isResume && opts.sandboxDangerFullAccess) {
-      args.push('--sandbox', 'danger-full-access');
-    }
-
-    if (opts.model) {
-      args.push('--model', shellEscape(opts.model));
-    }
-
-    if (reasoningEffort) {
-      args.push('-c', shellEscape(`model_reasoning_effort="${reasoningEffort}"`));
-    }
-
-    if (!isResume) {
-      // Codex uses --cd instead of cwd for fresh exec runs, but we also set cwd.
-      args.push('--cd', shellEscape(opts.directory));
-    }
-    args.push('--skip-git-repo-check');
-
-    if (opts.resume) {
-      // End option parsing before positional args so prompts like "--help"
-      // are treated as user input rather than CLI flags.
-      args.push('--', shellEscape(opts.resume));
-    } else {
-      args.push('--');
-    }
-    args.push(shellEscape(opts.prompt));
-
-    return { bin: config.codexBin, args };
+    return codexRunner.buildCommand(opts);
   }
 
   private processBuffer(): void {
@@ -335,9 +217,8 @@ export class AgentProcess extends EventEmitter {
 
   sendMessage(text: string): void {
     if (this.process?.stdin?.writable) {
-      // Claude --input-format stream-json format
-      const msg = JSON.stringify({ type: 'user', message: { role: 'user', content: text } });
-      this.process.stdin.write(msg + '\n');
+      const msg = this.runner.formatUserMessage(text);
+      if (msg) this.process.stdin.write(msg);
     }
   }
 
