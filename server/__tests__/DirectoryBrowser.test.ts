@@ -54,6 +54,17 @@ describe('DirectoryBrowser', () => {
     expect(parent).toBe(path.dirname(tmpDir));
   });
 
+  it('expands home-relative directory paths', () => {
+    const homeTmp = fs.mkdtempSync(path.join(os.homedir(), '.agentmonitor-path-test-'));
+    try {
+      fs.writeFileSync(path.join(homeTmp, 'home-file.txt'), 'home');
+      const entries = browser.listDirectory(`~/${path.basename(homeTmp)}`);
+      expect(entries.map((e) => e.name)).toContain('home-file.txt');
+    } finally {
+      fs.rmSync(homeTmp, { recursive: true, force: true });
+    }
+  });
+
   it('marks previewable text files in listings', () => {
     const entries = browser.listDirectory(tmpDir);
     expect(entries.find((e) => e.name === 'notes.md')?.isTextPreviewable).toBe(true);

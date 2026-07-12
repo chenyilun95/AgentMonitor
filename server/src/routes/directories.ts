@@ -3,6 +3,7 @@ import { existsSync } from 'fs';
 import { DirectoryBrowser, FileReadError } from '../services/DirectoryBrowser.js';
 import type { AgentProvider } from '../models/Agent.js';
 import { findInstructionFile } from '../utils/instructionFiles.js';
+import { normalizeUserPath } from '../utils/pathUtils.js';
 
 export function directoryRoutes(): Router {
   const router = Router();
@@ -14,12 +15,12 @@ export function directoryRoutes(): Router {
       res.json({ exists: false });
       return;
     }
-    res.json({ exists: existsSync(dirPath) });
+    res.json({ exists: existsSync(normalizeUserPath(dirPath)) });
   });
 
   router.get('/', (req, res) => {
     try {
-      const dirPath = (req.query.path as string) || process.env.HOME || '/';
+      const dirPath = normalizeUserPath((req.query.path as string) || process.env.HOME || '/');
       const entries = browser.listDirectory(dirPath);
       const parent = browser.getParent(dirPath);
       res.json({ path: dirPath, parent, entries });
@@ -36,7 +37,7 @@ export function directoryRoutes(): Router {
         res.json({ exists: false });
         return;
       }
-      const match = findInstructionFile(dirPath, provider);
+      const match = findInstructionFile(normalizeUserPath(dirPath), provider);
       if (!match) {
         res.json({ exists: false });
         return;

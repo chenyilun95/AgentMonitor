@@ -1,5 +1,6 @@
 import fs from 'fs';
 import path from 'path';
+import { normalizeUserPath } from '../utils/pathUtils.js';
 
 const DEFAULT_MAX_FILE_BYTES = 1024 * 1024;
 const PREVIEWABLE_EXTENSIONS = new Set([
@@ -80,7 +81,7 @@ export class FileReadError extends Error {
 
 export class DirectoryBrowser {
   listDirectory(dirPath: string): DirEntry[] {
-    const resolved = path.resolve(dirPath);
+    const resolved = normalizeUserPath(dirPath);
 
     if (!fs.existsSync(resolved)) {
       throw new Error(`Directory not found: ${resolved}`);
@@ -115,7 +116,7 @@ export class DirectoryBrowser {
   }
 
   readTextFile(filePath: string, opts: { maxBytes?: number } = {}): FilePreview {
-    const resolved = path.resolve(filePath);
+    const resolved = normalizeUserPath(filePath);
     const maxBytes = opts.maxBytes ?? DEFAULT_MAX_FILE_BYTES;
 
     if (!fs.existsSync(resolved)) {
@@ -162,7 +163,7 @@ export class DirectoryBrowser {
   }
 
   getPreviewAsset(filePath: string): FileAsset {
-    const resolved = path.resolve(filePath);
+    const resolved = normalizeUserPath(filePath);
 
     if (!fs.existsSync(resolved)) {
       throw new FileReadError(`File not found: ${resolved}`, 404);
@@ -182,7 +183,7 @@ export class DirectoryBrowser {
   }
 
   getParent(dirPath: string): string {
-    return path.dirname(path.resolve(dirPath));
+    return path.dirname(normalizeUserPath(dirPath));
   }
 
   private isPreviewableTextFile(fileName: string): boolean {

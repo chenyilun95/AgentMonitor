@@ -6,6 +6,7 @@ import type { AgentManager } from '../services/AgentManager.js';
 import type { HarnessOrchestrator } from '../services/HarnessOrchestrator.js';
 import type { PipelineTask } from '../models/Task.js';
 import type { CreateTaskRequest, StartHarnessRequest } from '@agent-monitor/shared';
+import { normalizeOptionalUserPath } from '../utils/pathUtils.js';
 
 export function taskRoutes(store: AgentStore, agentManagerPipeline: MetaAgentManager, agentManager?: AgentManager, harnessOrchestrator?: HarnessOrchestrator): Router {
   const router = Router();
@@ -38,7 +39,7 @@ export function taskRoutes(store: AgentStore, agentManagerPipeline: MetaAgentMan
       id: uuid(),
       name,
       prompt,
-      directory,
+      directory: normalizeOptionalUserPath(directory),
       provider,
       model,
       claudeMd,
@@ -156,7 +157,7 @@ export function taskRoutes(store: AgentStore, agentManagerPipeline: MetaAgentMan
     const { name, prompt, directory, provider, model, claudeMd, flags, order } = req.body as CreateTaskRequest;
     if (name !== undefined) task.name = name;
     if (prompt !== undefined) task.prompt = prompt;
-    if (directory !== undefined) task.directory = directory;
+    if (directory !== undefined) task.directory = normalizeOptionalUserPath(directory);
     if (provider !== undefined) task.provider = provider;
     if (model !== undefined) task.model = model;
     if (claudeMd !== undefined) task.claudeMd = claudeMd;

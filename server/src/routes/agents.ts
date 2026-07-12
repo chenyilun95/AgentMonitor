@@ -6,6 +6,7 @@ import type { AgentProvider } from '../models/Agent.js';
 import type { CreateAgentRequest, UpdateReasoningEffortRequest } from '@agent-monitor/shared';
 import { runtimeCapabilities } from '../services/RuntimeCapabilities.js';
 import { sanitizeAgentListSnapshot, sanitizeAgentSnapshot } from '../utils/agentSnapshot.js';
+import { normalizeUserPath } from '../utils/pathUtils.js';
 
 function reasoningEffortError(provider: AgentProvider): string {
   const capabilities = runtimeCapabilities.getCapabilities().providers[provider];
@@ -112,8 +113,9 @@ export function agentRoutes(manager: AgentManager, store: AgentStore): Router {
       const { name, directory, prompt, claudeMd, adminEmail, whatsappPhone, slackWebhookUrl, flags, provider, labels, workspaceMode, skills } = req.body as CreateAgentRequest;
       const nextProvider: AgentProvider = provider === 'codex' ? 'codex' : 'claude';
       const reasoningEffort = flags?.reasoningEffort;
+      const requestedDirectory = typeof directory === 'string' ? directory.trim() : '';
 
-      if (!name || !directory) {
+      if (!name || !requestedDirectory) {
         res.status(400).json({ error: 'name and directory are required' });
         return;
       }
@@ -127,7 +129,7 @@ export function agentRoutes(manager: AgentManager, store: AgentStore): Router {
 
       const agent = await manager.createAgent(name, {
         provider: nextProvider,
-        directory,
+        directory: normalizeUserPath(requestedDirectory),
         prompt: typeof prompt === 'string' ? prompt : '',
         claudeMd,
         adminEmail,

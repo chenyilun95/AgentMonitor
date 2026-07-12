@@ -6,6 +6,7 @@ import type { Agent } from '../models/Agent.js';
 import type { Template } from '../models/Template.js';
 import type { PipelineTask, AgentManagerConfig, MetaAgentConfig } from '../models/Task.js';
 import type { ServerSettings } from '@agent-monitor/shared';
+import { normalizeUserPath } from '../utils/pathUtils.js';
 
 export type { ServerSettings };
 
@@ -357,10 +358,11 @@ export class AgentStore {
 
   recordPath(machine: string, dirPath: string): void {
     if (!this.settings.pathHistory) this.settings.pathHistory = {};
+    const normalizedPath = normalizeUserPath(dirPath);
     const paths = this.settings.pathHistory[machine] || [];
     // Move to front if exists, otherwise prepend (max 20 per machine)
-    const filtered = paths.filter(p => p !== dirPath);
-    this.settings.pathHistory[machine] = [dirPath, ...filtered].slice(0, 20);
+    const filtered = paths.filter(p => normalizeUserPath(p) !== normalizedPath);
+    this.settings.pathHistory[machine] = [normalizedPath, ...filtered].slice(0, 20);
     fs.writeFileSync(this.settingsFile, JSON.stringify(this.settings, null, 2));
   }
 }
