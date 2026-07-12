@@ -15,6 +15,7 @@ import { SlackNotifier } from './SlackNotifier.js';
 import { FeishuNotifier } from './FeishuNotifier.js';
 import { SkillManager } from './SkillManager.js';
 import { getInstructionFileName } from '../utils/instructionFiles.js';
+import { normalizeUserPath } from '../utils/pathUtils.js';
 
 /** How long (ms) after a user message with no response before we notify (not auto-interrupt) */
 const STUCK_TIMEOUT_MS = 600_000; // 10 minutes — long tasks (build, push, chrome MCP) can take time
@@ -124,6 +125,24 @@ export class AgentManager extends EventEmitter {
       }
     }
 
+    // Backfill gitBranch for existing agents that lack it
+    for (const agent of this.store.getAllAgents()) {
+      if (agent.gitBranch) continue;
+      const cwd = agent.worktreePath && existsSync(agent.worktreePath)
+        ? agent.worktreePath
+        : agent.config.directory;
+      try {
+        const branch = execSync('git rev-parse --abbrev-ref HEAD', {
+          cwd, stdio: 'pipe', timeout: 5000,
+        }).toString().trim();
+        if (branch && branch !== 'HEAD') {
+          agent.gitBranch = branch;
+          agent.currentGitBranch = branch;
+          this.store.saveAgent(agent);
+        }
+      } catch { /* not a git repo */ }
+    }
+
     // Periodically check for stuck agents (sent user message but no response)
     this.stuckCheckInterval = setInterval(() => {
       this.checkStuckAgents();
@@ -167,7 +186,6 @@ export class AgentManager extends EventEmitter {
   private checkGitBranches(): void {
     for (const agent of this.store.getAllAgents()) {
       if (agent.status !== 'running' && agent.status !== 'waiting_input') continue;
-      if (!agent.gitBranch) continue;
 
       const cwd = this.resolveExecutionDirectory(agent);
       try {
@@ -177,11 +195,22 @@ export class AgentManager extends EventEmitter {
           timeout: 5000,
         }).toString().trim();
 
-        if (branch === 'HEAD' || branch === agent.currentGitBranch) continue;
+        if (branch === 'HEAD') continue;
 
-        agent.currentGitBranch = branch;
-        this.store.saveAgent(agent);
-        this.emit('agent:update', agent.id, agent);
+        let changed = false;
+        if (!agent.gitBranch) {
+          agent.gitBranch = branch;
+          agent.currentGitBranch = branch;
+          changed = true;
+        } else if (branch !== agent.currentGitBranch) {
+          agent.currentGitBranch = branch;
+          changed = true;
+        }
+
+        if (changed) {
+          this.store.saveAgent(agent);
+          this.emit('agent:update', agent.id, agent);
+        }
       } catch {
         // git not available or directory gone
       }
@@ -194,6 +223,11 @@ export class AgentManager extends EventEmitter {
     labels?: Record<string, string>,
     opts: { workspaceMode?: AgentWorkspaceMode } = {},
   ): Promise<Agent> {
+    agentConfig = {
+      ...agentConfig,
+      directory: normalizeUserPath(agentConfig.directory),
+    };
+
     const id = uuid();
     const branchName = `agent-${id.slice(0, 8)}`;
     const workspaceMode: AgentWorkspaceMode = opts.workspaceMode === 'worktree' ? 'worktree' : 'direct';
@@ -215,9 +249,12 @@ export class AgentManager extends EventEmitter {
         agentConfig.flags.resume,
         agentConfig.directory,
       );
-      if (sessionCwd && existsSync(sessionCwd)) {
-        console.log(`[AgentManager] Resume: using session cwd: ${sessionCwd}`);
-        agentConfig.directory = sessionCwd;
+      if (sessionCwd) {
+        const normalizedSessionCwd = normalizeUserPath(sessionCwd);
+        if (existsSync(normalizedSessionCwd)) {
+          console.log(`[AgentManager] Resume: using session cwd: ${normalizedSessionCwd}`);
+          agentConfig.directory = normalizedSessionCwd;
+        }
       }
     }
     const skipWorktree = !!agentConfig.flags.resume;
@@ -567,15 +604,16 @@ export class AgentManager extends EventEmitter {
   }
 
   resolveExecutionDirectory(agent: Agent): string {
+    const configuredDirectory = normalizeUserPath(agent.config.directory);
     if (agent.worktreePath && existsSync(agent.worktreePath)) {
       // The worktree is created at the git root level. If config.directory was
       // a subdirectory, resolve the corresponding path within the worktree.
       try {
         const gitRoot = execSync('git rev-parse --show-toplevel', {
-          cwd: agent.config.directory,
+          cwd: configuredDirectory,
           stdio: 'pipe',
         }).toString().trim();
-        const subdir = path.relative(gitRoot, agent.config.directory);
+        const subdir = path.relative(gitRoot, configuredDirectory);
         if (subdir && subdir !== '.' && !subdir.startsWith('..')) {
           const effectiveDir = path.join(agent.worktreePath, subdir);
           if (existsSync(effectiveDir)) {
@@ -589,12 +627,12 @@ export class AgentManager extends EventEmitter {
     }
 
     if (agent.worktreePath) {
-      console.warn(`[AgentManager] Worktree path is missing for ${agent.id}, falling back to configured directory: ${agent.config.directory}`);
+      console.warn(`[AgentManager] Worktree path is missing for ${agent.id}, falling back to configured directory: ${configuredDirectory}`);
       agent.worktreePath = undefined;
       agent.worktreeBranch = undefined;
     }
 
-    return agent.config.directory;
+    return configuredDirectory;
   }
 
   private composeProcessPrompt(agent: Agent): string {
