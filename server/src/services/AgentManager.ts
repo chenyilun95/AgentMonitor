@@ -743,6 +743,7 @@ export class AgentManager extends EventEmitter {
       const plan = this.extractProposedPlan(message.content);
       if (!plan) continue;
 
+      const userInitiated = agent.interactionMode === 'plan';
       agent.pendingPlan = {
         id: uuid(),
         content: plan,
@@ -752,6 +753,11 @@ export class AgentManager extends EventEmitter {
       agent.interactionMode = 'plan';
       agent.lastActivity = Date.now();
       this.store.saveAgent(agent);
+
+      if (!userInitiated && !this.isPlanComplex(plan)) {
+        console.log(`[AgentManager] Auto-approving simple plan for agent ${agent.id}`);
+        this.approvePlan(agent.id);
+      }
     }
   }
 
@@ -825,6 +831,7 @@ export class AgentManager extends EventEmitter {
     if (block.name === 'ExitPlanMode') {
       const plan = typeof input?.plan === 'string' ? (input!.plan as string) : '';
       if (!plan) return;
+      const userInitiated = agent.interactionMode === 'plan';
       agent.pendingPlan = {
         id: uuid(),
         content: plan,
@@ -836,12 +843,28 @@ export class AgentManager extends EventEmitter {
       agent.lastActivity = Date.now();
       this.store.saveAgent(agent);
       this.updateAgentStatus(agent.id, 'waiting_input');
+
+      if (!userInitiated && !this.isPlanComplex(plan)) {
+        console.log(`[AgentManager] Auto-approving simple plan for agent ${agent.id}`);
+        this.approvePlan(agent.id);
+      }
     }
   }
 
   private extractProposedPlan(text: string): string | undefined {
     const match = text.match(/<proposed_plan>\s*([\s\S]*?)\s*<\/proposed_plan>/i);
     return match?.[1]?.trim() || undefined;
+  }
+
+  private isPlanComplex(content: string): boolean {
+    if (content.length > 2000) return true;
+    const steps = content.match(/^\s*\d+[\.\)]/gm) || [];
+    if (steps.length > 6) return true;
+    const filePaths = content.match(/[\w./\-]+\.\w{1,5}/g) || [];
+    const uniqueFiles = new Set(filePaths.filter(f => f.includes('/')));
+    if (uniqueFiles.size > 5) return true;
+    if (/\b(delet|remov|drop|reset\s+--hard|force.push|rm\s+-rf|migrat|breaking)/i.test(content)) return true;
+    return false;
   }
 
   private handleClaudeMessage(agent: Agent, msg: StreamMessage): void {
