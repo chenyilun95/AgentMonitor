@@ -141,6 +141,9 @@ export function AgentChat() {
     const onDelta = (data: { agentId: string; delta: { messages: Agent['messages']; status: string; costUsd?: number; tokenUsage?: Agent['tokenUsage']; contextWindow?: Agent['contextWindow']; lastActivity: number; interactionMode?: Agent['interactionMode']; pendingPlan?: Agent['pendingPlan']; pendingQuestion?: Agent['pendingQuestion']; currentGitBranch?: string } }) => {
       if (data.agentId !== id) return;
       socketWorking = true;
+      if (data.delta.status !== 'running') {
+        setQueuedMessages([]);
+      }
       setAgent(prev => {
         if (!prev) return prev;
         const existingIds = new Set(prev.messages.map(m => m.id));
@@ -165,6 +168,9 @@ export function AgentChat() {
     const onUpdate = (data: { agentId: string; agent: Agent }) => {
       if (data.agentId === id && data.agent) {
         socketWorking = true;
+        if (data.agent.status !== 'running') {
+          setQueuedMessages([]);
+        }
         // Only apply if server has at least as many messages (avoid overwriting optimistic messages)
         setAgent(prev => {
           if (!prev) return data.agent;
@@ -562,9 +568,9 @@ export function AgentChat() {
     if (isRunning) {
       const qId = `q-${Date.now()}`;
       setQueuedMessages(prev => [...prev, { id: qId, text }]);
-      api.sendMessage(id, text).then(() => {
+      api.sendMessage(id, text).catch(() => {
         setQueuedMessages(prev => prev.filter(q => q.id !== qId));
-      }).catch(() => {});
+      });
     } else {
       setAgent(prev => {
         if (!prev) return prev;
