@@ -1,7 +1,7 @@
 import { WebSocketServer, WebSocket } from 'ws';
 import type { Server as HttpServer } from 'http';
 import { relayConfig } from './config.js';
-import { encryptMessage, decryptMessage } from '@agent-monitor/shared';
+import { encryptMessage, decryptMessage } from '../../shared/src/crypto/tunnelCrypto.js';
 
 export type TunnelMessage = Record<string, unknown> & { type: string };
 

@@ -1,6 +1,6 @@
 import WebSocket from 'ws';
 import { config } from '../config.js';
-import { encryptMessage, decryptMessage } from '@agent-monitor/shared';
+import { encryptMessage, decryptMessage } from '../../../shared/src/crypto/tunnelCrypto.js';
 
 export interface TunnelMessage {
   type: string;
