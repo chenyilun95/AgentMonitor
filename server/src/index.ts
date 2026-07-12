@@ -20,6 +20,8 @@ import { SlackNotifier } from './services/SlackNotifier.js';
 import { agentRoutes, settingsRoutes, externalRoutes } from './routes/agents.js';
 import { ExternalAgentScanner } from './services/ExternalAgentScanner.js';
 import { templateRoutes } from './routes/templates.js';
+import { skillRoutes } from './routes/skills.js';
+import { SkillManager } from './services/SkillManager.js';
 import { sessionRoutes } from './routes/sessions.js';
 import { directoryRoutes } from './routes/directories.js';
 import { taskRoutes } from './routes/tasks.js';
@@ -68,13 +70,14 @@ export function createApp() {
   app.use('/api', requireAuth);
 
   const store = new AgentStore();
+  const skillManager = new SkillManager();
   const emailNotifier = new EmailNotifier();
   const whatsappNotifier = new WhatsAppNotifier();
   const slackNotifier = new SlackNotifier();
   const feishuNotifier = config.feishu.appId && config.feishu.appSecret
     ? new FeishuNotifier(config.feishu.appId, config.feishu.appSecret)
     : undefined;
-  const manager = new AgentManager(store, undefined, emailNotifier, whatsappNotifier, slackNotifier, feishuNotifier);
+  const manager = new AgentManager(store, undefined, emailNotifier, whatsappNotifier, slackNotifier, feishuNotifier, skillManager);
   const agentManagerPipeline = new MetaAgentManager(store, manager, emailNotifier, whatsappNotifier, slackNotifier, feishuNotifier);
   const handoffManager = new HandoffManager();
   const harnessOrchestrator = new HarnessOrchestrator(store, manager, handoffManager);
@@ -96,6 +99,7 @@ export function createApp() {
   app.use('/api/tasks', taskRoutes(store, agentManagerPipeline, manager, harnessOrchestrator));
   app.use('/api/settings', settingsRoutes(store));
   app.use('/api/upload-image', uploadRoutes());
+  app.use('/api/skills', skillRoutes(skillManager));
 
   // GPU Monitor (optional - only when GPU_SERVERS_CONF is set)
   let gpuMonitor: GpuMonitorService | null = null;

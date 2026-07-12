@@ -65,9 +65,11 @@ export interface Agent {
     whatsappPhone?: string;
     slackWebhookUrl?: string;
     flags: AgentFlags;
+    skills?: string[];
   };
   worktreePath?: string;
   worktreeBranch?: string;
+  worktreeMerged?: boolean;
   workspaceMode?: 'worktree' | 'direct';
   messages: Array<{
     id: string;
@@ -123,6 +125,13 @@ export interface Template {
   content: string;
   createdAt: number;
   updatedAt: number;
+}
+
+export interface Skill {
+  name: string;
+  description: string;
+  body: string;
+  scripts: string[];
 }
 
 export interface SessionInfo {
@@ -291,6 +300,7 @@ export const api = {
     flags?: AgentFlags;
     labels?: Record<string, string>;
     workspaceMode?: 'worktree' | 'direct';
+    skills?: string[];
   }) => request<Agent>('/agents', { method: 'POST', body: JSON.stringify(data) }),
   stopAgent: (id: string) =>
     request('/agents/' + id + '/stop', { method: 'POST' }),
@@ -319,6 +329,11 @@ export const api = {
     request<Agent>('/agents/' + id + '/answer-question', {
       method: 'POST',
       body: JSON.stringify({ answers }),
+    }),
+  btw: (id: string, question: string) =>
+    request<{ answer: string }>('/agents/' + id + '/btw', {
+      method: 'POST',
+      body: JSON.stringify({ question }),
     }),
   interruptAgent: (id: string) =>
     request('/agents/' + id + '/interrupt', { method: 'POST' }),
@@ -357,6 +372,33 @@ export const api = {
     }),
   deleteTemplate: (id: string) =>
     request(`/templates/${id}`, { method: 'DELETE' }),
+
+  // Skills
+  getSkills: () => request<Skill[]>('/skills'),
+  getSkill: (name: string) => request<Skill>(`/skills/${encodeURIComponent(name)}`),
+  createSkill: (data: { name: string; description: string; body: string }) =>
+    request<Skill>('/skills', { method: 'POST', body: JSON.stringify(data) }),
+  updateSkill: (name: string, data: { description?: string; body?: string }) =>
+    request<Skill>(`/skills/${encodeURIComponent(name)}`, {
+      method: 'PUT',
+      body: JSON.stringify(data),
+    }),
+  deleteSkill: (name: string) =>
+    request(`/skills/${encodeURIComponent(name)}`, { method: 'DELETE' }),
+  uploadSkillScript: (name: string, file: File) => {
+    const formData = new FormData();
+    formData.append('script', file);
+    return fetch(`${BASE}/skills/${encodeURIComponent(name)}/scripts`, {
+      method: 'POST',
+      credentials: 'include',
+      body: formData,
+    }).then(res => {
+      if (!res.ok) throw new Error(`HTTP ${res.status}`);
+      return res.json() as Promise<{ ok: boolean; filename: string }>;
+    });
+  },
+  deleteSkillScript: (name: string, filename: string) =>
+    request(`/skills/${encodeURIComponent(name)}/scripts/${encodeURIComponent(filename)}`, { method: 'DELETE' }),
 
   // Sessions
   getSessions: (provider?: AgentProvider) =>

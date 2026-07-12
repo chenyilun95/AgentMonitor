@@ -1,6 +1,6 @@
 import { useState, useEffect } from 'react';
 import { useNavigate, useSearchParams } from 'react-router-dom';
-import { api, type AgentProvider, type Template, type SessionInfo, type RuntimeCapabilities } from '../api/client';
+import { api, type AgentProvider, type Template, type SessionInfo, type RuntimeCapabilities, type Skill } from '../api/client';
 import { useTranslation } from '../i18n';
 import { getInstructionFileName, replaceInstructionFileName } from '../lib/instructionFiles';
 import {
@@ -51,8 +51,10 @@ export function CreateAgent() {
   const [dirExists, setDirExists] = useState<boolean | null>(null);
   const [claudeMdPrompt, setClaudeMdPrompt] = useState<{ content: string; fileName: string } | null>(null);
 
-  // Templates, sessions, and prompt suggestions
+  // Templates, sessions, skills, and prompt suggestions
   const [templates, setTemplates] = useState<Template[]>([]);
+  const [skills, setSkills] = useState<Skill[]>([]);
+  const [selectedSkills, setSelectedSkills] = useState<string[]>([]);
   const [sessions, setSessions] = useState<SessionInfo[]>([]);
   const [promptSuggestions, setPromptSuggestions] = useState<string[]>([]);
   const [newSuggestion, setNewSuggestion] = useState('');
@@ -62,6 +64,7 @@ export function CreateAgent() {
 
   useEffect(() => {
     api.getTemplates().then(setTemplates).catch(() => {});
+    api.getSkills().then(setSkills).catch(() => {});
     api.getSettings().then((s) => {
       setPromptSuggestions(s.promptSuggestions || []);
       setPathHistory(s.pathHistory || {});
@@ -97,7 +100,18 @@ export function CreateAgent() {
         setModel(normalizeModelSelection(source.config.provider, f.model, runtimeCapabilities, true));
         setReasoningEffort(normalizeReasoningEffortSelection(source.config.provider, f.reasoningEffort, runtimeCapabilities));
         setWorkspaceMode(source.workspaceMode === 'direct' ? 'direct' : 'worktree');
+        if (source.config.skills) setSelectedSkills(source.config.skills);
       }).catch(() => {});
+    }
+
+    // Pre-fill directory and workspace mode from Dashboard directory group
+    const dirParam = searchParams.get('directory');
+    if (dirParam) {
+      setDirectory(dirParam);
+    }
+    const modeParam = searchParams.get('mode');
+    if (modeParam === 'worktree' || modeParam === 'direct') {
+      setWorkspaceMode(modeParam);
     }
 
     // Pre-select a session from the history picker (Esc×2 in AgentChat)
@@ -240,6 +254,7 @@ export function CreateAgent() {
         slackWebhookUrl: slackWebhookUrl || undefined,
         labels: Object.keys(parsedLabels).length > 0 ? parsedLabels : undefined,
         workspaceMode,
+        skills: selectedSkills.length > 0 ? selectedSkills : undefined,
         flags: {
           dangerouslySkipPermissions: skipPermissions || undefined,
           fullAuto: fullAuto || undefined,
@@ -691,6 +706,31 @@ export function CreateAgent() {
           style={{ minHeight: 160 }}
         />
       </div>
+
+      {skills.length > 0 && (
+        <div className="form-group">
+          <label>{t('create.skills')}</label>
+          <div className="skill-picker">
+            {skills.map((skill) => (
+              <label key={skill.name}>
+                <input
+                  type="checkbox"
+                  checked={selectedSkills.includes(skill.name)}
+                  onChange={(e) => {
+                    if (e.target.checked) {
+                      setSelectedSkills(prev => [...prev, skill.name]);
+                    } else {
+                      setSelectedSkills(prev => prev.filter(s => s !== skill.name));
+                    }
+                  }}
+                />
+                <span>{skill.name}</span>
+                <span>{skill.description}</span>
+              </label>
+            ))}
+          </div>
+        </div>
+      )}
 
       <div className="form-group">
         <label>{t('create.adminEmail')}</label>

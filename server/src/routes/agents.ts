@@ -108,7 +108,7 @@ export function agentRoutes(manager: AgentManager, store: AgentStore): Router {
   // Create agent
   router.post('/', async (req, res) => {
     try {
-      const { name, directory, prompt, claudeMd, adminEmail, whatsappPhone, slackWebhookUrl, flags, provider, labels, workspaceMode } = req.body;
+      const { name, directory, prompt, claudeMd, adminEmail, whatsappPhone, slackWebhookUrl, flags, provider, labels, workspaceMode, skills } = req.body;
       const nextProvider: AgentProvider = provider === 'codex' ? 'codex' : 'claude';
       const reasoningEffort = flags?.reasoningEffort;
 
@@ -133,6 +133,7 @@ export function agentRoutes(manager: AgentManager, store: AgentStore): Router {
         whatsappPhone,
         slackWebhookUrl,
         flags: flags || {},
+        skills: Array.isArray(skills) ? skills : undefined,
       }, labels, { workspaceMode: nextWorkspaceMode });
 
       res.status(201).json(agent);
@@ -232,6 +233,83 @@ export function agentRoutes(manager: AgentManager, store: AgentStore): Router {
       return;
     }
     res.json(sanitizeAgentSnapshot(agent));
+  });
+
+  // /btw side question — ephemeral, no history, no tools
+  router.post('/:id/btw', async (req, res) => {
+    const { question } = req.body;
+    if (!question || typeof question !== 'string') {
+      res.status(400).json({ error: 'question (string) is required' });
+      return;
+    }
+    const agent = store.getAgent(req.params.id);
+    if (!agent) {
+      res.status(404).json({ error: 'agent not found' });
+      return;
+    }
+
+    const apiKey = process.env.ANTHROPIC_API_KEY;
+    if (!apiKey) {
+      res.status(500).json({ error: 'ANTHROPIC_API_KEY not configured' });
+      return;
+    }
+
+    const baseUrl = (process.env.ANTHROPIC_BASE_URL || 'https://api.anthropic.com').replace(/\/$/, '');
+    const model = (agent.config.flags.model as string) || process.env.ANTHROPIC_MODEL || 'claude-sonnet-4-6';
+
+    // Build context from recent messages (cap at last 40 to save tokens)
+    const recentMsgs = agent.messages.slice(-40);
+    const apiMessages = recentMsgs
+      .filter(m => m.role === 'user' || m.role === 'assistant')
+      .map(m => ({ role: m.role as 'user' | 'assistant', content: m.content }));
+
+    // Ensure messages alternate and start with user
+    const cleaned: Array<{ role: 'user' | 'assistant'; content: string }> = [];
+    for (const msg of apiMessages) {
+      if (cleaned.length === 0 && msg.role !== 'user') continue;
+      if (cleaned.length > 0 && cleaned[cleaned.length - 1].role === msg.role) continue;
+      cleaned.push(msg);
+    }
+    // Ensure last message is from assistant (so our new user question is valid)
+    if (cleaned.length > 0 && cleaned[cleaned.length - 1].role === 'user') {
+      cleaned.pop();
+    }
+
+    // Add the btw question
+    cleaned.push({ role: 'user', content: question });
+
+    try {
+      const response = await fetch(`${baseUrl}/v1/messages`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'x-api-key': apiKey,
+          'anthropic-version': '2023-06-01',
+        },
+        body: JSON.stringify({
+          model,
+          max_tokens: 4096,
+          system: 'This is a side question (/btw). You have NO tools available. Give a concise, helpful answer based on the conversation context. This response is ephemeral and will NOT be added to the conversation history. Do not suggest running commands or editing files — just answer the question.',
+          messages: cleaned,
+        }),
+      });
+
+      if (!response.ok) {
+        const errBody = await response.text();
+        res.status(502).json({ error: `Anthropic API error: ${response.status}`, detail: errBody });
+        return;
+      }
+
+      const data = await response.json() as { content: Array<{ type: string; text?: string }> };
+      const text = data.content
+        ?.filter((b: { type: string }) => b.type === 'text')
+        .map((b: { text?: string }) => b.text || '')
+        .join('') || '(no response)';
+
+      res.json({ answer: text });
+    } catch (err) {
+      res.status(502).json({ error: `Failed to call Anthropic API: ${String(err)}` });
+    }
   });
 
   // Interrupt agent (double-Esc)

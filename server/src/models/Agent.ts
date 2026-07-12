@@ -59,6 +59,7 @@ export interface AgentConfig {
     reasoningEffort?: ReasoningEffort;
     outputSchema?: Record<string, unknown>;
   };
+  skills?: string[];
 }
 
 export interface Agent {
@@ -68,6 +69,7 @@ export interface Agent {
   config: AgentConfig;
   worktreePath?: string;
   worktreeBranch?: string;
+  worktreeMerged?: boolean;
   workspaceMode?: AgentWorkspaceMode;
   messages: AgentMessage[];
   logs?: AgentLogEntry[];

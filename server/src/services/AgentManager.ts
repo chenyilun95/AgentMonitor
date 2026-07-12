@@ -12,6 +12,7 @@ import { EmailNotifier } from './EmailNotifier.js';
 import { WhatsAppNotifier } from './WhatsAppNotifier.js';
 import { SlackNotifier } from './SlackNotifier.js';
 import { FeishuNotifier } from './FeishuNotifier.js';
+import { SkillManager } from './SkillManager.js';
 import { getInstructionFileName } from '../utils/instructionFiles.js';
 
 /** How long (ms) after a user message with no response before we notify (not auto-interrupt) */
@@ -79,12 +80,13 @@ export class AgentManager extends EventEmitter {
   private whatsappNotifier: WhatsAppNotifier;
   private slackNotifier: SlackNotifier;
   private feishuNotifier: FeishuNotifier;
+  private skillManager: SkillManager | null;
   /** Track when a user message was sent per agent (agentId → timestamp) */
   private pendingUserMessage: Map<string, number> = new Map();
   private queuedUserMessages: Map<string, Array<{ displayText: string; processText: string }>> = new Map();
   private stuckCheckInterval: ReturnType<typeof setInterval> | null = null;
 
-  constructor(store: AgentStore, worktreeManager?: WorktreeManager, emailNotifier?: EmailNotifier, whatsappNotifier?: WhatsAppNotifier, slackNotifier?: SlackNotifier, feishuNotifier?: FeishuNotifier) {
+  constructor(store: AgentStore, worktreeManager?: WorktreeManager, emailNotifier?: EmailNotifier, whatsappNotifier?: WhatsAppNotifier, slackNotifier?: SlackNotifier, feishuNotifier?: FeishuNotifier, skillManager?: SkillManager) {
     super();
     this.store = store;
     this.worktreeManager = worktreeManager || new WorktreeManager();
@@ -92,6 +94,7 @@ export class AgentManager extends EventEmitter {
     this.whatsappNotifier = whatsappNotifier || new WhatsAppNotifier();
     this.slackNotifier = slackNotifier || new SlackNotifier();
     this.feishuNotifier = feishuNotifier || new FeishuNotifier('', '');
+    this.skillManager = skillManager || null;
 
     // On startup, mark any monitor-owned agents that were left in running/waiting_input as
     // stopped — their processes died when the server restarted.
@@ -224,6 +227,22 @@ export class AgentManager extends EventEmitter {
           path.join(agentConfig.directory, getInstructionFileName(agentConfig.provider)),
           agentConfig.claudeMd,
         );
+      }
+    }
+
+    // Deploy selected skills into the worktree via symlinks
+    const skillTarget = worktreePath || agentConfig.directory;
+    if (agentConfig.skills && agentConfig.skills.length > 0 && this.skillManager) {
+      try {
+        this.worktreeManager.deploySkills(
+          skillTarget,
+          agentConfig.skills,
+          agentConfig.provider,
+          this.skillManager.getSkillsDir(),
+        );
+        console.log(`[AgentManager] Deployed ${agentConfig.skills.length} skill(s) to ${skillTarget}`);
+      } catch (err) {
+        console.warn('[AgentManager] Skill deployment failed:', err);
       }
     }
 
@@ -1309,9 +1328,28 @@ export class AgentManager extends EventEmitter {
     if (agent) {
       agent.status = status;
       agent.lastActivity = Date.now();
+      if (status === 'stopped' && agent.worktreeBranch && !agent.worktreeMerged) {
+        this.checkWorktreeMerged(agent);
+      }
       this.store.saveAgent(agent);
       this.emit('agent:status', agentId, status);
       this.emit('agent:update', agentId, agent);
+    }
+  }
+
+  private checkWorktreeMerged(agent: Agent): void {
+    const dir = agent.config.directory;
+    try {
+      const { execSync } = require('child_process');
+      const merged = execSync(
+        `git branch --merged HEAD --list '${agent.worktreeBranch}'`,
+        { cwd: dir, encoding: 'utf-8', timeout: 5000 }
+      ).trim();
+      if (merged) {
+        agent.worktreeMerged = true;
+      }
+    } catch {
+      // ignore — git might not be available or dir might not exist
     }
   }
 
@@ -1529,7 +1567,7 @@ export class AgentManager extends EventEmitter {
       content: text,
       timestamp: Date.now(),
     });
-    this.appendAgentLog(agentId, {
+    this.appendAgentLog(agent.id, {
       level: 'info',
       source: 'operator',
       message: text,

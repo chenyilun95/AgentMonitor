@@ -370,6 +370,9 @@ export function AgentChat() {
   const [historyRestoringIdx, setHistoryRestoringIdx] = useState<number | null>(null);
   const [attachedFiles, setAttachedFiles] = useState<File[]>([]);
   const [uploadingCount, setUploadingCount] = useState(0);
+  const [queuedMessages, setQueuedMessages] = useState<Array<{ id: string; text: string }>>([]);
+  const [btwState, setBtwState] = useState<{ status: 'input' | 'loading' | 'answer'; question?: string; answer?: string; error?: string } | null>(null);
+  const btwInputRef = useRef<HTMLTextAreaElement>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
   const [selectedReasoningEffort, setSelectedReasoningEffort] = useState<ReasoningEffortSelection>('default');
   const [updatingReasoningEffort, setUpdatingReasoningEffort] = useState(false);
@@ -393,6 +396,7 @@ export function AgentChat() {
   const slashCommands = [
     { cmd: '/agents', desc: t('chat.slashAgents') },
     { cmd: '/btw', desc: t('chat.slashBtw') },
+    { cmd: '/side', desc: t('chat.slashSide') },
     { cmd: '/clear', desc: t('chat.slashClear') },
     { cmd: '/compact', desc: t('chat.slashCompact') },
     { cmd: '/config', desc: t('chat.slashConfig') },
@@ -709,11 +713,27 @@ export function AgentChat() {
     }
   };
 
+  const sendBtwQuestion = async (question: string) => {
+    if (!id || !question.trim()) return;
+    setBtwState({ status: 'loading', question });
+    try {
+      const { answer } = await api.btw(id, question.trim());
+      setBtwState({ status: 'answer', question, answer });
+    } catch (err) {
+      setBtwState({ status: 'answer', question, error: String(err) });
+    }
+  };
+
   const handleSlashSelect = (cmd: string) => {
     setShowSlash(false);
     setInput('');
 
     switch (cmd) {
+      case '/btw':
+      case '/side':
+        setBtwState({ status: 'input' });
+        setTimeout(() => btwInputRef.current?.focus(), 50);
+        break;
       case '/agents':
         api.getAgents().then((agents) => {
           if (agents.length === 0) {
@@ -1068,6 +1088,44 @@ export function AgentChat() {
     }
   };
 
+  const handleCommit = async () => {
+    if (!id || !agent) return;
+    const isWorktree = agent.workspaceMode !== 'direct' && !!agent.worktreeBranch;
+    const branch = agent.worktreeBranch || '';
+    const dir = agent.config.directory;
+
+    let prompt: string;
+    if (isWorktree) {
+      prompt = [
+        `You are on worktree branch "${branch}". The original repo is at "${dir}".`,
+        '',
+        'Do the following steps in order. Stop and report if any step fails:',
+        '',
+        '1. Run `git diff --stat` and `git status` to review all changes.',
+        `2. Go to the original repo directory ("${dir}") and run:`,
+        `   git merge --no-ff ${branch} -m "merge: ${branch}"`,
+        '   If there are merge conflicts, list them and stop — do NOT auto-resolve.',
+        '3. After a clean merge, commit any remaining uncommitted changes with a descriptive message summarizing what was done.',
+        '4. Push to the remote repository. If push fails due to auth, report the error.',
+      ].join('\n');
+    } else {
+      prompt = [
+        'Review and commit the current changes:',
+        '',
+        '1. Run `git diff --stat` and `git status` to see what changed.',
+        '2. Stage all relevant changes (skip any .env or credentials files).',
+        '3. Commit with a clear, descriptive message summarizing the work.',
+        '4. Push to the remote repository. If push fails due to auth, report the error.',
+      ].join('\n');
+    }
+
+    try {
+      await api.sendMessage(id, prompt);
+    } catch (err) {
+      addLocalMessage(`[Error] ${String(err)}`);
+    }
+  };
+
   const handleSend = async () => {
     if ((!input.trim() && attachedFiles.length === 0) || !id) return;
 
@@ -1112,6 +1170,12 @@ export function AgentChat() {
           addStatusNotice('Compact requested. Token count will appear here when it completes.');
           return;
         }
+        // /btw with args — send directly as ephemeral question
+        if ((cmdName === '/btw' || cmdName === '/side') && args) {
+          setInput('');
+          sendBtwQuestion(args);
+          return;
+        }
         handleSlashSelect(cmd.cmd);
         return;
       }
@@ -1130,32 +1194,27 @@ export function AgentChat() {
     if (!text) return;
 
     const isRunning = agent?.status === 'running';
-
-    // Optimistic update: if agent is idle, show user message immediately.
-    // If running, the server queues the message — show a system notice instead.
-    setAgent(prev => {
-      if (!prev) return prev;
-      if (isRunning) {
-        return {
-          ...prev,
-          messages: [...prev.messages, {
-            id: `pending-${Date.now()}`,
-            role: 'system',
-            content: `[Queued] "${text.length > 80 ? text.slice(0, 80) + '...' : text}"`,
-            timestamp: Date.now(),
-          }],
-        };
-      }
-      return {
-        ...prev,
-        status: 'running' as Agent['status'],
-        messages: [...prev.messages, { id: `pending-${Date.now()}`, role: 'user', content: text, timestamp: Date.now() }],
-      };
-    });
     setInput('');
     setAttachedFiles([]);
     setInputRequired(null);
-    api.sendMessage(id, text);
+
+    if (isRunning) {
+      const qId = `q-${Date.now()}`;
+      setQueuedMessages(prev => [...prev, { id: qId, text }]);
+      api.sendMessage(id, text).then(() => {
+        setQueuedMessages(prev => prev.filter(q => q.id !== qId));
+      }).catch(() => {});
+    } else {
+      setAgent(prev => {
+        if (!prev) return prev;
+        return {
+          ...prev,
+          status: 'running' as Agent['status'],
+          messages: [...prev.messages, { id: `pending-${Date.now()}`, role: 'user', content: text, timestamp: Date.now() }],
+        };
+      });
+      api.sendMessage(id, text);
+    }
   };
 
   const handleChoiceSelect = (choice: string) => {
@@ -1418,6 +1477,9 @@ export function AgentChat() {
           >
             Files
           </button>
+          <button className="btn btn-sm btn-outline" onClick={handleCommit} title={t('dashboard.commitTooltip')}>
+            {t('dashboard.commit')}
+          </button>
           {(agent.status === 'running' || agent.status === 'waiting_input') && (
             <button className="btn btn-sm btn-danger" onClick={() => id && api.stopAgent(id)}>
               {t('common.stop')}
@@ -1545,53 +1607,6 @@ export function AgentChat() {
         </div>
       )}
 
-      {/* Input required notification banner */}
-      {!showTerminal && !showFiles && (agent.status === 'waiting_input' || inputRequired) && (
-        <div style={{
-          padding: '10px 16px',
-          background: 'var(--yellow, #f59e0b)',
-          color: '#000',
-          borderRadius: 'var(--radius)',
-          margin: '0 0 8px 0',
-          fontSize: 13,
-          fontWeight: 500,
-          animation: 'pulse 2s infinite',
-        }}>
-          <div style={{ display: 'flex', alignItems: 'flex-start', gap: 8, marginBottom: inputRequired?.choices ? 8 : 0 }}>
-            <span style={{ fontSize: 16, flexShrink: 0, lineHeight: '20px' }}>&#9888;</span>
-            <span style={{
-              maxHeight: inputRequired?.choices ? 60 : 120,
-              overflowY: 'auto',
-              display: 'block',
-              lineHeight: '20px',
-            }}>{inputRequired?.prompt || t('chat.waitingInput')}</span>
-          </div>
-          {inputRequired?.choices && inputRequired.choices.length > 0 && (
-            <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6, marginTop: 4, paddingTop: 6, borderTop: '1px solid rgba(0,0,0,0.15)' }}>
-              {inputRequired.choices.map((choice, i) => (
-                <button
-                  key={i}
-                  onClick={() => handleChoiceSelect(choice)}
-                  style={{
-                    padding: '6px 18px',
-                    fontSize: 13,
-                    fontWeight: 600,
-                    borderRadius: 6,
-                    border: '2px solid rgba(0,0,0,0.4)',
-                    background: 'rgba(255,255,255,0.95)',
-                    color: '#000',
-                    cursor: 'pointer',
-                    whiteSpace: 'nowrap',
-                  }}
-                >
-                  {choice}
-                </button>
-              ))}
-            </div>
-          )}
-        </div>
-      )}
-
       <div style={{ position: 'relative', display: showTerminal || showFiles ? 'none' : undefined }}>
         {showSlash && filteredCommands.length > 0 && (
           <div className="slash-hints">
@@ -1660,6 +1675,39 @@ export function AgentChat() {
                 color: 'var(--text-muted)',
               }}>
                 Uploading {uploadingCount} file{uploadingCount > 1 ? 's' : ''}...
+              </div>
+            )}
+          </div>
+        )}
+        {((agent.status === 'waiting_input' || inputRequired) || queuedMessages.length > 0) && (
+          <div className="chat-notify-bar">
+            {(agent.status === 'waiting_input' || inputRequired) && (
+              <>
+                <div className="chat-notify-waiting">
+                  <span className="chat-notify-dot" />
+                  <span className="chat-notify-text">
+                    {inputRequired?.prompt || t('chat.waitingInput')}
+                  </span>
+                </div>
+                {inputRequired?.choices && inputRequired.choices.length > 0 && (
+                  <div className="chat-notify-choices">
+                    {inputRequired.choices.map((choice, i) => (
+                      <button key={i} className="btn btn-sm btn-outline" onClick={() => handleChoiceSelect(choice)}>
+                        {choice}
+                      </button>
+                    ))}
+                  </div>
+                )}
+              </>
+            )}
+            {queuedMessages.length > 0 && (
+              <div className="chat-notify-queue">
+                <span className="chat-notify-queue-label">{t('chat.queued')} ({queuedMessages.length})</span>
+                {queuedMessages.map((q) => (
+                  <div key={q.id} className="chat-notify-queue-item">
+                    {q.text.length > 120 ? q.text.slice(0, 120) + '...' : q.text}
+                  </div>
+                ))}
               </div>
             )}
           </div>
@@ -1772,6 +1820,57 @@ export function AgentChat() {
           </div>
         );
       })()}
+
+      {btwState && (
+        <div className="modal-overlay" onClick={() => setBtwState(null)}>
+          <div className="btw-popup" onClick={(e) => e.stopPropagation()} onKeyDown={(e) => {
+            if (e.key === 'Escape') setBtwState(null);
+          }}>
+            <div className="btw-popup-header">
+              <span>/btw</span>
+              <button className="btn btn-sm btn-outline" onClick={() => setBtwState(null)}>&times;</button>
+            </div>
+            {btwState.status === 'input' && (
+              <div className="btw-popup-body">
+                <textarea
+                  ref={btwInputRef}
+                  className="btw-input"
+                  placeholder={t('chat.slashBtw')}
+                  rows={2}
+                  onKeyDown={(e) => {
+                    if (e.key === 'Enter' && !e.shiftKey) {
+                      e.preventDefault();
+                      const q = (e.target as HTMLTextAreaElement).value;
+                      if (q.trim()) sendBtwQuestion(q);
+                    }
+                    if (e.key === 'Escape') setBtwState(null);
+                  }}
+                />
+                <div style={{ fontSize: 11, color: 'var(--text-muted)', marginTop: 4 }}>Enter {t('common.send')} · Esc {t('common.cancel')}</div>
+              </div>
+            )}
+            {btwState.status === 'loading' && (
+              <div className="btw-popup-body">
+                <div className="btw-question">{btwState.question}</div>
+                <div className="btw-loading">{t('common.loading')}</div>
+              </div>
+            )}
+            {btwState.status === 'answer' && (
+              <div className="btw-popup-body">
+                <div className="btw-question">{btwState.question}</div>
+                <div className="btw-answer">
+                  {btwState.error ? (
+                    <span style={{ color: 'var(--danger)' }}>{btwState.error}</span>
+                  ) : (
+                    <ReactMarkdown remarkPlugins={[remarkGfm]}>{btwState.answer || ''}</ReactMarkdown>
+                  )}
+                </div>
+                <div style={{ fontSize: 11, color: 'var(--text-muted)', marginTop: 8 }}>Esc {t('common.close')}</div>
+              </div>
+            )}
+          </div>
+        </div>
+      )}
 
     </div>
   );

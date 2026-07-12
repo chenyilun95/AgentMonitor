@@ -5,6 +5,7 @@ export const ko: Record<string, string> = {
     'nav.pipeline': '에이전트 팀',
     'nav.newAgent': '새 에이전트',
     'nav.templates': '템플릿',
+    'nav.skills': '스킬',
     'nav.help': '문서',
     'nav.theme': '테마 전환',
     'nav.scheme': '배색 전환',
@@ -31,7 +32,7 @@ export const ko: Record<string, string> = {
 
     // Dashboard
     'dashboard.title': '에이전트',
-    'dashboard.newAgent': '+ 새 에이전트',
+    'dashboard.newAgent': '새 에이전트',
     'dashboard.stopAll': '모두 중지',
     'dashboard.empty': '실행 중인 에이전트가 없습니다. 하나를 생성하여 시작하세요.',
     'dashboard.noMessages': '아직 메시지가 없습니다',
@@ -236,6 +237,22 @@ export const ko: Record<string, string> = {
     'templates.content': '내용',
     'templates.contentPlaceholder': 'CLAUDE.md 내용...',
     'templates.empty': '아직 템플릿이 없습니다. 하나를 생성하여 시작하세요.',
+
+    // Skills
+    'skills.title': '스킬',
+    'skills.newSkill': '+ 새 스킬',
+    'skills.skillName': '스킬 이름',
+    'skills.skillNamePlaceholder': 'code-review',
+    'skills.description': '설명',
+    'skills.descriptionPlaceholder': '이 스킬은 무엇을 하나요?',
+    'skills.body': '지시 (Markdown)',
+    'skills.bodyPlaceholder': '에이전트를 위한 스킬 지시...',
+    'skills.scripts': '스크립트',
+    'skills.uploadScript': '스크립트 업로드',
+    'skills.empty': '아직 스킬이 없습니다. 하나 만들어 시작하세요.',
+    'skills.nameValidation': '이름은 영문, 숫자, 하이픈, 밑줄만 사용할 수 있습니다',
+    'create.skills': '스킬',
+    'create.skillsHint': '에이전트 워크트리에 배포할 스킬 선택',
 
     // Pipeline
     'pipeline.title': '에이전트 팀',

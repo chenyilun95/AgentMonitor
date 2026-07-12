@@ -5,6 +5,7 @@ export const ja: Record<string, string> = {
     'nav.pipeline': 'エージェントチーム',
     'nav.newAgent': '新規エージェント',
     'nav.templates': 'テンプレート',
+    'nav.skills': 'スキル',
     'nav.help': 'ドキュメント',
     'nav.theme': 'テーマ切替',
     'nav.scheme': '配色切替',
@@ -31,7 +32,7 @@ export const ja: Record<string, string> = {
 
     // Dashboard
     'dashboard.title': 'エージェント',
-    'dashboard.newAgent': '+ 新規エージェント',
+    'dashboard.newAgent': '新規エージェント',
     'dashboard.stopAll': 'すべて停止',
     'dashboard.empty': '実行中のエージェントはありません。作成して始めましょう。',
     'dashboard.noMessages': 'メッセージはまだありません',
@@ -236,6 +237,22 @@ export const ja: Record<string, string> = {
     'templates.content': '内容',
     'templates.contentPlaceholder': 'CLAUDE.md の内容...',
     'templates.empty': 'テンプレートはまだありません。作成して始めましょう。',
+
+    // Skills
+    'skills.title': 'スキル',
+    'skills.newSkill': '+ 新規スキル',
+    'skills.skillName': 'スキル名',
+    'skills.skillNamePlaceholder': 'code-review',
+    'skills.description': '説明',
+    'skills.descriptionPlaceholder': 'このスキルは何をしますか？',
+    'skills.body': '指示 (Markdown)',
+    'skills.bodyPlaceholder': 'エージェントへのスキル指示...',
+    'skills.scripts': 'スクリプト',
+    'skills.uploadScript': 'スクリプトをアップロード',
+    'skills.empty': 'スキルがまだありません。作成して始めましょう。',
+    'skills.nameValidation': '名前には英数字、ハイフン、アンダースコアのみ使用できます',
+    'create.skills': 'スキル',
+    'create.skillsHint': 'エージェントのワークツリーにデプロイするスキルを選択',
 
     // Pipeline
     'pipeline.title': 'エージェントチーム',

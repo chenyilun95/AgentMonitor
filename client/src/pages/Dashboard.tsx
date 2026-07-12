@@ -20,6 +20,7 @@ export function Dashboard() {
   } | null>(null);
   const [showExternal, setShowExternal] = useState(() => localStorage.getItem('agentmonitor-show-external') !== 'false');
   const [labelFilter, setLabelFilter] = useState('');
+  const [groupBy, setGroupBy] = useState<'time' | 'directory'>(() => (localStorage.getItem('agentmonitor-group-by') as 'time' | 'directory') || 'directory');
   const navigate = useNavigate();
   const { t, lang, setLang } = useTranslation();
 
@@ -131,6 +132,45 @@ export function Dashboard() {
     fetchAgents();
   };
 
+  const handleCommit = async (e: React.MouseEvent, agent: Agent) => {
+    e.stopPropagation();
+    const isWorktree = agent.workspaceMode !== 'direct' && !!agent.worktreeBranch;
+    const branch = agent.worktreeBranch || '';
+    const dir = agent.config.directory;
+
+    let prompt: string;
+    if (isWorktree) {
+      prompt = [
+        `You are on worktree branch "${branch}". The original repo is at "${dir}".`,
+        '',
+        'Do the following steps in order. Stop and report if any step fails:',
+        '',
+        '1. Run `git diff --stat` and `git status` to review all changes.',
+        `2. Go to the original repo directory ("${dir}") and run:`,
+        `   git merge --no-ff ${branch} -m "merge: ${branch}"`,
+        '   If there are merge conflicts, list them and stop — do NOT auto-resolve.',
+        '3. After a clean merge, commit any remaining uncommitted changes with a descriptive message summarizing what was done.',
+        '4. Push to the remote repository. If push fails due to auth, report the error.',
+      ].join('\n');
+    } else {
+      prompt = [
+        'Review and commit the current changes:',
+        '',
+        '1. Run `git diff --stat` and `git status` to see what changed.',
+        '2. Stage all relevant changes (skip any .env or credentials files).',
+        '3. Commit with a clear, descriptive message summarizing the work.',
+        '4. Push to the remote repository. If push fails due to auth, report the error.',
+      ].join('\n');
+    }
+
+    try {
+      await api.sendMessage(agent.id, prompt);
+      fetchAgents();
+    } catch (err) {
+      console.error('Failed to send commit prompt:', err);
+    }
+  };
+
   const handleRename = async (e: React.MouseEvent, agent: Agent) => {
     e.stopPropagation();
     const nextName = window.prompt(t('chat.renamePrompt'), agent.name)?.trim();
@@ -215,26 +255,208 @@ export function Dashboard() {
   const STALE_MS = 24 * 60 * 60 * 1000;
   const now = Date.now();
   const staleWorktreeAgents = visibleAgents.filter(a =>
-    a.worktreeBranch && a.status !== 'running' && (now - a.lastActivity > STALE_MS)
+    a.worktreeBranch && a.status !== 'running' && !a.worktreeMerged && (now - a.lastActivity > STALE_MS)
   );
-  const staleDirectGroups = (() => {
-    const dirMap = new Map<string, typeof visibleAgents>();
-    for (const a of visibleAgents) {
-      if (a.workspaceMode === 'direct' && a.status !== 'running' && (now - a.lastActivity > STALE_MS)) {
-        const dir = a.config.directory;
-        const list = dirMap.get(dir) || [];
-        list.push(a);
-        dirMap.set(dir, list);
-      }
-    }
-    return Array.from(dirMap.entries());
-  })();
+
+  const renderAgentCard = (agent: Agent) => {
+    const contextTotal = agent.contextWindow?.total ?? 0;
+    const rawContextPercent = contextTotal > 0
+      ? (agent.contextWindow!.used / contextTotal) * 100
+      : 0;
+    const contextPercent = Math.max(0, Math.min(100, rawContextPercent));
+
+    return (
+      <div
+        key={agent.id}
+        className="card"
+        onClick={() => navigate(`/agent/${agent.id}`)}
+      >
+        <div className="card-header">
+          <span className="card-name">
+            <span className={`provider-badge provider-${agent.config.provider || 'claude'}`}>
+              {(agent.config.provider || 'claude').toUpperCase()}
+            </span>
+            {agent.source === 'external' && (
+              <span className="provider-badge" style={{ background: '#6366f1', color: '#fff', marginLeft: 4 }}>{t('dashboard.externalBadge')}</span>
+            )}
+            {agent.labels && Object.entries(agent.labels).map(([k, v]) => (
+              <span key={k} className="provider-badge" style={{ background: 'var(--bg-tertiary)', color: 'var(--text-secondary)', marginLeft: 4, fontSize: '0.7em' }}>{v ? `${k}=${v}` : k}</span>
+            ))}
+            <span className="agent-title-text">{agent.name}</span>
+            <button
+              type="button"
+              className="agent-rename-btn"
+              aria-label={`${t('chat.slashRename')}: ${agent.name}`}
+              title={t('chat.slashRename')}
+              onClick={(e) => handleRename(e, agent)}
+            >
+              &#9998;
+            </button>
+          </span>
+          <span className={`status status-${getAgentStatusClass(agent.status)}`}>
+            <span className="status-dot" />
+            {formatStatus(agent.status)}
+          </span>
+        </div>
+
+        <div className="card-meta">
+          <span className="card-meta-item" title={agent.config.directory}>
+            <span className="card-meta-icon">&#128193;</span>
+            {agent.projectName || agent.config.directory.split('/').pop()}
+            {agent.workspaceMode === 'direct' ? (
+              <span className="card-direct" title={t('workspaceMode.directTooltip')}>
+                <span className="direct-icon" aria-hidden>🔗</span>
+                {t('workspaceMode.direct')}
+              </span>
+            ) : agent.worktreeBranch ? (
+              <>
+                <span className="card-branch" title={agent.worktreeBranch}>
+                  <svg className="branch-icon" viewBox="0 0 16 16" width="12" height="12" fill="currentColor">
+                    <path d="M9.5 3.25a2.25 2.25 0 1 1 3 2.122V6A2.5 2.5 0 0 1 10 8.5H6a1 1 0 0 0-1 1v1.128a2.251 2.251 0 1 1-1.5 0V5.372a2.25 2.25 0 1 1 1.5 0v1.836A2.492 2.492 0 0 1 6 7h4a1 1 0 0 0 1-1v-.628A2.25 2.25 0 0 1 9.5 3.25Zm-6 0a.75.75 0 1 0 1.5 0 .75.75 0 0 0-1.5 0Zm8.25-.75a.75.75 0 1 0 0 1.5.75.75 0 0 0 0-1.5ZM4.25 12a.75.75 0 1 0 0 1.5.75.75 0 0 0 0-1.5Z" />
+                  </svg>
+                  {t('workspaceMode.worktreeChip', { branch: agent.worktreeBranch.replace(/^agent-/, '') })}
+                </span>
+                {agent.status !== 'running' && !agent.worktreeMerged && (now - agent.lastActivity > STALE_MS) && (
+                  <span className="stale-worktree-badge">{t('dashboard.staleWorktreeBadge')}</span>
+                )}
+              </>
+            ) : null}
+          </span>
+          {agent.prUrl && (
+            <a
+              className="card-pr-link"
+              href={agent.prUrl}
+              target="_blank"
+              rel="noopener noreferrer"
+              onClick={(e) => e.stopPropagation()}
+            >
+              <svg viewBox="0 0 16 16" width="12" height="12" fill="currentColor">
+                <path d="M1.5 3.25a2.25 2.25 0 1 1 3 2.122v5.256a2.251 2.251 0 1 1-1.5 0V5.372A2.25 2.25 0 0 1 1.5 3.25Zm5.677-.177L9.573.677A.25.25 0 0 1 10 .854V2.5h1A2.5 2.5 0 0 1 13.5 5v5.628a2.251 2.251 0 1 1-1.5 0V5a1 1 0 0 0-1-1h-1v1.646a.25.25 0 0 1-.427.177L7.177 3.427a.25.25 0 0 1 0-.354ZM3.75 2.5a.75.75 0 1 0 0 1.5.75.75 0 0 0 0-1.5Zm0 9.5a.75.75 0 1 0 0 1.5.75.75 0 0 0 0-1.5Zm8.25.75a.75.75 0 1 0 1.5 0 .75.75 0 0 0-1.5 0Z" />
+              </svg>
+              PR #{agent.prUrl.split('/').pop()}
+            </a>
+          )}
+        </div>
+
+        <div className="card-meta">
+          {typeof agent.config.flags.model === 'string' && agent.config.flags.model && (
+            <span className="card-meta-item">
+              <svg className="card-meta-icon" viewBox="0 0 16 16" width="12" height="12" fill="currentColor">
+                <path d="M5.433 2.304A4.492 4.492 0 0 0 3.5 6c0 1.598.832 3.002 2.09 3.802.518.328.929.923.902 1.64v.008l-.164 3.092a.75.75 0 1 1-1.498-.08l.164-3.084c.007-.13-.112-.383-.527-.626A5.98 5.98 0 0 1 1.5 6a5.993 5.993 0 0 1 2.567-4.92.75.75 0 1 1 .866 1.224Zm5.135 0a.75.75 0 0 1 .866-1.224A5.993 5.993 0 0 1 14 6a5.98 5.98 0 0 1-2.967 5.178c-.414.243-.534.496-.527.626l.164 3.084a.75.75 0 1 1-1.498.08l-.164-3.092v-.008c-.027-.717.384-1.312.902-1.64A4.492 4.492 0 0 0 12 6a4.492 4.492 0 0 0-1.433-3.696Z" />
+              </svg>
+              {String(agent.config.flags.model)}
+            </span>
+          )}
+          {agent.contextWindow && contextTotal > 0 && (
+            <span className="card-meta-item card-context">
+              <span className="card-context-bar">
+                <span
+                  className="card-context-fill"
+                  style={{ width: `${contextPercent}%` }}
+                />
+              </span>
+              {Math.round(contextPercent)}%
+            </span>
+          )}
+        </div>
+
+        <div className="card-body">
+          {agent.currentTask || getLastMessage(agent)}
+        </div>
+
+        {agent.mcpServers && agent.mcpServers.length > 0 && (
+          <div className="card-mcp">
+            {agent.mcpServers.map((s) => (
+              <span key={s} className="card-mcp-tag">{s}</span>
+            ))}
+          </div>
+        )}
+
+        <div className="card-footer">
+          <span>{formatDuration(agent.createdAt, agent.lastActivity)}</span>
+          {agent.costUsd !== undefined && (
+            <span style={{ fontSize: 12, color: 'var(--text-muted)' }}>
+              ${agent.costUsd.toFixed(4)}
+            </span>
+          )}
+          {agent.tokenUsage && (
+            <span style={{ fontSize: 12, color: 'var(--text-muted)' }}>
+              {agent.tokenUsage.input + agent.tokenUsage.output} {t('common.tokens')}
+            </span>
+          )}
+        </div>
+        <div style={{ display: 'flex', gap: 6, marginTop: 8 }}>
+          <button
+            className="btn btn-sm btn-outline"
+            onClick={(e) => { e.stopPropagation(); navigate(`/create?from=${agent.id}`); }}
+            title={t('dashboard.cloneAgent')}
+          >
+            {t('dashboard.clone')}
+          </button>
+          <button
+            className="btn btn-sm btn-outline"
+            onClick={(e) => handleCommit(e, agent)}
+            title={t('dashboard.commitTooltip')}
+          >
+            {t('dashboard.commit')}
+          </button>
+          {(agent.status === 'running' || agent.status === 'waiting_input') && (
+            <button
+              className="btn btn-sm btn-outline"
+              onClick={(e) => handleStop(e, agent.id)}
+            >
+              {t('common.stop')}
+            </button>
+          )}
+          {agent.source === 'external' ? (
+            <span
+              className="quick-tooltip"
+              data-tooltip={t('dashboard.externalDeleteDisabled')}
+              style={{ display: 'inline-flex', cursor: 'not-allowed' }}
+              onClick={(e) => e.stopPropagation()}
+            >
+              <button
+                className="btn btn-sm btn-danger"
+                disabled
+                style={{ pointerEvents: 'none', opacity: 0.6 }}
+              >
+                {t('common.delete')}
+              </button>
+            </span>
+          ) : (
+            <button
+              className="btn btn-sm btn-danger"
+              onClick={(e) => handleDelete(e, agent)}
+            >
+              {t('common.delete')}
+            </button>
+          )}
+        </div>
+      </div>
+    );
+  };
 
   return (
     <div>
       <div className="page-header">
         <h1 className="page-title">{t('dashboard.title')}</h1>
         <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
+          <div className="dashboard-view-toggle">
+            <button
+              className={`view-toggle-btn ${groupBy === 'time' ? 'active' : ''}`}
+              onClick={() => { setGroupBy('time'); localStorage.setItem('agentmonitor-group-by', 'time'); }}
+              title={t('dashboard.groupByTime')}
+            >
+              {t('dashboard.groupByTime')}
+            </button>
+            <button
+              className={`view-toggle-btn ${groupBy === 'directory' ? 'active' : ''}`}
+              onClick={() => { setGroupBy('directory'); localStorage.setItem('agentmonitor-group-by', 'directory'); }}
+              title={t('dashboard.groupByDirectory')}
+            >
+              {t('dashboard.groupByDirectory')}
+            </button>
+          </div>
           {allLabels.length > 0 && (
             <select
               value={labelFilter}
@@ -303,10 +525,10 @@ export function Dashboard() {
         </div>
       )}
 
-      {(staleWorktreeAgents.length > 0 || staleDirectGroups.length > 0) && (
+      {staleWorktreeAgents.length > 0 && (
         <div className="dashboard-attention dashboard-attention-stale">
           <span className="dashboard-attention-label" style={{ color: 'var(--orange, #f59e0b)' }}>
-            {t('dashboard.staleAgentCount', { count: staleWorktreeAgents.length + staleDirectGroups.reduce((s, [, a]) => s + a.length, 0) })}
+            {t('dashboard.staleAgentCount', { count: staleWorktreeAgents.length })}
           </span>
           <div className="dashboard-attention-list">
             {staleWorktreeAgents.map((a) => {
@@ -323,21 +545,6 @@ export function Dashboard() {
                 </button>
               );
             })}
-            {staleDirectGroups.map(([dir, agents]) => {
-              const days = Math.floor((now - Math.max(...agents.map(a => a.lastActivity))) / (24 * 60 * 60 * 1000));
-              const dirShort = dir.split('/').pop() || dir;
-              return (
-                <button
-                  key={`dir-${dir}`}
-                  type="button"
-                  className="dashboard-attention-agent dashboard-attention-agent-stale"
-                  onClick={() => navigate(`/agent/${agents[0].id}`)}
-                  title={dir}
-                >
-                  {dirShort}: {agents.map(a => a.name).join(', ')} ({days}d)
-                </button>
-              );
-            })}
           </div>
         </div>
       )}
@@ -346,187 +553,63 @@ export function Dashboard() {
         <div style={{ textAlign: 'center', padding: 48, color: 'var(--text-muted)' }}>
           {t('dashboard.empty')}
         </div>
+      ) : groupBy === 'directory' ? (
+        (() => {
+          const dirMap = new Map<string, Agent[]>();
+          for (const a of visibleAgents) {
+            const dir = a.config.directory;
+            const list = dirMap.get(dir) || [];
+            list.push(a);
+            dirMap.set(dir, list);
+          }
+          const groups = Array.from(dirMap.entries()).sort((a, b) => {
+            const aMax = Math.max(...a[1].map(x => x.lastActivity));
+            const bMax = Math.max(...b[1].map(x => x.lastActivity));
+            return bMax - aMax;
+          });
+          return (
+            <div className="directory-groups">
+              {groups.map(([dir, groupAgents]) => {
+                const runningCount = groupAgents.filter(a => a.status === 'running').length;
+                const dirShort = dir.replace(/^\/home\/[^/]+\//, '~/');
+                return (
+                  <div key={dir} className="directory-group">
+                    <div className="directory-group-header">
+                      <span className="directory-group-path" title={dir}>
+                        <span className="card-meta-icon">&#128193;</span>
+                        {dirShort}
+                      </span>
+                      <span className="directory-group-stats">
+                        {groupAgents.length} {t('dashboard.agentCount')}
+                        {runningCount > 0 && (
+                          <span className="directory-group-running"> · {runningCount} {t('dashboard.status.running').toLowerCase()}</span>
+                        )}
+                      </span>
+                      <button
+                        className="btn btn-sm btn-secondary"
+                        onClick={() => navigate(`/create?directory=${encodeURIComponent(dir)}&mode=direct`)}
+                      >
+                        {t('dashboard.newAgent')}
+                      </button>
+                      <button
+                        className="btn btn-sm btn-secondary"
+                        onClick={() => navigate(`/create?directory=${encodeURIComponent(dir)}&mode=worktree`)}
+                      >
+                        {t('dashboard.newWorktreeAgent')}
+                      </button>
+                    </div>
+                    <div className="card-grid">
+                      {groupAgents.map((agent) => renderAgentCard(agent))}
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+          );
+        })()
       ) : (
         <div className="card-grid">
-          {visibleAgents.map((agent) => {
-            const contextTotal = agent.contextWindow?.total ?? 0;
-            const rawContextPercent = contextTotal > 0
-              ? (agent.contextWindow!.used / contextTotal) * 100
-              : 0;
-            const contextPercent = Math.max(0, Math.min(100, rawContextPercent));
-
-            return (
-              <div
-                key={agent.id}
-                className="card"
-                onClick={() => navigate(`/agent/${agent.id}`)}
-              >
-              <div className="card-header">
-                <span className="card-name">
-                  <span className={`provider-badge provider-${agent.config.provider || 'claude'}`}>
-                    {(agent.config.provider || 'claude').toUpperCase()}
-                  </span>
-                  {agent.source === 'external' && (
-                    <span className="provider-badge" style={{ background: '#6366f1', color: '#fff', marginLeft: 4 }}>{t('dashboard.externalBadge')}</span>
-                  )}
-                  {agent.labels && Object.entries(agent.labels).map(([k, v]) => (
-                    <span key={k} className="provider-badge" style={{ background: 'var(--bg-tertiary)', color: 'var(--text-secondary)', marginLeft: 4, fontSize: '0.7em' }}>{v ? `${k}=${v}` : k}</span>
-                  ))}
-                  <span className="agent-title-text">{agent.name}</span>
-                  <button
-                    type="button"
-                    className="agent-rename-btn"
-                    aria-label={`${t('chat.slashRename')}: ${agent.name}`}
-                    title={t('chat.slashRename')}
-                    onClick={(e) => handleRename(e, agent)}
-                  >
-                    &#9998;
-                  </button>
-                </span>
-                <span className={`status status-${getAgentStatusClass(agent.status)}`}>
-                  <span className="status-dot" />
-                  {formatStatus(agent.status)}
-                </span>
-              </div>
-
-              {/* Project & Branch */}
-              <div className="card-meta">
-                <span className="card-meta-item" title={agent.config.directory}>
-                  <span className="card-meta-icon">&#128193;</span>
-                  {agent.projectName || agent.config.directory.split('/').pop()}
-                  {agent.workspaceMode === 'direct' ? (
-                    <>
-                      <span className="card-direct" title={t('workspaceMode.directTooltip')}>
-                        <span className="direct-icon" aria-hidden>🔗</span>
-                        {t('workspaceMode.direct')}
-                      </span>
-                      {agent.status !== 'running' && (now - agent.lastActivity > STALE_MS) && (
-                        <span className="stale-worktree-badge">{t('dashboard.staleDirectBadge')}</span>
-                      )}
-                    </>
-                  ) : agent.worktreeBranch ? (
-                    <>
-                      <span className="card-branch" title={agent.worktreeBranch}>
-                        <svg className="branch-icon" viewBox="0 0 16 16" width="12" height="12" fill="currentColor">
-                          <path d="M9.5 3.25a2.25 2.25 0 1 1 3 2.122V6A2.5 2.5 0 0 1 10 8.5H6a1 1 0 0 0-1 1v1.128a2.251 2.251 0 1 1-1.5 0V5.372a2.25 2.25 0 1 1 1.5 0v1.836A2.492 2.492 0 0 1 6 7h4a1 1 0 0 0 1-1v-.628A2.25 2.25 0 0 1 9.5 3.25Zm-6 0a.75.75 0 1 0 1.5 0 .75.75 0 0 0-1.5 0Zm8.25-.75a.75.75 0 1 0 0 1.5.75.75 0 0 0 0-1.5ZM4.25 12a.75.75 0 1 0 0 1.5.75.75 0 0 0 0-1.5Z" />
-                        </svg>
-                        {t('workspaceMode.worktreeChip', { branch: agent.worktreeBranch.replace(/^agent-/, '') })}
-                      </span>
-                      {agent.status !== 'running' && (now - agent.lastActivity > STALE_MS) && (
-                        <span className="stale-worktree-badge">{t('dashboard.staleWorktreeBadge')}</span>
-                      )}
-                    </>
-                  ) : null}
-                </span>
-                {agent.prUrl && (
-                  <a
-                    className="card-pr-link"
-                    href={agent.prUrl}
-                    target="_blank"
-                    rel="noopener noreferrer"
-                    onClick={(e) => e.stopPropagation()}
-                  >
-                    <svg viewBox="0 0 16 16" width="12" height="12" fill="currentColor">
-                      <path d="M1.5 3.25a2.25 2.25 0 1 1 3 2.122v5.256a2.251 2.251 0 1 1-1.5 0V5.372A2.25 2.25 0 0 1 1.5 3.25Zm5.677-.177L9.573.677A.25.25 0 0 1 10 .854V2.5h1A2.5 2.5 0 0 1 13.5 5v5.628a2.251 2.251 0 1 1-1.5 0V5a1 1 0 0 0-1-1h-1v1.646a.25.25 0 0 1-.427.177L7.177 3.427a.25.25 0 0 1 0-.354ZM3.75 2.5a.75.75 0 1 0 0 1.5.75.75 0 0 0 0-1.5Zm0 9.5a.75.75 0 1 0 0 1.5.75.75 0 0 0 0-1.5Zm8.25.75a.75.75 0 1 0 1.5 0 .75.75 0 0 0-1.5 0Z" />
-                    </svg>
-                    PR #{agent.prUrl.split('/').pop()}
-                  </a>
-                )}
-              </div>
-
-              {/* Model & Context */}
-              <div className="card-meta">
-                {typeof agent.config.flags.model === 'string' && agent.config.flags.model && (
-                  <span className="card-meta-item">
-                    <svg className="card-meta-icon" viewBox="0 0 16 16" width="12" height="12" fill="currentColor">
-                      <path d="M5.433 2.304A4.492 4.492 0 0 0 3.5 6c0 1.598.832 3.002 2.09 3.802.518.328.929.923.902 1.64v.008l-.164 3.092a.75.75 0 1 1-1.498-.08l.164-3.084c.007-.13-.112-.383-.527-.626A5.98 5.98 0 0 1 1.5 6a5.993 5.993 0 0 1 2.567-4.92.75.75 0 1 1 .866 1.224Zm5.135 0a.75.75 0 0 1 .866-1.224A5.993 5.993 0 0 1 14 6a5.98 5.98 0 0 1-2.967 5.178c-.414.243-.534.496-.527.626l.164 3.084a.75.75 0 1 1-1.498.08l-.164-3.092v-.008c-.027-.717.384-1.312.902-1.64A4.492 4.492 0 0 0 12 6a4.492 4.492 0 0 0-1.433-3.696Z" />
-                    </svg>
-                    {String(agent.config.flags.model)}
-                  </span>
-                )}
-                {agent.contextWindow && contextTotal > 0 && (
-                  <span className="card-meta-item card-context">
-                    <span className="card-context-bar">
-                      <span
-                        className="card-context-fill"
-                        style={{ width: `${contextPercent}%` }}
-                      />
-                    </span>
-                    {Math.round(contextPercent)}%
-                  </span>
-                )}
-              </div>
-
-              {/* Task description */}
-              <div className="card-body">
-                {agent.currentTask || getLastMessage(agent)}
-              </div>
-
-              {/* MCP Servers */}
-              {agent.mcpServers && agent.mcpServers.length > 0 && (
-                <div className="card-mcp">
-                  {agent.mcpServers.map((s) => (
-                    <span key={s} className="card-mcp-tag">{s}</span>
-                  ))}
-                </div>
-              )}
-
-              <div className="card-footer">
-                <span>{formatDuration(agent.createdAt, agent.lastActivity)}</span>
-                {agent.costUsd !== undefined && (
-                  <span style={{ fontSize: 12, color: 'var(--text-muted)' }}>
-                    ${agent.costUsd.toFixed(4)}
-                  </span>
-                )}
-                {agent.tokenUsage && (
-                  <span style={{ fontSize: 12, color: 'var(--text-muted)' }}>
-                    {agent.tokenUsage.input + agent.tokenUsage.output} {t('common.tokens')}
-                  </span>
-                )}
-              </div>
-              <div style={{ display: 'flex', gap: 6, marginTop: 8 }}>
-                <button
-                  className="btn btn-sm btn-outline"
-                  onClick={(e) => { e.stopPropagation(); navigate(`/create?from=${agent.id}`); }}
-                  title={t('dashboard.cloneAgent')}
-                >
-                  {t('dashboard.clone')}
-                </button>
-                {(agent.status === 'running' || agent.status === 'waiting_input') && (
-                  <button
-                    className="btn btn-sm btn-outline"
-                    onClick={(e) => handleStop(e, agent.id)}
-                  >
-                    {t('common.stop')}
-                  </button>
-                )}
-                {agent.source === 'external' ? (
-                  <span
-                    className="quick-tooltip"
-                    data-tooltip={t('dashboard.externalDeleteDisabled')}
-                    style={{ display: 'inline-flex', cursor: 'not-allowed' }}
-                    onClick={(e) => e.stopPropagation()}
-                  >
-                    <button
-                      className="btn btn-sm btn-danger"
-                      disabled
-                      style={{ pointerEvents: 'none', opacity: 0.6 }}
-                    >
-                      {t('common.delete')}
-                    </button>
-                  </span>
-                ) : (
-                  <button
-                    className="btn btn-sm btn-danger"
-                    onClick={(e) => handleDelete(e, agent)}
-                  >
-                    {t('common.delete')}
-                  </button>
-                )}
-              </div>
-              </div>
-            );
-          })}
+          {visibleAgents.map((agent) => renderAgentCard(agent))}
         </div>
       )}
 

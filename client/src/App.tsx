@@ -4,6 +4,7 @@ import { Dashboard } from './pages/Dashboard';
 import { CreateAgent } from './pages/CreateAgent';
 import { AgentChat } from './pages/AgentChat';
 import { Templates } from './pages/Templates';
+import { Skills } from './pages/Skills';
 import { Pipeline } from './pages/Pipeline';
 import { GpuMonitor } from './pages/GpuMonitor';
 import { Login } from './pages/Login';
@@ -27,6 +28,9 @@ function NavBar({ onLogout }: { onLogout?: () => void }) {
         </Link>
         <Link to="/templates" className={location.pathname === '/templates' ? 'active' : ''}>
           {t('nav.templates')}
+        </Link>
+        <Link to="/skills" className={location.pathname === '/skills' ? 'active' : ''}>
+          {t('nav.skills')}
         </Link>
         <Link to="/servers" className={location.pathname === '/servers' ? 'active' : ''}>
           {t('nav.servers')}
@@ -79,6 +83,7 @@ function AuthenticatedApp() {
           <Route path="/create" element={<CreateAgent />} />
           <Route path="/agent/:id" element={<AgentChat />} />
           <Route path="/templates" element={<Templates />} />
+          <Route path="/skills" element={<Skills />} />
         </Routes>
       </main>
     </div>

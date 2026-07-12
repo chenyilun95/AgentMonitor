@@ -5,6 +5,7 @@ export const es: Record<string, string> = {
     'nav.pipeline': 'Equipo de Agentes',
     'nav.newAgent': 'Nuevo Agente',
     'nav.templates': 'Plantillas',
+    'nav.skills': 'Habilidades',
     'nav.help': 'Documentación',
     'nav.theme': 'Cambiar tema',
     'nav.scheme': 'Cambiar paleta',
@@ -31,7 +32,7 @@ export const es: Record<string, string> = {
 
     // Dashboard
     'dashboard.title': 'Agentes',
-    'dashboard.newAgent': '+ Nuevo Agente',
+    'dashboard.newAgent': 'Nuevo Agente',
     'dashboard.stopAll': 'Detener Todos',
     'dashboard.empty': 'No hay agentes en ejecución. Crea uno para comenzar.',
     'dashboard.noMessages': 'Aún no hay mensajes',
@@ -236,6 +237,22 @@ export const es: Record<string, string> = {
     'templates.content': 'Contenido',
     'templates.contentPlaceholder': 'Contenido de CLAUDE.md...',
     'templates.empty': 'Aún no hay plantillas. Crea una para comenzar.',
+
+    // Skills
+    'skills.title': 'Habilidades',
+    'skills.newSkill': '+ Nueva habilidad',
+    'skills.skillName': 'Nombre de habilidad',
+    'skills.skillNamePlaceholder': 'code-review',
+    'skills.description': 'Descripción',
+    'skills.descriptionPlaceholder': '¿Qué hace esta habilidad?',
+    'skills.body': 'Instrucciones (Markdown)',
+    'skills.bodyPlaceholder': 'Instrucciones de habilidad para el agente...',
+    'skills.scripts': 'Scripts',
+    'skills.uploadScript': 'Subir script',
+    'skills.empty': 'Aún no hay habilidades. Crea una para comenzar.',
+    'skills.nameValidation': 'El nombre solo puede contener letras, números, guiones y guiones bajos',
+    'create.skills': 'Habilidades',
+    'create.skillsHint': 'Seleccionar habilidades para desplegar en el worktree del agente',
 
     // Pipeline
     'pipeline.title': 'Equipo de Agentes',

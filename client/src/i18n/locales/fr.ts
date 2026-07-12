@@ -5,6 +5,7 @@ export const fr: Record<string, string> = {
     'nav.pipeline': 'Équipe d\'Agents',
     'nav.newAgent': 'Nouvel Agent',
     'nav.templates': 'Modèles',
+    'nav.skills': 'Compétences',
     'nav.help': 'Documentation',
     'nav.theme': 'Changer de thème',
     'nav.scheme': 'Changer la palette',
@@ -31,7 +32,7 @@ export const fr: Record<string, string> = {
 
     // Dashboard
     'dashboard.title': 'Agents',
-    'dashboard.newAgent': '+ Nouvel Agent',
+    'dashboard.newAgent': 'Nouvel Agent',
     'dashboard.stopAll': 'Tout Arrêter',
     'dashboard.empty': 'Aucun agent en cours d\'exécution. Créez-en un pour commencer.',
     'dashboard.noMessages': 'Aucun message pour le moment',
@@ -236,6 +237,22 @@ export const fr: Record<string, string> = {
     'templates.content': 'Contenu',
     'templates.contentPlaceholder': 'Contenu CLAUDE.md...',
     'templates.empty': 'Aucun modèle pour le moment. Créez-en un pour commencer.',
+
+    // Skills
+    'skills.title': 'Compétences',
+    'skills.newSkill': '+ Nouvelle compétence',
+    'skills.skillName': 'Nom de la compétence',
+    'skills.skillNamePlaceholder': 'code-review',
+    'skills.description': 'Description',
+    'skills.descriptionPlaceholder': 'Que fait cette compétence ?',
+    'skills.body': 'Instructions (Markdown)',
+    'skills.bodyPlaceholder': 'Instructions de compétence pour l\'agent...',
+    'skills.scripts': 'Scripts',
+    'skills.uploadScript': 'Télécharger un script',
+    'skills.empty': 'Pas encore de compétences. Créez-en une pour commencer.',
+    'skills.nameValidation': 'Le nom ne peut contenir que des lettres, chiffres, tirets et underscores',
+    'create.skills': 'Compétences',
+    'create.skillsHint': 'Sélectionner les compétences à déployer dans le worktree de l\'agent',
 
     // Pipeline
     'pipeline.title': 'Équipe d\'Agents',
