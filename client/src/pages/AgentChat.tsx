@@ -498,11 +498,23 @@ export function AgentChat() {
   const handleCommit = () => {
     if (!id || !agent) return;
     const text = buildCommitPrompt(agent);
-    const qId = `q-${Date.now()}`;
-    setQueuedMessages(prev => [...prev, { id: qId, text }]);
-    api.sendMessage(id, text).catch(() => {
-      setQueuedMessages(prev => prev.filter(q => q.id !== qId));
-    });
+    if (agent.status === 'running') {
+      const qId = `q-${Date.now()}`;
+      setQueuedMessages(prev => [...prev, { id: qId, text }]);
+      api.sendMessage(id, text).catch(() => {
+        setQueuedMessages(prev => prev.filter(q => q.id !== qId));
+      });
+    } else {
+      setAgent(prev => {
+        if (!prev) return prev;
+        return {
+          ...prev,
+          status: 'running' as Agent['status'],
+          messages: [...prev.messages, { id: `pending-${Date.now()}`, role: 'user', content: text, timestamp: Date.now() }],
+        };
+      });
+      api.sendMessage(id, text);
+    }
   };
 
   const handleSend = async () => {
@@ -572,15 +584,28 @@ export function AgentChat() {
 
     if (!text) return;
 
+    const isRunning = agent?.status === 'running';
     setInput('');
     setAttachedFiles([]);
     setInputRequired(null);
 
-    const qId = `q-${Date.now()}`;
-    setQueuedMessages(prev => [...prev, { id: qId, text }]);
-    api.sendMessage(id, text).catch(() => {
-      setQueuedMessages(prev => prev.filter(q => q.id !== qId));
-    });
+    if (isRunning) {
+      const qId = `q-${Date.now()}`;
+      setQueuedMessages(prev => [...prev, { id: qId, text }]);
+      api.sendMessage(id, text).catch(() => {
+        setQueuedMessages(prev => prev.filter(q => q.id !== qId));
+      });
+    } else {
+      setAgent(prev => {
+        if (!prev) return prev;
+        return {
+          ...prev,
+          status: 'running' as Agent['status'],
+          messages: [...prev.messages, { id: `pending-${Date.now()}`, role: 'user', content: text, timestamp: Date.now() }],
+        };
+      });
+      api.sendMessage(id, text);
+    }
   };
 
   const handleChoiceSelect = (choice: string) => {
