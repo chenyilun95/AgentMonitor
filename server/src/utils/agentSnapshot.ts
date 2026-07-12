@@ -13,7 +13,10 @@ function truncateText(text: string): string {
  * Older data may contain cumulative tokens in `used`, which can exceed `total`.
  */
 export function sanitizeAgentSnapshot(agent: Agent): Agent {
-  const { preRestoreSnapshot, ...rest } = agent;
+  // Logs have a dedicated paginated endpoint and are not used by the client
+  // agent view. Excluding them avoids sending hundreds of KB on page entry and
+  // every socket snapshot.
+  const { preRestoreSnapshot, logs: _logs, ...rest } = agent;
   let result = rest as Agent;
 
   if (preRestoreSnapshot) {
@@ -49,9 +52,10 @@ export function sanitizeAgentSnapshot(agent: Agent): Agent {
 export function sanitizeAgentListSnapshot(agent: Agent): Agent {
   const safeAgent = sanitizeAgentSnapshot(agent);
   const lastMessage = safeAgent.messages.at(-1);
+  const { logs: _logs, ...summary } = safeAgent;
 
   return {
-    ...safeAgent,
+    ...summary,
     messages: lastMessage
       ? [{
         id: lastMessage.id,

@@ -15,11 +15,12 @@ import { SlackNotifier } from './SlackNotifier.js';
 import { FeishuNotifier } from './FeishuNotifier.js';
 import { SkillManager } from './SkillManager.js';
 import { getInstructionFileName } from '../utils/instructionFiles.js';
-import { normalizeUserPath } from '../utils/pathUtils.js';
+import { normalizeUserPath, portableUserPath } from '../utils/pathUtils.js';
 
 /** How long (ms) after a user message with no response before we notify (not auto-interrupt) */
 const STUCK_TIMEOUT_MS = 600_000; // 10 minutes — long tasks (build, push, chrome MCP) can take time
 const STUCK_CHECK_INTERVAL_MS = 60_000; // check every 60s
+const GIT_BRANCH_CHECK_CACHE_MS = 60_000;
 const MAX_AGENT_LOG_ENTRIES = 400;
 const MAX_AGENT_LOG_MESSAGE_CHARS = 8000;
 const MAX_AGENT_LOG_PAYLOAD_CHARS = 16000;
@@ -102,6 +103,7 @@ export class AgentManager extends EventEmitter {
   private pendingUserMessage: Map<string, number> = new Map();
   private queuedUserMessages: Map<string, Array<{ displayText: string; processText: string }>> = new Map();
   private stuckCheckInterval: ReturnType<typeof setInterval> | null = null;
+  private lastGitBranchCheckAt = 0;
 
   constructor(store: AgentStore, worktreeManager?: WorktreeManager, emailNotifier?: EmailNotifier, whatsappNotifier?: WhatsAppNotifier, slackNotifier?: SlackNotifier, feishuNotifier?: FeishuNotifier, skillManager?: SkillManager) {
     super();
@@ -118,6 +120,11 @@ export class AgentManager extends EventEmitter {
     // External agents are handled by ExternalAgentScanner (it checks if PID is still alive).
     for (const agent of this.store.getAllAgents()) {
       if (agent.source === 'external') continue;
+      const portableDirectory = portableUserPath(agent.config.directory);
+      if (portableDirectory !== agent.config.directory) {
+        agent.config.directory = portableDirectory;
+        this.store.saveAgent(agent);
+      }
       if (agent.status === 'running' || agent.status === 'waiting_input') {
         agent.status = 'stopped';
         agent.pid = undefined;
@@ -132,7 +139,7 @@ export class AgentManager extends EventEmitter {
       if (agent.gitBranch && agent.gitBranch !== agent.worktreeBranch) continue;
       try {
         const branch = execSync('git rev-parse --abbrev-ref HEAD', {
-          cwd: agent.config.directory, stdio: 'pipe', timeout: 5000,
+          cwd: normalizeUserPath(agent.config.directory), stdio: 'pipe', timeout: 5000,
         }).toString().trim();
         if (branch && branch !== 'HEAD') {
           agent.gitBranch = branch;
@@ -142,11 +149,21 @@ export class AgentManager extends EventEmitter {
       } catch { /* not a git repo */ }
     }
 
-    // Periodically check for stuck agents (sent user message but no response)
+    this.resumeBackgroundChecks();
+  }
+
+  resumeBackgroundChecks(): void {
+    if (this.stuckCheckInterval) return;
+    // Periodically check for stuck agents (sent user message but no response).
     this.stuckCheckInterval = setInterval(() => {
       this.checkStuckAgents();
-      this.checkGitBranches();
     }, STUCK_CHECK_INTERVAL_MS);
+  }
+
+  pauseBackgroundChecks(): void {
+    if (!this.stuckCheckInterval) return;
+    clearInterval(this.stuckCheckInterval);
+    this.stuckCheckInterval = null;
   }
 
   private checkStuckAgents(): void {
@@ -182,7 +199,11 @@ export class AgentManager extends EventEmitter {
     }
   }
 
-  private checkGitBranches(): void {
+  refreshGitBranches(force = false): void {
+    const now = Date.now();
+    if (!force && now - this.lastGitBranchCheckAt < GIT_BRANCH_CHECK_CACHE_MS) return;
+    this.lastGitBranchCheckAt = now;
+
     for (const agent of this.store.getAllAgents()) {
       if (agent.status !== 'running' && agent.status !== 'waiting_input') continue;
 
@@ -336,6 +357,9 @@ export class AgentManager extends EventEmitter {
 
     const hasPrompt = agentConfig.prompt.trim().length > 0;
 
+    const absoluteDirectory = agentConfig.directory;
+    agentConfig = { ...agentConfig, directory: portableUserPath(absoluteDirectory) };
+
     const agent: Agent = {
       id,
       name,
@@ -349,7 +373,7 @@ export class AgentManager extends EventEmitter {
       messages: [],
       lastActivity: Date.now(),
       createdAt: Date.now(),
-      projectName: basename(agentConfig.directory),
+      projectName: basename(absoluteDirectory),
       mcpServers: this.parseMcpServers(agentConfig.flags.mcpConfig),
       currentTask: agentConfig.prompt.length > 120 ? agentConfig.prompt.slice(0, 120) + '...' : agentConfig.prompt,
       originalPrompt: agentConfig.prompt,
@@ -453,14 +477,19 @@ export class AgentManager extends EventEmitter {
     });
 
     proc.on('exit', (code: number | null) => {
+      // A completed result marks the agent stopped before AgentManager closes
+      // the transport. SSH-backed runners commonly report 255 in that case.
+      const current = this.store.getAgent(agent.id);
+      const expectedTransportClose = current?.status === 'stopped';
       this.appendAgentLog(agent.id, {
-        level: code === 0 || code === null ? 'info' : 'error',
+        level: code === 0 || code === null || expectedTransportClose ? 'info' : 'error',
         source: 'process',
-        message: `Agent process exited with code ${code}`,
-        payload: { code },
+        message: expectedTransportClose && code !== 0 && code !== null
+          ? `Agent transport closed after completed turn (code ${code})`
+          : `Agent process exited with code ${code}`,
+        payload: { code, expectedTransportClose },
       });
       // Don't override 'stopped' status (set when result message is received)
-      const current = this.store.getAgent(agent.id);
       if (current && current.status !== 'stopped') {
         const status = (code === 0 || code === null) ? 'stopped' : 'error';
         if (status === 'error') {
@@ -1453,7 +1482,7 @@ export class AgentManager extends EventEmitter {
   }
 
   private checkWorktreeMerged(agent: Agent): void {
-    const dir = agent.config.directory;
+    const dir = normalizeUserPath(agent.config.directory);
     try {
       const { execSync } = require('child_process');
       const merged = execSync(
@@ -1655,6 +1684,14 @@ export class AgentManager extends EventEmitter {
 
     if (proc) {
       // status === 'waiting_input' with a live process
+      if (agent.config.provider === 'codex') {
+        // Codex exec is turn-based: stdin is closed after startup, so a live
+        // process cannot accept another prompt. Queue it and let the exit
+        // handler resume the session in a fresh `codex exec resume` process.
+        this.enqueueUserMessage(agentId, text, processText);
+        proc.stop();
+        return;
+      }
       this.updateAgentStatus(agentId, 'running');
       this.pendingUserMessage.set(agentId, Date.now());
       proc.sendMessage(processText);
@@ -1864,7 +1901,7 @@ export class AgentManager extends EventEmitter {
           this.worktreeManager.removeDirectLink(agent.worktreePath);
         } else if (agent.worktreeBranch) {
           this.worktreeManager.removeWorktree(
-            agent.config.directory,
+            normalizeUserPath(agent.config.directory),
             agent.worktreePath,
             agent.worktreeBranch,
           );
@@ -1927,7 +1964,7 @@ export class AgentManager extends EventEmitter {
     const agents = this.store.getAllAgents();
     let count = 0;
     for (const agent of agents) {
-      if (agent.source !== 'external') continue;
+      if (agent.source === 'external') continue;
       if (
         (agent.status === 'stopped' || agent.status === 'error') &&
         agent.lastActivity + retentionMs < now
@@ -2190,11 +2227,17 @@ export class AgentManager extends EventEmitter {
     if (agent.workspaceMode === 'direct') return;
     try {
       execSync('git rev-parse --git-dir', { cwd: agent.worktreePath, stdio: 'pipe' });
-      // Commit all current changes (including untracked) as a snapshot.
-      // Safe because agents work on isolated worktree branches (agent-XXXX).
-      execSync('git add -A && git commit --allow-empty -m "[snapshot] before turn ' + beforeTurnIndex + '"', {
-        cwd: agent.worktreePath, stdio: 'pipe', shell: '/bin/bash',
-      });
+      const changes = execSync('git status --porcelain', {
+        cwd: agent.worktreePath,
+        encoding: 'utf-8',
+      }).trim();
+      // Preserve restore points without creating an empty commit every turn.
+      // Real changes remain isolated to the agent's worktree branch.
+      if (changes) {
+        execSync('git add -A && git commit -m "[snapshot] before turn ' + beforeTurnIndex + '"', {
+          cwd: agent.worktreePath, stdio: 'pipe', shell: '/bin/bash',
+        });
+      }
       const commit = execSync('git rev-parse HEAD', { cwd: agent.worktreePath, encoding: 'utf-8' }).trim();
       if (!agent.codeSnapshots) agent.codeSnapshots = [];
       const existing = agent.codeSnapshots.findIndex(s => s.beforeTurnIndex === beforeTurnIndex);

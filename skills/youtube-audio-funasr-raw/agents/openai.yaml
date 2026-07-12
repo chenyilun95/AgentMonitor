@@ -1,0 +1,3 @@
+display_name: YouTube Talk Notes
+short_description: Archive YouTube audio, transcripts, screenshots, and bilingual slide notes.
+default_prompt: Archive this YouTube talk into llm-wiki raw by downloading audio, transcribing it with FunASR, extracting chapter screenshots, and generating interleaved English-caption notes with detailed Chinese section notes.

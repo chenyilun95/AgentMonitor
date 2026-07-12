@@ -281,6 +281,7 @@ For a normal local setup, you can ignore all `RELAY_*` variables.
 | Variable | Default | Description |
 |----------|---------|-------------|
 | `PORT` | `3456` | Server port |
+| `AGENTMONITOR_IDLE_TIMEOUT_MINUTES` | `60` | Minutes without active agents or dashboard/API activity before background scans sleep; set to `0` to disable |
 | `CLAUDE_BIN` | `claude` | Path to Claude CLI binary |
 | `CODEX_BIN` | `codex` | Path to Codex CLI binary |
 | `DASHBOARD_PASSWORD` | — | Password for dashboard login (empty = auth disabled) |

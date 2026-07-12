@@ -1,5 +1,5 @@
 import { Router } from 'express';
-import { existsSync } from 'fs';
+import { existsSync, statSync } from 'fs';
 import { DirectoryBrowser, FileReadError } from '../services/DirectoryBrowser.js';
 import type { AgentProvider } from '../models/Agent.js';
 import { findInstructionFile } from '../utils/instructionFiles.js';
@@ -10,12 +10,17 @@ export function directoryRoutes(): Router {
   const browser = new DirectoryBrowser();
 
   router.get('/validate', (req, res) => {
-    const dirPath = req.query.path as string;
-    if (!dirPath) {
+    const rawPath = req.query.path as string;
+    if (!rawPath?.trim()) {
       res.json({ exists: false });
       return;
     }
-    res.json({ exists: existsSync(normalizeUserPath(dirPath)) });
+    const dirPath = normalizeUserPath(rawPath);
+    let exists = false;
+    try {
+      exists = existsSync(dirPath) && statSync(dirPath).isDirectory();
+    } catch { /* inaccessible or disappeared */ }
+    res.json({ exists, path: dirPath });
   });
 
   router.get('/', (req, res) => {
@@ -31,13 +36,14 @@ export function directoryRoutes(): Router {
 
   router.get('/claude-md', (req, res) => {
     try {
-      const dirPath = req.query.path as string;
+      const rawPath = req.query.path as string;
       const provider = ((req.query.provider as string) || 'claude') as AgentProvider;
-      if (!dirPath) {
+      if (!rawPath?.trim()) {
         res.json({ exists: false });
         return;
       }
-      const match = findInstructionFile(normalizeUserPath(dirPath), provider);
+      const dirPath = normalizeUserPath(rawPath);
+      const match = findInstructionFile(dirPath, provider);
       if (!match) {
         res.json({ exists: false });
         return;
@@ -55,11 +61,12 @@ export function directoryRoutes(): Router {
 
   router.get('/file', (req, res) => {
     try {
-      const filePath = req.query.path as string;
-      if (!filePath) {
+      const rawPath = req.query.path as string;
+      if (!rawPath?.trim()) {
         res.status(400).json({ error: 'path is required' });
         return;
       }
+      const filePath = normalizeUserPath(rawPath);
       res.json(browser.readTextFile(filePath));
     } catch (err) {
       if (err instanceof FileReadError) {
@@ -72,11 +79,12 @@ export function directoryRoutes(): Router {
 
   router.get('/asset', (req, res) => {
     try {
-      const filePath = req.query.path as string;
-      if (!filePath) {
+      const rawPath = req.query.path as string;
+      if (!rawPath?.trim()) {
         res.status(400).json({ error: 'path is required' });
         return;
       }
+      const filePath = normalizeUserPath(rawPath);
       const asset = browser.getPreviewAsset(filePath);
       res.sendFile(asset.path);
     } catch (err) {

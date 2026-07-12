@@ -128,7 +128,7 @@ describe('reasoning effort support', () => {
     });
 
     expect(args.slice(0, 3)).toEqual(['exec', 'resume', '--json']);
-    expect(args).toContain('--full-auto');
+    expect(args).not.toContain('--full-auto');
     expect(args).not.toContain('--ask-for-approval');
     expect(args).not.toContain('--sandbox');
   });

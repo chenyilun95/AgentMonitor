@@ -281,6 +281,7 @@ cd server && npm link
 | 变量 | 默认值 | 说明 |
 |------|--------|------|
 | `PORT` | `3456` | 服务器端口 |
+| `AGENTMONITOR_IDLE_TIMEOUT_MINUTES` | `60` | 无运行中 Agent 且无网页/API 活动后，暂停后台扫描的分钟数；设为 `0` 禁用休眠 |
 | `CLAUDE_BIN` | `claude` | Claude CLI 二进制文件路径 |
 | `CODEX_BIN` | `codex` | Codex CLI 二进制文件路径 |
 | `DASHBOARD_PASSWORD` | — | 仪表盘登录密码（为空则禁用认证） |

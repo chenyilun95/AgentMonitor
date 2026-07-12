@@ -1,0 +1,4 @@
+interface:
+  display_name: "Xiaohongshu Note to Markdown"
+  short_description: "Archive Xiaohongshu notes and videos"
+  default_prompt: "Use $xiaohongshu-note-to-markdown to archive this Xiaohongshu note as Markdown with local media assets."

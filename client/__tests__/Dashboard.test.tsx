@@ -101,11 +101,11 @@ describe('Dashboard', () => {
     );
 
     await waitFor(() => {
-      expect(screen.getByText('Needs input (1)')).toBeInTheDocument();
+      expect(screen.getByText(/Needs input \(1\)|等待输入 \(1\)/)).toBeInTheDocument();
     });
 
     expect(screen.getByRole('button', { name: 'Blocked agent' })).toBeInTheDocument();
-    expect(screen.getByText('Needs input', { selector: '.status' })).toBeInTheDocument();
+    expect(screen.getByText(/Needs input|等待输入/, { selector: '.status' })).toBeInTheDocument();
   });
 
   it('renames an agent from the dashboard title', async () => {
@@ -133,7 +133,7 @@ describe('Dashboard', () => {
       expect(screen.getByText('Original agent')).toBeInTheDocument();
     });
 
-    fireEvent.click(screen.getByRole('button', { name: /Rename the current conversation: Original agent/ }));
+    fireEvent.click(screen.getByRole('button', { name: /Rename the current conversation: Original agent|重命名当前对话: Original agent/ }));
 
     await waitFor(() => {
       expect(api.renameAgent).toHaveBeenCalledWith('agent-1', 'Renamed agent');

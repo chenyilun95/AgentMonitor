@@ -27,8 +27,8 @@ describe('App', () => {
       expect(screen.getByText('Agent Monitor')).toBeInTheDocument();
     });
 
-    expect(screen.getByText('Dashboard')).toBeInTheDocument();
-    expect(screen.getByText('New Agent')).toBeInTheDocument();
-    expect(screen.getByText('Templates')).toBeInTheDocument();
+    expect(screen.getByText(/Dashboard|代理面板/)).toBeInTheDocument();
+    expect(screen.getByText(/Templates|模板/)).toBeInTheDocument();
+    expect(screen.getByText(/Skills|技能/)).toBeInTheDocument();
   });
 });

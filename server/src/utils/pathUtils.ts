@@ -21,3 +21,15 @@ export function normalizeOptionalUserPath(inputPath: string | undefined): string
   const normalized = normalizeUserPath(inputPath);
   return normalized || undefined;
 }
+
+/** Store paths below the current user's home in a machine-portable form. */
+export function portableUserPath(inputPath: string): string {
+  const resolved = normalizeUserPath(inputPath);
+  const home = path.resolve(os.homedir());
+  const relative = path.relative(home, resolved);
+  if (relative === '') return '~';
+  if (!relative.startsWith('..') && !path.isAbsolute(relative)) {
+    return `~/${relative.split(path.sep).join('/')}`;
+  }
+  return resolved;
+}

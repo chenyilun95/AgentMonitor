@@ -1,0 +1,4 @@
+interface:
+  display_name: "WeChat Article to Markdown"
+  short_description: "Archive WeChat articles with local images"
+  default_prompt: "Use $wechat-article-to-markdown to convert this WeChat article URL into Markdown with local image assets."

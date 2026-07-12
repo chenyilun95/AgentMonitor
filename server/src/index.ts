@@ -87,8 +87,64 @@ export function createApp() {
   const externalScanner = new ExternalAgentScanner(
     store,
     () => manager.getManagedPids(),
-    { scanIntervalMs: 15_000, autoImport: false, maxMessages: 200 },
+    { scanIntervalMs: 5 * 60_000, autoImport: false, maxMessages: 200 },
   );
+
+  const idleTimeoutMinutes = Math.max(0, Number.parseFloat(process.env.AGENTMONITOR_IDLE_TIMEOUT_MINUTES || '60') || 0);
+  const idleTimeoutMs = idleTimeoutMinutes * 60_000;
+  let sleeping = false;
+  let lastActivityAt = Date.now();
+  let idleTimer: ReturnType<typeof setTimeout> | null = null;
+
+  const hasActiveWork = () => {
+    const hasActiveAgent = manager.getAllAgents().some(agent =>
+      agent.source !== 'external' && (agent.status === 'running' || agent.status === 'waiting_input'),
+    );
+    const harnessStatus = harnessOrchestrator.getState().status;
+    return hasActiveAgent
+      || agentManagerPipeline.isRunning()
+      || !['idle', 'complete', 'failed'].includes(harnessStatus);
+  };
+
+  const scheduleIdleCheck = () => {
+    if (idleTimeoutMs <= 0) return;
+    if (idleTimer) clearTimeout(idleTimer);
+    const delay = Math.max(1_000, idleTimeoutMs - (Date.now() - lastActivityAt));
+    idleTimer = setTimeout(() => {
+      idleTimer = null;
+      if (hasActiveWork()) {
+        // Active work is itself a reason to stay awake. Check infrequently;
+        // status events will reset the full idle deadline when work finishes.
+        idleTimer = setTimeout(scheduleIdleCheck, 5 * 60_000);
+        idleTimer.unref?.();
+        return;
+      }
+      sleeping = true;
+      externalScanner.stop();
+      manager.pauseBackgroundChecks();
+      console.log(`[Idle] Sleeping after ${idleTimeoutMinutes} minute(s) without activity`);
+    }, delay);
+    idleTimer.unref?.();
+  };
+
+  const touchActivity = (source: string) => {
+    lastActivityAt = Date.now();
+    if (sleeping) {
+      sleeping = false;
+      manager.resumeBackgroundChecks();
+      externalScanner.start();
+      console.log(`[Idle] Woke up (${source})`);
+    }
+    scheduleIdleCheck();
+  };
+
+  // Auth/health probes do not wake background work. Normal dashboard/API use does.
+  app.use('/api', (req, _res, next) => {
+    if (req.path !== '/health' && !req.path.startsWith('/auth/')) {
+      touchActivity(`${req.method} ${req.path}`);
+    }
+    next();
+  });
 
   // REST routes
   app.use('/api/agents', agentRoutes(manager, store));
@@ -105,8 +161,7 @@ export function createApp() {
   let gpuMonitor: GpuMonitorService | null = null;
   if (config.gpuMonitor.serversConf) {
     gpuMonitor = new GpuMonitorService(config.gpuMonitor);
-    gpuMonitor.start();
-    console.log(`[Server] GPU Monitor started with ${gpuMonitor.getServers().length} server(s)`);
+    console.log(`[Server] GPU Monitor configured with ${gpuMonitor.getServers().length} server(s); polling on page demand`);
   }
   app.use('/api/gpu', gpuMonitorRoutes(gpuMonitor));
 
@@ -186,6 +241,7 @@ export function createApp() {
     io.emit('pipeline:complete');
   });
   agentManagerPipeline.on('status', (status: string) => {
+    touchActivity(`pipeline ${status}`);
     io.emit('meta:status', { running: status === 'running' });
   });
 
@@ -194,10 +250,20 @@ export function createApp() {
     io.emit('task:update', task);
   });
   harnessOrchestrator.on('harness:complete', (data) => {
+    touchActivity('harness complete');
     io.emit('harness:complete', data);
   });
   harnessOrchestrator.on('harness:failed', (data) => {
+    touchActivity('harness failed');
     io.emit('harness:failed', data);
+  });
+
+  manager.on('agent:status', (_agentId: string, status: string) => {
+    touchActivity(`agent ${status}`);
+  });
+
+  io.on('connection', () => {
+    touchActivity('dashboard connection');
   });
 
   // External agent scanner — forward events to socket.io for live dashboard updates
@@ -213,9 +279,10 @@ export function createApp() {
     io.to(`agent:${agentId}`).emit('agent:delta', { agentId, ...(delta as Record<string, unknown>) });
   });
   externalScanner.start();
+  scheduleIdleCheck();
 
-  // Auto-cleanup expired stopped/error agents every 60s
-  const cleanupInterval = setInterval(async () => {
+  // Cleanup is not latency-sensitive: run once at startup, then twice a day.
+  const cleanupExpiredAgents = async () => {
     const { agentRetentionMs } = store.getSettings();
     if (agentRetentionMs <= 0) return;
     try {
@@ -227,7 +294,11 @@ export function createApp() {
     } catch (err) {
       console.error('[Cleanup] Error during agent cleanup:', err);
     }
-  }, 60_000);
+  };
+  void cleanupExpiredAgents();
+  const cleanupInterval = setInterval(() => {
+    void cleanupExpiredAgents();
+  }, 12 * 60 * 60_000);
 
   // Start Telegram after IO is set up
   if (telegramService) {
@@ -260,7 +331,16 @@ export function createApp() {
     console.log(`[Server] Tunnel client connecting to ${config.relay.url}`);
   }
 
-  return { app, httpServer, io, store, manager, agentManagerPipeline, harnessOrchestrator, cleanupInterval, tunnelClient, feishuService, telegramService };
+  const idleController = {
+    isSleeping: () => sleeping,
+    touch: () => touchActivity('manual'),
+    stop: () => {
+      if (idleTimer) clearTimeout(idleTimer);
+      idleTimer = null;
+    },
+  };
+
+  return { app, httpServer, io, store, manager, agentManagerPipeline, harnessOrchestrator, cleanupInterval, idleController, tunnelClient, feishuService, telegramService };
 }
 
 // Only start server if this is the main module

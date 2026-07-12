@@ -49,6 +49,7 @@ interface SessionSnapshot {
 export class ExternalAgentScanner extends EventEmitter {
   private store: AgentStore;
   private interval: ReturnType<typeof setInterval> | null = null;
+  private initialScanTimer: ReturnType<typeof setTimeout> | null = null;
   private dismissedPids = new Set<number>();
   private tailOffsets = new Map<string, number>(); // agentId -> byte offset
   private scanIntervalMs: number;
@@ -72,12 +73,19 @@ export class ExternalAgentScanner extends EventEmitter {
   start(): void {
     if (this.interval) return;
     // Initial scan after short delay
-    setTimeout(() => this.scan(), 2000);
+    this.initialScanTimer = setTimeout(() => {
+      this.initialScanTimer = null;
+      this.scan();
+    }, 2000);
     this.interval = setInterval(() => this.scan(), this.scanIntervalMs);
     console.log(`[ExternalScanner] Started (interval: ${this.scanIntervalMs}ms, autoImport: ${this.autoImport})`);
   }
 
   stop(): void {
+    if (this.initialScanTimer) {
+      clearTimeout(this.initialScanTimer);
+      this.initialScanTimer = null;
+    }
     if (this.interval) {
       clearInterval(this.interval);
       this.interval = null;
@@ -117,11 +125,9 @@ export class ExternalAgentScanner extends EventEmitter {
 
         const isAlive = !!agent.pid && (runningPids.has(agent.pid) || this.isProcessAlive(agent.pid));
         if (!isAlive) {
-          if (agent.status === 'running' || agent.status === 'waiting_input') {
-            agent.status = 'stopped';
-            this.store.saveAgent(agent);
-            this.emit('agent:status', agent.id, 'stopped');
-          }
+          this.store.deleteAgent(agent.id);
+          this.tailOffsets.delete(agent.id);
+          this.emit('agent:status', agent.id, 'deleted');
           result.removed++;
           continue;
         }

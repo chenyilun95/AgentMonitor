@@ -10,17 +10,19 @@ import { normalizeUserPath } from '../utils/pathUtils.js';
 
 export type { ServerSettings };
 
+const LEGACY_PROMPT_SUGGESTIONS = [
+  'kick off',
+  'keep working until confirmed all required features implemented without bugs during test',
+  'review the codebase and suggest improvements',
+  'fix the failing tests',
+  'refactor for better readability and maintainability',
+];
+
 const DEFAULT_SETTINGS: ServerSettings = {
   agentRetentionMs: 86_400_000, // 24 hours
   deleteSessionFilesPolicy: 'keep',
   opencliTemplateSeeded: false,
-  promptSuggestions: [
-    'kick off',
-    'keep working until confirmed all required features implemented without bugs during test',
-    'review the codebase and suggest improvements',
-    'fix the failing tests',
-    'refactor for better readability and maintainability',
-  ],
+  promptSuggestions: [],
   pathHistory: {},
 };
 
@@ -203,6 +205,9 @@ export class AgentStore {
         this.settings = { ...DEFAULT_SETTINGS, ...JSON.parse(fs.readFileSync(this.settingsFile, 'utf-8')) };
         if (!['ask', 'keep', 'purge'].includes(this.settings.deleteSessionFilesPolicy)) {
           this.settings.deleteSessionFilesPolicy = DEFAULT_SETTINGS.deleteSessionFilesPolicy;
+        }
+        if (JSON.stringify(this.settings.promptSuggestions) === JSON.stringify(LEGACY_PROMPT_SUGGESTIONS)) {
+          this.settings.promptSuggestions = [...DEFAULT_SETTINGS.promptSuggestions];
         }
       } catch {
         // ignore corrupt file

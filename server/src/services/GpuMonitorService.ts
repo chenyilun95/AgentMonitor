@@ -19,6 +19,7 @@ export class GpuMonitorService extends EventEmitter {
   private servers: GpuServer[] = [];
   private snapshots: Map<string, GpuSnapshot> = new Map();
   private timers: Map<string, ReturnType<typeof setInterval>> = new Map();
+  private pollsInFlight = new Set<string>();
   private options: GpuMonitorOptions;
   private running = false;
 
@@ -182,10 +183,13 @@ export class GpuMonitorService extends EventEmitter {
   }
 
   private pollServer(server: GpuServer): void {
+    if (this.pollsInFlight.has(server.name)) return;
+    this.pollsInFlight.add(server.name);
     const sshArgs = this.buildSshArgs(server);
     const timeout = Math.max(8000, (this.options.pollInterval - 1) * 1000);
 
     execFile('ssh', [...sshArgs, this.remoteGpuCommand()], { timeout }, (err, stdout) => {
+      this.pollsInFlight.delete(server.name);
       let snapshot: GpuSnapshot;
       if (err) {
         snapshot = { serverName: server.name, status: 'offline', gpus: [], timestamp: Date.now() };
@@ -200,6 +204,13 @@ export class GpuMonitorService extends EventEmitter {
       this.snapshots.set(server.name, snapshot);
       this.emit('gpu:snapshot', snapshot);
     });
+  }
+
+  /** Refresh once on demand. Repeated browser requests share any in-flight polls. */
+  refresh(): void {
+    for (const server of this.servers) {
+      this.pollServer(server);
+    }
   }
 
   start(): void {
@@ -248,7 +259,7 @@ export class GpuMonitorService extends EventEmitter {
   getConfig(): GpuMonitorConfig {
     return {
       pollInterval: this.options.pollInterval,
-      enabled: this.running,
+      enabled: this.servers.length > 0,
       serverCount: this.servers.length,
     };
   }

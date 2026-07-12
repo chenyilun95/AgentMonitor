@@ -11,6 +11,28 @@ export function skillRoutes(skillManager: SkillManager): Router {
     res.json(skillManager.listSkills());
   });
 
+  router.get('/local/discover', (_req, res) => {
+    try {
+      res.json(skillManager.discoverLocalSkills());
+    } catch (err) {
+      res.status(500).json({ error: String(err) });
+    }
+  });
+
+  router.post('/local/import', (req, res) => {
+    const { id } = req.body as { id?: string };
+    if (!id) {
+      res.status(400).json({ error: 'id is required' });
+      return;
+    }
+    try {
+      const result = skillManager.importLocalSkill(id);
+      res.status(result.imported ? 201 : 200).json(result);
+    } catch (err) {
+      res.status(409).json({ error: String(err) });
+    }
+  });
+
   router.get('/:name', (req, res) => {
     const skill = skillManager.getSkill(req.params.name);
     if (!skill) {

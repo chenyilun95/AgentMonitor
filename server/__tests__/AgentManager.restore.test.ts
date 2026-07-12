@@ -205,7 +205,7 @@ describe('AgentManager restoreConversation', () => {
     manager.sendMessage(agent.id, 'follow-up while busy');
 
     expect(sendMessage).not.toHaveBeenCalled();
-    expect(store.getAgent(agent.id)?.messages.at(-1)?.content).toBe('follow-up while busy');
+    expect(store.getAgent(agent.id)?.messages.at(-1)?.content).toBe('[Queued] "follow-up while busy"');
 
     (manager as unknown as { startNextQueuedMessage: (agentId: string) => void }).startNextQueuedMessage(agent.id);
 
@@ -213,6 +213,40 @@ describe('AgentManager restoreConversation', () => {
     expect(saved?.config.prompt).toBe('follow-up while busy');
     expect(saved?.config.flags.resume).toBe(agent.sessionId);
     expect(startProcessSpy).toHaveBeenCalledOnce();
+  });
+
+  it('restarts a waiting Codex process instead of writing to its closed stdin', () => {
+    const agent: Agent = {
+      id: 'agent-codex-waiting',
+      name: 'Waiting Codex',
+      status: 'waiting_input',
+      config: {
+        provider: 'codex',
+        directory: tmpDir,
+        prompt: 'old prompt',
+        flags: {},
+      },
+      messages: [],
+      lastActivity: 1,
+      createdAt: 1,
+      sessionId: '019d5000-aaaa-7bbb-8ccc-1234567890ab',
+    };
+    store.saveAgent(agent);
+
+    const sendMessage = vi.fn();
+    const stop = vi.fn();
+    (manager as unknown as { processes: Map<string, { sendMessage: (text: string) => void; stop: () => void }> })
+      .processes.set(agent.id, { sendMessage, stop });
+    const startProcessSpy = vi.spyOn(manager as unknown as { startProcess: (agent: Agent) => void }, 'startProcess')
+      .mockImplementation(() => {});
+
+    manager.sendMessage(agent.id, 'continue after interrupt');
+
+    expect(sendMessage).not.toHaveBeenCalled();
+    expect(stop).toHaveBeenCalledOnce();
+    (manager as unknown as { startNextQueuedMessage: (agentId: string) => void }).startNextQueuedMessage(agent.id);
+    expect(startProcessSpy).toHaveBeenCalledOnce();
+    expect(store.getAgent(agent.id)?.config.prompt).toBe('continue after interrupt');
   });
 
   it('starts a new empty conversation and clears resume state', () => {

@@ -1,0 +1,4 @@
+interface:
+  display_name: "Overleaf Git"
+  short_description: "Manage Overleaf projects through Git"
+  default_prompt: "Use $overleaf-git to clone, organize, sync, or explain an Overleaf Git project."

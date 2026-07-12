@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react';
-import { api, type Skill } from '../api/client';
+import { api, type LocalSkillCandidate, type Skill } from '../api/client';
 import { useTranslation } from '../i18n';
 
 const VALID_NAME = /^[a-zA-Z0-9][a-zA-Z0-9_-]*$/;
@@ -12,6 +12,10 @@ export function Skills() {
   const [description, setDescription] = useState('');
   const [body, setBody] = useState('');
   const [nameError, setNameError] = useState('');
+  const [localSkills, setLocalSkills] = useState<LocalSkillCandidate[]>([]);
+  const [showLocalSkills, setShowLocalSkills] = useState(false);
+  const [importing, setImporting] = useState<string | null>(null);
+  const [importError, setImportError] = useState('');
   const { t } = useTranslation();
 
   const fetchSkills = async () => {
@@ -24,6 +28,29 @@ export function Skills() {
   };
 
   useEffect(() => { fetchSkills(); }, []);
+
+  const discoverLocalSkills = async () => {
+    setImportError('');
+    try {
+      setLocalSkills(await api.discoverLocalSkills());
+      setShowLocalSkills(true);
+    } catch (err) {
+      setImportError(String(err));
+    }
+  };
+
+  const handleImport = async (candidate: LocalSkillCandidate) => {
+    setImporting(candidate.id);
+    setImportError('');
+    try {
+      await api.importLocalSkill(candidate.id);
+      await Promise.all([fetchSkills(), discoverLocalSkills()]);
+    } catch (err) {
+      setImportError(String(err));
+    } finally {
+      setImporting(null);
+    }
+  };
 
   const handleCreate = async () => {
     if (!name || !description) return;
@@ -93,11 +120,55 @@ export function Skills() {
       <div className="page-header">
         <h1 className="page-title">{t('skills.title')}</h1>
         {!isFormOpen && (
-          <button className="btn" onClick={startCreate}>
-            {t('skills.newSkill')}
-          </button>
+          <div style={{ display: 'flex', gap: 8 }}>
+            <button className="btn btn-outline" onClick={discoverLocalSkills}>
+              {t('skills.importLocal')}
+            </button>
+            <button className="btn" onClick={startCreate}>
+              {t('skills.newSkill')}
+            </button>
+          </div>
         )}
       </div>
+
+      {showLocalSkills && !isFormOpen && (
+        <div style={{ marginBottom: 24 }}>
+          <div className="page-header" style={{ marginBottom: 12 }}>
+            <h2 style={{ margin: 0, fontSize: 18 }}>{t('skills.localTitle')}</h2>
+            <button className="btn btn-sm btn-outline" onClick={() => setShowLocalSkills(false)}>
+              {t('common.close')}
+            </button>
+          </div>
+          {importError && <div style={{ color: 'var(--red)', marginBottom: 8 }}>{importError}</div>}
+          {localSkills.length === 0 ? (
+            <div style={{ color: 'var(--text-muted)' }}>{t('skills.noLocal')}</div>
+          ) : (
+            <div className="skill-list">
+              {localSkills.map((candidate) => (
+                <div key={candidate.id} className="skill-item">
+                  <div className="skill-item-info">
+                    <div className="skill-item-name">{candidate.name}</div>
+                    <div className="skill-item-desc">{candidate.description || t('skills.noDescription')}</div>
+                    <div style={{ fontSize: 12, color: 'var(--text-muted)', marginTop: 4 }}>
+                      {candidate.source} · {t(`skills.localStatus.${candidate.status}`)}
+                      {candidate.duplicateOf ? `: ${candidate.duplicateOf}` : ''}
+                    </div>
+                  </div>
+                  <div className="skill-actions">
+                    <button
+                      className="btn btn-sm"
+                      disabled={candidate.status !== 'available' || importing !== null}
+                      onClick={() => handleImport(candidate)}
+                    >
+                      {importing === candidate.id ? t('common.loading') : t('skills.import')}
+                    </button>
+                  </div>
+                </div>
+              ))}
+            </div>
+          )}
+        </div>
+      )}
 
       {isFormOpen && (
         <div style={{ marginBottom: 24 }}>

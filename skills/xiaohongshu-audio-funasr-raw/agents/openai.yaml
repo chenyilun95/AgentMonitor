@@ -1,0 +1,4 @@
+interface:
+  display_name: "XHS Audio FunASR Raw"
+  short_description: "Transcribe XHS audio into raw"
+  default_prompt: "Use $xiaohongshu-audio-funasr-raw to extract Xiaohongshu video audio, run local FunASR transcription, and save audio plus transcript artifacts under llm-wiki raw."

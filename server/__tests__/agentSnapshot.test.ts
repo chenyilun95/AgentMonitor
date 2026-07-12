@@ -24,6 +24,7 @@ describe('agent snapshot utilities', () => {
       structuredOutput: { value: true },
       restoredConversationSeed: 'seed',
       codeSnapshots: [{ beforeTurnIndex: 0, commit: 'abc123' }],
+      logs: [{ id: 'log-1', timestamp: 2, level: 'debug', source: 'stdout', message: 'large log' }],
     };
 
     const snapshot = sanitizeAgentListSnapshot(agent);
@@ -36,5 +37,6 @@ describe('agent snapshot utilities', () => {
     expect(snapshot.structuredOutput).toBeUndefined();
     expect(snapshot.restoredConversationSeed).toBeUndefined();
     expect(snapshot.codeSnapshots).toBeUndefined();
+    expect(snapshot.logs).toBeUndefined();
   });
 });

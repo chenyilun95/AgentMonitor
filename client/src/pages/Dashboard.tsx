@@ -27,7 +27,7 @@ export function Dashboard() {
 
   const fetchAgents = async () => {
     try {
-      const data = await api.getAgents();
+      const data = await api.getAgents(true);
       setAgents(data);
     } catch (err) {
       console.error('Failed to fetch agents:', err);
@@ -80,13 +80,18 @@ export function Dashboard() {
     const onStatus = () => {
       fetchAgents();
     };
+    const onVisibilityChange = () => {
+      if (document.visibilityState === 'visible') fetchAgents();
+    };
 
     socket.on('agent:snapshot', onSnapshot);
     socket.on('agent:status', onStatus);
+    document.addEventListener('visibilitychange', onVisibilityChange);
 
     return () => {
       socket.off('agent:snapshot', onSnapshot);
       socket.off('agent:status', onStatus);
+      document.removeEventListener('visibilitychange', onVisibilityChange);
     };
   }, []);
 

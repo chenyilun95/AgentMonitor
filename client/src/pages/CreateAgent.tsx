@@ -1,6 +1,6 @@
 import { useState, useEffect, useRef } from 'react';
 import { useNavigate, useSearchParams } from 'react-router-dom';
-import { api, type AgentProvider, type Template, type SessionInfo, type RuntimeCapabilities, type Skill } from '../api/client';
+import { api, type AgentProvider, type DirListing, type Template, type SessionInfo, type RuntimeCapabilities, type Skill } from '../api/client';
 import { useTranslation } from '../i18n';
 import { getInstructionFileName, replaceInstructionFileName } from '../lib/instructionFiles';
 import {
@@ -50,6 +50,8 @@ export function CreateAgent() {
 
   // Directory validation
   const [dirExists, setDirExists] = useState<boolean | null>(null);
+  const [dirListing, setDirListing] = useState<DirListing | null>(null);
+  const [showDirBrowser, setShowDirBrowser] = useState(false);
   const [claudeMdPrompt, setClaudeMdPrompt] = useState<{ content: string; fileName: string } | null>(null);
 
   // Templates, sessions, skills, and prompt suggestions
@@ -62,6 +64,7 @@ export function CreateAgent() {
   const [showAddSuggestion, setShowAddSuggestion] = useState(false);
   const [pathHistory, setPathHistory] = useState<Record<string, string[]>>({});
   const [showPathDropdown, setShowPathDropdown] = useState(false);
+  const isDropdownInteractingRef = useRef(false);
 
   useEffect(() => {
     api.getTemplates().then(setTemplates).catch(() => {});
@@ -199,11 +202,39 @@ export function CreateAgent() {
       return;
     }
     try {
-      const { exists } = await api.validateDirectory(dirPath);
+      const { exists, path: normalizedPath } = await api.validateDirectory(dirPath);
+      const finalPath = exists && normalizedPath && normalizedPath !== dirPath ? normalizedPath : dirPath;
+      if (exists && finalPath !== dirPath) {
+        onDirectoryChange(finalPath);
+        setShowPathDropdown(false);
+      }
       setDirExists(exists);
+      if (exists) {
+        void browseTo(finalPath);
+      }
     } catch {
       setDirExists(null);
     }
+  };
+
+  const browseTo = async (dirPath?: string) => {
+    try {
+      setError('');
+      const listing = await api.listDirectory(dirPath);
+      setDirListing(listing);
+      setShowDirBrowser(true);
+      setShowPathDropdown(false);
+    } catch (err) {
+      setError(String(err));
+    }
+  };
+
+  const selectDirectory = async (dirPath: string) => {
+    onDirectoryChange(dirPath);
+    setShowDirBrowser(false);
+    setShowPathDropdown(false);
+    setDirExists(true);
+    await checkInstructionFile(dirPath);
   };
 
   const checkInstructionFile = async (dirPath: string, targetProvider = provider) => {
@@ -339,20 +370,31 @@ export function CreateAgent() {
 
       <div className="form-group">
         <label>{t('create.workingDir')}</label>
-        <div style={{ position: 'relative' }}>
+        <div style={{ position: 'relative', display: 'flex', gap: 8 }}>
           <input
+            style={{ flex: 1 }}
             value={directory}
             onChange={(e) => onDirectoryChange(e.target.value)}
             onFocus={() => setShowPathDropdown(true)}
             onBlur={() => {
               setTimeout(() => setShowPathDropdown(false), 200);
-              if (directory.trim()) {
+              if (directory.trim() && !showPathDropdown) {
                 validateDir(directory);
                 checkInstructionFile(directory);
+                if (dirExists) {
+                  void browseTo(directory);
+                }
               }
             }}
             placeholder={t('create.workingDirPlaceholder')}
           />
+          <button
+            type="button"
+            className="btn btn-outline"
+            onClick={() => showDirBrowser ? setShowDirBrowser(false) : void browseTo(directory.trim() || undefined)}
+          >
+            {t('common.browse')}
+          </button>
           {showPathDropdown && (() => {
             const allPaths = Object.entries(pathHistory).flatMap(([machine, paths]) =>
               paths.map(p => ({ machine, path: p }))
@@ -398,6 +440,34 @@ export function CreateAgent() {
           </small>
         )}
       </div>
+
+      {showDirBrowser && dirListing && (
+        <div className="dir-browser" style={{ marginBottom: 16 }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '8px 10px' }}>
+            <code style={{ flex: 1, overflow: 'hidden', textOverflow: 'ellipsis' }}>{dirListing.path}</code>
+            <button type="button" className="btn btn-sm" onClick={() => void selectDirectory(dirListing.path)}>
+              {t('common.select')}
+            </button>
+          </div>
+          {dirListing.parent && dirListing.parent !== dirListing.path && (
+            <div className="dir-entry is-dir" onClick={() => void browseTo(dirListing.parent)}>
+              ../
+            </div>
+          )}
+          {dirListing.entries
+            .filter(entry => entry.isDirectory)
+            .map(entry => (
+              <div key={entry.path} className="dir-entry is-dir" style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
+                <span onClick={() => void browseTo(entry.path)} style={{ flex: 1 }}>
+                  {entry.name}/
+                </span>
+                <button type="button" className="btn btn-sm" onClick={() => void selectDirectory(entry.path)}>
+                  {t('common.select')}
+                </button>
+              </div>
+            ))}
+        </div>
+      )}
 
       <div className="form-group">
         <label>{t('create.name')}</label>
@@ -728,25 +798,56 @@ export function CreateAgent() {
 
       {skills.length > 0 && (
         <div className="form-group">
-          <label>{t('create.skills')}</label>
+          <div className="skill-picker-header">
+            <div>
+              <label>{t('create.skills')}</label>
+              <div className="skill-picker-hint">{t('create.skillsHint')}</div>
+            </div>
+            <div className="skill-picker-actions">
+              <span className="skill-picker-count">
+                {t('create.skillsSelected', { selected: selectedSkills.length, total: skills.length })}
+              </span>
+              <button
+                type="button"
+                className="btn btn-sm btn-outline"
+                disabled={selectedSkills.length === skills.length}
+                onClick={() => setSelectedSkills(skills.map((skill) => skill.name))}
+              >
+                {t('create.skillsSelectAll')}
+              </button>
+              <button
+                type="button"
+                className="btn btn-sm btn-outline"
+                disabled={selectedSkills.length === 0}
+                onClick={() => setSelectedSkills([])}
+              >
+                {t('create.skillsClear')}
+              </button>
+            </div>
+          </div>
           <div className="skill-picker">
-            {skills.map((skill) => (
-              <label key={skill.name}>
+            {skills.map((skill) => {
+              const selected = selectedSkills.includes(skill.name);
+              return (
+              <label key={skill.name} className={`skill-picker-item ${selected ? 'is-selected' : ''}`}>
                 <input
                   type="checkbox"
-                  checked={selectedSkills.includes(skill.name)}
+                  checked={selected}
                   onChange={(e) => {
                     if (e.target.checked) {
-                      setSelectedSkills(prev => [...prev, skill.name]);
+                      setSelectedSkills(prev => prev.includes(skill.name) ? prev : [...prev, skill.name]);
                     } else {
                       setSelectedSkills(prev => prev.filter(s => s !== skill.name));
                     }
                   }}
                 />
-                <span>{skill.name}</span>
-                <span>{skill.description}</span>
+                <span className="skill-picker-copy">
+                  <span className="skill-picker-name">{skill.name}</span>
+                  <span className="skill-picker-description">{skill.description || t('skills.noDescription')}</span>
+                </span>
+                <span className="skill-picker-check" aria-hidden>{selected ? '✓' : '+'}</span>
               </label>
-            ))}
+            );})}
           </div>
         </div>
       )}

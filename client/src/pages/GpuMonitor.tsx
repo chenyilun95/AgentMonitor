@@ -120,7 +120,13 @@ export function GpuMonitor() {
   }, []);
 
   useEffect(() => {
-    fetchData();
+    const refreshWhenVisible = () => {
+      if (document.visibilityState === 'visible') fetchData();
+    };
+
+    refreshWhenVisible();
+    const pollTimer = window.setInterval(refreshWhenVisible, 15_000);
+    document.addEventListener('visibilitychange', refreshWhenVisible);
     const socket = getSocket();
     const onSnapshot = (snapshot: GpuSnapshot) => {
       setSnapshots((prev) => {
@@ -131,6 +137,8 @@ export function GpuMonitor() {
     };
     socket.on('gpu:snapshot', onSnapshot);
     return () => {
+      window.clearInterval(pollTimer);
+      document.removeEventListener('visibilitychange', refreshWhenVisible);
       socket.off('gpu:snapshot', onSnapshot);
     };
   }, [fetchData]);

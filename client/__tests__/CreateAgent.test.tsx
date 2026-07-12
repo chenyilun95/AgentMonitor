@@ -1,4 +1,4 @@
-import { fireEvent, render, screen, waitFor } from '@testing-library/react';
+import { fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import { MemoryRouter } from 'react-router-dom';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { CreateAgent } from '../src/pages/CreateAgent';
@@ -24,6 +24,8 @@ vi.mock('../src/api/client', async () => {
       getSettings: vi.fn(),
       getRuntimeCapabilities: vi.fn(),
       getSessions: vi.fn(),
+      getSkills: vi.fn(),
+      listDirectory: vi.fn(),
       createAgent: vi.fn(),
     },
   };
@@ -70,6 +72,7 @@ describe('CreateAgent', () => {
       },
     });
     vi.mocked(api.getSessions).mockResolvedValue([]);
+    vi.mocked(api.getSkills).mockResolvedValue([]);
 
     renderCreateAgent();
 
@@ -110,6 +113,7 @@ describe('CreateAgent', () => {
       },
     });
     vi.mocked(api.getSessions).mockResolvedValue([]);
+    vi.mocked(api.getSkills).mockResolvedValue([]);
     vi.mocked(api.createAgent).mockResolvedValue({ id: 'agent-1' } as never);
 
     renderCreateAgent();
@@ -135,5 +139,39 @@ describe('CreateAgent', () => {
       }));
     });
     expect(navigate).toHaveBeenCalledWith('/agent/agent-1');
+  });
+
+  it('browses and selects a working directory', async () => {
+    vi.mocked(api.getTemplates).mockResolvedValue([]);
+    vi.mocked(api.getSkills).mockResolvedValue([]);
+    vi.mocked(api.getSettings).mockResolvedValue({
+      agentRetentionMs: 86_400_000,
+      promptSuggestions: [],
+      pathHistory: {},
+      deleteSessionFilesPolicy: 'keep',
+    });
+    vi.mocked(api.getRuntimeCapabilities).mockRejectedValue(new Error('not needed'));
+    vi.mocked(api.getSessions).mockResolvedValue([]);
+    vi.mocked(api.listDirectory).mockResolvedValue({
+      path: '/Users/test',
+      parent: '/Users',
+      entries: [{
+        name: 'repo',
+        path: '/Users/test/repo',
+        isDirectory: true,
+        mtime: 1,
+        extension: '',
+        isTextPreviewable: false,
+      }],
+    });
+
+    renderCreateAgent();
+    fireEvent.click(screen.getByRole('button', { name: /Browse|浏览/ }));
+
+    const directoryRow = await screen.findByText('repo/');
+    fireEvent.click(within(directoryRow.closest('.dir-entry') as HTMLElement).getByRole('button', { name: /Select|选择/ }));
+
+    expect(screen.getByPlaceholderText('/path/to/project')).toHaveValue('/Users/test/repo');
+    expect(screen.queryByText('repo/')).not.toBeInTheDocument();
   });
 });

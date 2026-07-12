@@ -8,6 +8,7 @@ export function gpuMonitorRoutes(gpuMonitor: GpuMonitorService | null): Router {
     if (!gpuMonitor) {
       return res.json({ servers: [], snapshots: [], enabled: false });
     }
+    gpuMonitor.refresh();
     res.json({
       servers: gpuMonitor.getServers(),
       snapshots: gpuMonitor.getSnapshots(),

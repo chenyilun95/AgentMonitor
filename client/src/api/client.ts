@@ -25,6 +25,7 @@ import type {
   ServerSettings,
   SessionInfo,
   Skill,
+  LocalSkillCandidate,
   StartHarnessRequest,
   StartHarnessResponse,
   Template,
@@ -58,6 +59,7 @@ export type {
   ServerSettings,
   SessionInfo,
   Skill,
+  LocalSkillCandidate,
   StartHarnessRequest,
   StartHarnessResponse,
   Template,
@@ -111,7 +113,9 @@ export const api = {
   uploadFile: (file: File) => uploadFile<UploadFileResponse>('/upload-image', file, 'file'),
 
   // Agents
-  getAgents: () => request<AgentClientView[]>('/agents?summary=1'),
+  getAgents: (refreshBranches = false) => request<AgentClientView[]>(
+    `/agents?summary=1${refreshBranches ? '&refreshBranches=1' : ''}`,
+  ),
   getAgent: (id: string) => request<AgentClientView>(`/agents/${id}`),
   createAgent: (data: CreateAgentRequest) =>
     request<AgentClientView>('/agents', { method: 'POST', body: JSON.stringify(data) }),
@@ -188,6 +192,11 @@ export const api = {
 
   // Skills
   getSkills: () => request<Skill[]>('/skills'),
+  discoverLocalSkills: () => request<LocalSkillCandidate[]>('/skills/local/discover'),
+  importLocalSkill: (id: string) => request<{ imported: boolean; skill: Skill }>(
+    '/skills/local/import',
+    { method: 'POST', body: JSON.stringify({ id }) },
+  ),
   getSkill: (name: string) => request<Skill>(`/skills/${encodeURIComponent(name)}`),
   createSkill: (data: { name: string; description: string; body: string }) =>
     request<Skill>('/skills', { method: 'POST', body: JSON.stringify(data) }),
@@ -231,7 +240,7 @@ export const api = {
       `/directories/claude-md?path=${encodeURIComponent(path)}&provider=${encodeURIComponent(provider)}`,
     ),
   validateDirectory: (path: string) =>
-    request<{ exists: boolean }>(`/directories/validate?path=${encodeURIComponent(path)}`),
+    request<{ exists: boolean; path?: string }>(`/directories/validate?path=${encodeURIComponent(path)}`),
 
   // Pipeline Tasks
   getTasks: () => request<PipelineTask[]>('/tasks'),

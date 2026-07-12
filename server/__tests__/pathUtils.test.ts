@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import os from 'os';
 import path from 'path';
-import { expandHomePath, normalizeUserPath } from '../src/utils/pathUtils.js';
+import { expandHomePath, normalizeUserPath, portableUserPath } from '../src/utils/pathUtils.js';
 
 describe('pathUtils', () => {
   it('expands a bare home marker', () => {
@@ -22,5 +22,16 @@ describe('pathUtils', () => {
 
   it('does not expand usernames that only start with tilde', () => {
     expect(normalizeUserPath('~other/project')).toBe(path.resolve('~other/project'));
+  });
+
+  it('stores paths below home with a tilde', () => {
+    const absolute = path.join(os.homedir(), 'rep', 'project');
+    expect(portableUserPath(absolute)).toBe('~/rep/project');
+    expect(portableUserPath(os.homedir())).toBe('~');
+  });
+
+  it('keeps paths outside home absolute', () => {
+    const outside = path.resolve(os.tmpdir(), 'portable-path-test');
+    expect(portableUserPath(outside)).toBe(outside);
   });
 });

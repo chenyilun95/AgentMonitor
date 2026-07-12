@@ -1,4 +1,6 @@
 import { Router } from 'express';
+import { execFile } from 'child_process';
+import { promisify } from 'util';
 import type { AgentManager } from '../services/AgentManager.js';
 import type { AgentStore } from '../store/AgentStore.js';
 import type { ExternalAgentScanner } from '../services/ExternalAgentScanner.js';
@@ -7,6 +9,9 @@ import type { CreateAgentRequest, UpdateReasoningEffortRequest } from '@agent-mo
 import { runtimeCapabilities } from '../services/RuntimeCapabilities.js';
 import { sanitizeAgentListSnapshot, sanitizeAgentSnapshot } from '../utils/agentSnapshot.js';
 import { normalizeUserPath } from '../utils/pathUtils.js';
+import { config } from '../config.js';
+
+const execFileAsync = promisify(execFile);
 
 function reasoningEffortError(provider: AgentProvider): string {
   const capabilities = runtimeCapabilities.getCapabilities().providers[provider];
@@ -53,6 +58,9 @@ export function agentRoutes(manager: AgentManager, store: AgentStore): Router {
 
   // List all agents (supports ?label=key:value filtering)
   router.get('/', (req, res) => {
+    if (req.query.refreshBranches === '1') {
+      manager.refreshGitBranches();
+    }
     let agents = manager.getAllAgents();
     const labelFilter = req.query.label;
     if (labelFilter) {
@@ -251,13 +259,6 @@ export function agentRoutes(manager: AgentManager, store: AgentStore): Router {
       return;
     }
 
-    const apiKey = process.env.ANTHROPIC_API_KEY;
-    if (!apiKey) {
-      res.status(500).json({ error: 'ANTHROPIC_API_KEY not configured' });
-      return;
-    }
-
-    const baseUrl = (process.env.ANTHROPIC_BASE_URL || 'https://api.anthropic.com').replace(/\/$/, '');
     const model = (agent.config.flags.model as string) || process.env.ANTHROPIC_MODEL || 'claude-sonnet-4-6';
 
     // Build context from recent messages (cap at last 40 to save tokens)
@@ -278,40 +279,35 @@ export function agentRoutes(manager: AgentManager, store: AgentStore): Router {
       cleaned.pop();
     }
 
-    // Add the btw question
-    cleaned.push({ role: 'user', content: question });
-
     try {
-      const response = await fetch(`${baseUrl}/v1/messages`, {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          'x-api-key': apiKey,
-          'anthropic-version': '2023-06-01',
-        },
-        body: JSON.stringify({
-          model,
-          max_tokens: 4096,
-          system: 'This is a side question (/btw). You have NO tools available. Give a concise, helpful answer based on the conversation context. This response is ephemeral and will NOT be added to the conversation history. Do not suggest running commands or editing files — just answer the question.',
-          messages: cleaned,
-        }),
+      const context = cleaned
+        .map(message => `${message.role === 'user' ? 'User' : 'Assistant'}: ${message.content}`)
+        .join('\n\n')
+        .slice(-60_000);
+      const prompt = [
+        'This is an ephemeral side question. Do not use tools. Answer concisely using the conversation context.',
+        context ? `Conversation context:\n${context}` : '',
+        `Side question:\n${question}`,
+      ].filter(Boolean).join('\n\n');
+      const { stdout } = await execFileAsync(config.claudeBin, [
+        '-p', prompt,
+        '--output-format', 'json',
+        '--model', model,
+        '--tools', '',
+      ], {
+        cwd: manager.resolveExecutionDirectory(agent),
+        env: { ...process.env },
+        timeout: 180_000,
+        maxBuffer: 4 * 1024 * 1024,
       });
-
-      if (!response.ok) {
-        const errBody = await response.text();
-        res.status(502).json({ error: `Anthropic API error: ${response.status}`, detail: errBody });
+      const data = JSON.parse(stdout) as { result?: string; is_error?: boolean };
+      if (data.is_error) {
+        res.status(502).json({ error: data.result || 'Claude side question failed' });
         return;
       }
-
-      const data = await response.json() as { content: Array<{ type: string; text?: string }> };
-      const text = data.content
-        ?.filter((b: { type: string }) => b.type === 'text')
-        .map((b: { text?: string }) => b.text || '')
-        .join('') || '(no response)';
-
-      res.json({ answer: text });
+      res.json({ answer: data.result || '(no response)' });
     } catch (err) {
-      res.status(502).json({ error: `Failed to call Anthropic API: ${String(err)}` });
+      res.status(502).json({ error: `Failed to run side question through Claude: ${String(err)}` });
     }
   });
 

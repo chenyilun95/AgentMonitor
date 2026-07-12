@@ -48,6 +48,8 @@ function createMockSkillManager(): SkillManager {
     addScript: vi.fn(),
     deleteScript: vi.fn().mockReturnValue(false),
     getSkillsDir: vi.fn().mockReturnValue('/tmp/skills'),
+    discoverLocalSkills: vi.fn().mockReturnValue([]),
+    importLocalSkill: vi.fn(),
   } as unknown as SkillManager;
 }
 
@@ -80,6 +82,43 @@ describe('Skill Routes', () => {
       const res = await request(app, 'GET', '/api/skills');
       expect(res.status).toBe(200);
       expect(res.body).toEqual(skills);
+    });
+  });
+
+  describe('local skill import', () => {
+    it('discovers local skills with duplicate status', async () => {
+      const candidates = [{
+        id: 'codex:deploy',
+        name: 'deploy',
+        description: 'Deploy app',
+        source: 'codex' as const,
+        status: 'already_imported' as const,
+        duplicateOf: 'deploy',
+      }];
+      vi.mocked(mockSkillManager.discoverLocalSkills).mockReturnValue(candidates);
+
+      const res = await request(app, 'GET', '/api/skills/local/discover');
+      expect(res.status).toBe(200);
+      expect(res.body).toEqual(candidates);
+    });
+
+    it('imports an available local skill', async () => {
+      const skill = { name: 'deploy', description: 'Deploy app', body: '# Deploy', scripts: [] };
+      vi.mocked(mockSkillManager.importLocalSkill).mockReturnValue({ imported: true, skill });
+
+      const res = await request(app, 'POST', '/api/skills/local/import', { id: 'codex:deploy' });
+      expect(res.status).toBe(201);
+      expect(res.body).toEqual({ imported: true, skill });
+      expect(mockSkillManager.importLocalSkill).toHaveBeenCalledWith('codex:deploy');
+    });
+
+    it('rejects duplicate or conflicting local skills', async () => {
+      vi.mocked(mockSkillManager.importLocalSkill).mockImplementation(() => {
+        throw new Error('Skill cannot be imported: name_conflict (deploy)');
+      });
+
+      const res = await request(app, 'POST', '/api/skills/local/import', { id: 'claude:deploy' });
+      expect(res.status).toBe(409);
     });
   });
 
