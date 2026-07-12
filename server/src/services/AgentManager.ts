@@ -125,15 +125,14 @@ export class AgentManager extends EventEmitter {
       }
     }
 
-    // Backfill gitBranch for existing agents that lack it
+    // Backfill gitBranch for existing agents that lack it.
+    // Always detect from the original repo directory (config.directory),
+    // not the worktree path, since gitBranch represents the base branch.
     for (const agent of this.store.getAllAgents()) {
-      if (agent.gitBranch) continue;
-      const cwd = agent.worktreePath && existsSync(agent.worktreePath)
-        ? agent.worktreePath
-        : agent.config.directory;
+      if (agent.gitBranch && agent.gitBranch !== agent.worktreeBranch) continue;
       try {
         const branch = execSync('git rev-parse --abbrev-ref HEAD', {
-          cwd, stdio: 'pipe', timeout: 5000,
+          cwd: agent.config.directory, stdio: 'pipe', timeout: 5000,
         }).toString().trim();
         if (branch && branch !== 'HEAD') {
           agent.gitBranch = branch;
