@@ -109,7 +109,7 @@ export function Skills() {
               placeholder={t('skills.skillNamePlaceholder')}
               disabled={editing !== null}
             />
-            {nameError && <div style={{ color: 'var(--danger)', fontSize: 12, marginTop: 4 }}>{nameError}</div>}
+            {nameError && <div style={{ color: 'var(--red)', fontSize: 12, marginTop: 4 }}>{nameError}</div>}
           </div>
           <div className="form-group">
             <label>{t('skills.description')}</label>

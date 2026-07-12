@@ -4,6 +4,7 @@ import { api, type Agent, type DeleteSessionFilesPolicy } from '../api/client';
 import { getSocket } from '../api/socket';
 import { useTranslation } from '../i18n';
 import { getAgentStatusClass } from '../lib/agentStatus';
+import { buildCommitPrompt } from '../lib/commitPrompt';
 
 export function Dashboard() {
   const [agents, setAgents] = useState<Agent[]>([]);
@@ -134,37 +135,8 @@ export function Dashboard() {
 
   const handleCommit = async (e: React.MouseEvent, agent: Agent) => {
     e.stopPropagation();
-    const isWorktree = agent.workspaceMode !== 'direct' && !!agent.worktreeBranch;
-    const branch = agent.worktreeBranch || '';
-    const dir = agent.config.directory;
-
-    let prompt: string;
-    if (isWorktree) {
-      prompt = [
-        `You are on worktree branch "${branch}". The original repo is at "${dir}".`,
-        '',
-        'Do the following steps in order. Stop and report if any step fails:',
-        '',
-        '1. Run `git diff --stat` and `git status` to review all changes.',
-        `2. Go to the original repo directory ("${dir}") and run:`,
-        `   git merge --no-ff ${branch} -m "merge: ${branch}"`,
-        '   If there are merge conflicts, list them and stop — do NOT auto-resolve.',
-        '3. After a clean merge, commit any remaining uncommitted changes with a descriptive message summarizing what was done.',
-        '4. Push to the remote repository. If push fails due to auth, report the error.',
-      ].join('\n');
-    } else {
-      prompt = [
-        'Review and commit the current changes:',
-        '',
-        '1. Run `git diff --stat` and `git status` to see what changed.',
-        '2. Stage all relevant changes (skip any .env or credentials files).',
-        '3. Commit with a clear, descriptive message summarizing the work.',
-        '4. Push to the remote repository. If push fails due to auth, report the error.',
-      ].join('\n');
-    }
-
     try {
-      await api.sendMessage(agent.id, prompt);
+      await api.sendMessage(agent.id, buildCommitPrompt(agent));
       fetchAgents();
     } catch (err) {
       console.error('Failed to send commit prompt:', err);
@@ -217,7 +189,7 @@ export function Dashboard() {
       case 'running':
         return t('dashboard.status.running');
       case 'stopped':
-        return t('dashboard.status.needsInput');
+        return t('dashboard.status.stopped');
       case 'error':
         return t('dashboard.status.error');
       default:
@@ -277,7 +249,7 @@ export function Dashboard() {
               {(agent.config.provider || 'claude').toUpperCase()}
             </span>
             {agent.source === 'external' && (
-              <span className="provider-badge" style={{ background: '#6366f1', color: '#fff', marginLeft: 4 }}>{t('dashboard.externalBadge')}</span>
+              <span className="provider-badge" style={{ background: 'var(--primary)', color: '#fff', marginLeft: 4 }}>{t('dashboard.externalBadge')}</span>
             )}
             {agent.labels && Object.entries(agent.labels).map(([k, v]) => (
               <span key={k} className="provider-badge" style={{ background: 'var(--bg-tertiary)', color: 'var(--text-secondary)', marginLeft: 4, fontSize: '0.7em' }}>{v ? `${k}=${v}` : k}</span>
@@ -527,7 +499,7 @@ export function Dashboard() {
 
       {staleWorktreeAgents.length > 0 && (
         <div className="dashboard-attention dashboard-attention-stale">
-          <span className="dashboard-attention-label" style={{ color: 'var(--orange, #f59e0b)' }}>
+          <span className="dashboard-attention-label" style={{ color: 'var(--yellow)' }}>
             {t('dashboard.staleAgentCount', { count: staleWorktreeAgents.length })}
           </span>
           <div className="dashboard-attention-list">
@@ -650,11 +622,6 @@ export function Dashboard() {
               >
                 <option value="en">EN</option>
                 <option value="zh">中文</option>
-                <option value="ja">日本語</option>
-                <option value="ko">한국어</option>
-                <option value="es">ES</option>
-                <option value="fr">FR</option>
-                <option value="de">DE</option>
               </select>
             </div>
             <div className="form-group">

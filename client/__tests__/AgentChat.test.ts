@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { getToolMessageDetails } from '../src/pages/AgentChat';
+import { getToolMessageDetails } from '../src/lib/toolMessages';
 
 describe('getToolMessageDetails', () => {
   it('treats legacy codex content-only tool messages as foldable', () => {

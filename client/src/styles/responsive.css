@@ -1,0 +1,39 @@
+/* --- Responsive --- */
+@media (max-width: 768px) {
+  .nav {
+    padding: 10px 16px;
+    gap: 8px;
+    flex-wrap: wrap;
+  }
+
+  .main {
+    padding: 20px 16px;
+  }
+
+  .card-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .chat-message.user {
+    margin-left: 20px;
+  }
+
+  .chat-message.assistant,
+  .chat-message.tool {
+    margin-right: 20px;
+  }
+
+  .page-header {
+    flex-direction: column;
+    gap: 12px;
+    align-items: flex-start;
+  }
+
+  .login-card {
+    margin: 0 16px;
+  }
+
+  .gpu-grid {
+    grid-template-columns: 1fr;
+  }
+}

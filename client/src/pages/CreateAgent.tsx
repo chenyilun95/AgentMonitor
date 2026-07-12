@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import { useNavigate, useSearchParams } from 'react-router-dom';
 import { api, type AgentProvider, type Template, type SessionInfo, type RuntimeCapabilities, type Skill } from '../api/client';
 import { useTranslation } from '../i18n';
@@ -21,6 +21,7 @@ export function CreateAgent() {
   const [cloneSource, setCloneSource] = useState<string | null>(null);
   const [provider, setProvider] = useState<AgentProvider>('claude');
   const [name, setName] = useState('');
+  const nameManualRef = useRef(false);
   const [directory, setDirectory] = useState('');
   const [prompt, setPrompt] = useState('');
   const [claudeMd, setClaudeMd] = useState('');
@@ -108,6 +109,10 @@ export function CreateAgent() {
     const dirParam = searchParams.get('directory');
     if (dirParam) {
       setDirectory(dirParam);
+      if (!fromId) {
+        const seg = dirParam.replace(/\/+$/, '').split('/').pop() || '';
+        if (seg) setName(`修改${seg}代理`);
+      }
     }
     const modeParam = searchParams.get('mode');
     if (modeParam === 'worktree' || modeParam === 'direct') {
@@ -148,6 +153,20 @@ export function CreateAgent() {
       cancelled = true;
     };
   }, [provider]);
+
+  const autoName = (dirPath: string) => {
+    const seg = dirPath.replace(/\/+$/, '').split('/').pop() || '';
+    return seg ? `修改${seg}代理` : '';
+  };
+
+  const onDirectoryChange = (dirPath: string) => {
+    setDirectory(dirPath);
+    setDirExists(null);
+    setShowPathDropdown(true);
+    if (!nameManualRef.current) {
+      setName(autoName(dirPath));
+    }
+  };
 
   const addSuggestion = async () => {
     const text = newSuggestion.trim();
@@ -293,7 +312,7 @@ export function CreateAgent() {
       </div>
 
       {error && (
-        <div style={{ padding: 12, background: 'var(--red)', borderRadius: 'var(--radius)', marginBottom: 16, fontSize: 14 }}>
+        <div style={{ padding: 12, background: 'var(--red)', color: '#fff', borderRadius: 'var(--radius)', marginBottom: 16, fontSize: 14 }}>
           {error}
         </div>
       )}
@@ -319,30 +338,11 @@ export function CreateAgent() {
       </div>
 
       <div className="form-group">
-        <label>{t('create.name')}</label>
-        <input value={name} onChange={(e) => setName(e.target.value)} placeholder={t('create.namePlaceholder')} />
-      </div>
-
-      <div className="form-group">
-        <label>{t('create.labels')}</label>
-        <input
-          value={labelsInput}
-          onChange={(e) => setLabelsInput(e.target.value)}
-          placeholder={t('create.labelsPlaceholder')}
-        />
-        <small style={{ color: 'var(--text-muted)' }}>{t('create.labelsHint')}</small>
-      </div>
-
-      <div className="form-group">
         <label>{t('create.workingDir')}</label>
         <div style={{ position: 'relative' }}>
           <input
             value={directory}
-            onChange={(e) => {
-              setDirectory(e.target.value);
-              setDirExists(null);
-              setShowPathDropdown(true);
-            }}
+            onChange={(e) => onDirectoryChange(e.target.value)}
             onFocus={() => setShowPathDropdown(true)}
             onBlur={() => {
               setTimeout(() => setShowPathDropdown(false), 200);
@@ -377,7 +377,7 @@ export function CreateAgent() {
                         className="path-dropdown-item"
                         onMouseDown={(e) => {
                           e.preventDefault();
-                          setDirectory(p);
+                          onDirectoryChange(p);
                           setShowPathDropdown(false);
                           setDirExists(true);
                           checkInstructionFile(p);
@@ -393,10 +393,29 @@ export function CreateAgent() {
           })()}
         </div>
         {directory.trim() && dirExists === false && (
-          <small style={{ color: 'var(--yellow, #e2b714)', marginTop: 4, display: 'block' }}>
+          <small style={{ color: 'var(--yellow)', marginTop: 4, display: 'block' }}>
             {t('create.pathWillCreate')}
           </small>
         )}
+      </div>
+
+      <div className="form-group">
+        <label>{t('create.name')}</label>
+        <input
+          value={name}
+          onChange={(e) => { nameManualRef.current = true; setName(e.target.value); }}
+          placeholder={t('create.namePlaceholder')}
+        />
+      </div>
+
+      <div className="form-group">
+        <label>{t('create.labels')}</label>
+        <input
+          value={labelsInput}
+          onChange={(e) => setLabelsInput(e.target.value)}
+          placeholder={t('create.labelsPlaceholder')}
+        />
+        <small style={{ color: 'var(--text-muted)' }}>{t('create.labelsHint')}</small>
       </div>
 
       <div className="form-group">

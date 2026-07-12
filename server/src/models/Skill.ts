@@ -1,6 +1,1 @@
-export interface Skill {
-  name: string;
-  description: string;
-  body: string;
-  scripts: string[];
-}
+export { type Skill } from '@agent-monitor/shared';

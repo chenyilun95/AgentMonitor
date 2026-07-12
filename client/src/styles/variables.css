@@ -1,0 +1,194 @@
+/* ==========================================
+   Agent Monitor — Dual Palette Design System
+   Default (indigo) + Terra (terracotta)
+   Fonts: Sora (display) + DM Sans (body) + JetBrains Mono (code)
+   ========================================== */
+
+/* --- Design Tokens: Default Dark (indigo) --- */
+:root, [data-theme="dark"] {
+  /* Backgrounds — cool charcoal tones */
+  --bg: #0f1117;
+  --bg-subtle: #13151e;
+  --bg-card: #1a1d27;
+  --bg-card-hover: #20232e;
+  --bg-input: #252832;
+  --bg-elevated: #2a2d38;
+
+  /* Borders */
+  --border: #2d3040;
+  --border-subtle: #252838;
+  --border-focus: #6366f1;
+
+  /* Text — cool neutral spectrum */
+  --text: #e4e4e7;
+  --text-secondary: #a1a1aa;
+  --text-muted: #71717a;
+
+  /* Primary — indigo */
+  --primary: #6366f1;
+  --primary-hover: #818cf8;
+  --primary-dim: rgba(99, 102, 241, 0.12);
+  --primary-glow: rgba(99, 102, 241, 0.25);
+
+  /* Semantic */
+  --green: #22c55e;
+  --green-dim: rgba(34, 197, 94, 0.12);
+  --yellow: #eab308;
+  --yellow-dim: rgba(234, 179, 8, 0.12);
+  --red: #ef4444;
+  --red-dim: rgba(239, 68, 68, 0.12);
+
+  /* Effects */
+  --shadow-sm: 0 1px 3px rgba(0, 0, 0, 0.3);
+  --shadow-md: 0 4px 16px rgba(0, 0, 0, 0.4);
+  --shadow-lg: 0 8px 32px rgba(0, 0, 0, 0.5);
+  --shadow-glow: 0 0 24px rgba(99, 102, 241, 0.1);
+
+  /* Radius */
+  --radius: 10px;
+  --radius-lg: 14px;
+  --radius-full: 9999px;
+
+  /* Typography */
+  --font-display: 'Sora', sans-serif;
+  --font-body: 'DM Sans', -apple-system, BlinkMacSystemFont, sans-serif;
+  --font-mono: 'JetBrains Mono', 'Fira Code', monospace;
+
+  --bg-tertiary: #252838;
+  --bg-secondary: #1e2130;
+
+  /* Aliases */
+  --accent: var(--primary);
+  --text-primary: var(--text);
+  --danger: var(--red);
+  --red-hover: #dc2626;
+
+  /* Glass */
+  --glass-bg: rgba(15, 17, 23, 0.82);
+  --glass-border: rgba(255, 255, 255, 0.05);
+}
+
+/* --- Design Tokens: Default Light (indigo) --- */
+[data-theme="light"] {
+  --bg: #f5f5f7;
+  --bg-subtle: #ebebef;
+  --bg-card: #ffffff;
+  --bg-card-hover: #fafafa;
+  --bg-input: #f0f0f3;
+  --bg-elevated: #ffffff;
+  --bg-tertiary: #e8e8ec;
+
+  --border: #d1d5db;
+  --border-subtle: #e0e0e5;
+  --border-focus: #4f46e5;
+
+  --text: #1f2937;
+  --text-secondary: #4b5563;
+  --text-muted: #6b7280;
+
+  --primary: #4f46e5;
+  --primary-hover: #6366f1;
+  --primary-dim: rgba(79, 70, 229, 0.1);
+  --primary-glow: rgba(79, 70, 229, 0.15);
+
+  --green: #16a34a;
+  --green-dim: rgba(22, 163, 74, 0.1);
+  --yellow: #ca8a04;
+  --yellow-dim: rgba(202, 138, 4, 0.1);
+  --red: #dc2626;
+  --red-dim: rgba(220, 38, 38, 0.1);
+
+  --shadow-sm: 0 1px 3px rgba(0, 0, 0, 0.05);
+  --shadow-md: 0 4px 16px rgba(0, 0, 0, 0.07);
+  --shadow-lg: 0 8px 32px rgba(0, 0, 0, 0.1);
+  --shadow-glow: 0 0 20px rgba(79, 70, 229, 0.08);
+
+  --bg-secondary: #f0f0f3;
+  --red-hover: #b91c1c;
+
+  --glass-bg: rgba(255, 255, 255, 0.85);
+  --glass-border: rgba(0, 0, 0, 0.05);
+}
+
+/* --- Design Tokens: Terra Dark (terracotta) --- */
+[data-scheme="terra"] {
+  --bg: #17120e;
+  --bg-subtle: #1d1712;
+  --bg-card: #231c15;
+  --bg-card-hover: #2b2319;
+  --bg-input: #2a2119;
+  --bg-elevated: #342a21;
+
+  --border: #3d3228;
+  --border-subtle: #332a20;
+  --border-focus: #D97757;
+
+  --text: #f0e8df;
+  --text-secondary: #bfb0a0;
+  --text-muted: #7d6e5f;
+
+  --primary: #D97757;
+  --primary-hover: #E8896A;
+  --primary-dim: rgba(217, 119, 87, 0.12);
+  --primary-glow: rgba(217, 119, 87, 0.25);
+
+  --green: #6BC67E;
+  --green-dim: rgba(107, 198, 126, 0.12);
+  --yellow: #E0A946;
+  --yellow-dim: rgba(224, 169, 70, 0.12);
+  --red: #E05E5E;
+  --red-dim: rgba(224, 94, 94, 0.12);
+
+  --shadow-sm: 0 1px 3px rgba(0, 0, 0, 0.3);
+  --shadow-md: 0 4px 16px rgba(0, 0, 0, 0.4);
+  --shadow-lg: 0 8px 32px rgba(0, 0, 0, 0.5);
+  --shadow-glow: 0 0 24px rgba(217, 119, 87, 0.1);
+
+  --bg-tertiary: #2e2520;
+  --bg-secondary: #211a14;
+  --red-hover: #d04444;
+
+  --glass-bg: rgba(23, 18, 14, 0.82);
+  --glass-border: rgba(255, 255, 255, 0.05);
+}
+
+/* --- Design Tokens: Terra Light (terracotta) --- */
+[data-scheme="terra"][data-theme="light"] {
+  --bg: #FAF6F1;
+  --bg-subtle: #F0EAE2;
+  --bg-card: #ffffff;
+  --bg-card-hover: #FDF9F5;
+  --bg-input: #F0EAE2;
+  --bg-elevated: #ffffff;
+  --bg-tertiary: #E8E1D8;
+  --bg-secondary: #F0EAE2;
+  --red-hover: #A82828;
+
+  --border: #DDD5C9;
+  --border-subtle: #E8E1D8;
+  --border-focus: #CC5B3A;
+
+  --text: #1C1410;
+  --text-secondary: #594A3C;
+  --text-muted: #8A7A6C;
+
+  --primary: #CC5B3A;
+  --primary-hover: #B84E30;
+  --primary-dim: rgba(204, 91, 58, 0.1);
+  --primary-glow: rgba(204, 91, 58, 0.15);
+
+  --green: #2D8C48;
+  --green-dim: rgba(45, 140, 72, 0.1);
+  --yellow: #C4891A;
+  --yellow-dim: rgba(196, 137, 26, 0.1);
+  --red: #CC3333;
+  --red-dim: rgba(204, 51, 51, 0.1);
+
+  --shadow-sm: 0 1px 3px rgba(0, 0, 0, 0.05);
+  --shadow-md: 0 4px 16px rgba(0, 0, 0, 0.07);
+  --shadow-lg: 0 8px 32px rgba(0, 0, 0, 0.1);
+  --shadow-glow: 0 0 20px rgba(204, 91, 58, 0.08);
+
+  --glass-bg: rgba(255, 255, 255, 0.85);
+  --glass-border: rgba(0, 0, 0, 0.05);
+}

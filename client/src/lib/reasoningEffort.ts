@@ -1,4 +1,4 @@
-import type { AgentProvider, ReasoningEffort, RuntimeCapabilities } from '../api/client';
+import type { AgentProvider, ReasoningEffort, RuntimeCapabilities } from '@agent-monitor/shared';
 
 export type ReasoningEffortSelection = ReasoningEffort | 'default';
 

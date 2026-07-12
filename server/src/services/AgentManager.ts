@@ -5,6 +5,7 @@ import { readFileSync, readdirSync, existsSync, mkdirSync, writeFileSync, statSy
 import path, { basename } from 'path';
 import os from 'os';
 import type { Agent, AgentConfig, AgentInteractionMode, AgentLogEntry, AgentMessage, AgentStatus, AgentWorkspaceMode, PendingQuestionItem, PendingQuestionOption, ReasoningEffort } from '../models/Agent.js';
+import type { AgentDelta, AgentInputInfo } from '@agent-monitor/shared';
 import { AgentStore } from '../store/AgentStore.js';
 import { AgentProcess, type StreamMessage } from './AgentProcess.js';
 import { WorktreeManager } from './WorktreeManager.js';
@@ -71,6 +72,21 @@ const CLAUDE_PRICES_PER_MTOK: Record<string, ClaudeModelPrice> = {
   haiku35: { input: 0.80, output: 4, cacheWrite5m: 1, cacheWrite1h: 1.60, cacheRead: 0.08 },
   haiku3: { input: 0.25, output: 1.25, cacheWrite5m: 0.30, cacheWrite1h: 0.50, cacheRead: 0.03 },
 };
+
+export interface AgentManagerEvents {
+  'agent:update': (agentId: string, agent: Agent) => void;
+  'agent:message': (agentId: string, msg: StreamMessage | { type: string; text: string }) => void;
+  'agent:status': (agentId: string, status: AgentStatus | 'deleted') => void;
+  'agent:delta': (agentId: string, delta: AgentDelta) => void;
+  'agent:terminal': (agentId: string, chunk: { stream: string; data: string }) => void;
+  'agent:input_required': (agentId: string, inputInfo: AgentInputInfo) => void;
+}
+
+export declare interface AgentManager {
+  on<K extends keyof AgentManagerEvents>(event: K, listener: AgentManagerEvents[K]): this;
+  emit<K extends keyof AgentManagerEvents>(event: K, ...args: Parameters<AgentManagerEvents[K]>): boolean;
+  off<K extends keyof AgentManagerEvents>(event: K, listener: AgentManagerEvents[K]): this;
+}
 
 export class AgentManager extends EventEmitter {
   private processes: Map<string, AgentProcess> = new Map();

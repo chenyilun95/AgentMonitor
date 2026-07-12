@@ -1,13 +1,16 @@
 import { io, Socket } from 'socket.io-client';
+import type { ServerToClientEvents, ClientToServerEvents } from '@agent-monitor/shared';
 
-let socket: Socket | null = null;
+export type TypedSocket = Socket<ServerToClientEvents, ClientToServerEvents>;
 
-export function getSocket(): Socket {
+let socket: TypedSocket | null = null;
+
+export function getSocket(): TypedSocket {
   if (!socket) {
     socket = io('/', {
       transports: ['polling', 'websocket'],
       withCredentials: true,
-    });
+    }) as TypedSocket;
 
     socket.on('connect', () => {
       console.log('[Socket] Connected:', socket?.id);

@@ -1,45 +1,41 @@
 import type { Server, Socket } from 'socket.io';
+import type { ServerToClientEvents, ClientToServerEvents, AgentDelta, AgentInputInfo } from '@agent-monitor/shared';
 import type { AgentManager } from '../services/AgentManager.js';
 import type { TerminalService } from '../services/TerminalService.js';
 import type { TelegramService } from '../services/TelegramService.js';
 import type { GpuMonitorService } from '../services/GpuMonitorService.js';
-import type { Agent } from '../models/Agent.js';
 import { sanitizeAgentListSnapshot, sanitizeAgentSnapshot } from '../utils/agentSnapshot.js';
 
-export function setupSocketHandlers(io: Server, manager: AgentManager, terminalService: TerminalService, telegramService?: TelegramService | null, gpuMonitor?: GpuMonitorService | null): void {
-  // Forward agent events to connected clients
-  manager.on('agent:message', (agentId: string, msg: unknown) => {
-    io.to(`agent:${agentId}`).emit('agent:message', { agentId, message: msg });
+type TypedServer = Server<ClientToServerEvents, ServerToClientEvents>;
+type TypedSocket = Socket<ClientToServerEvents, ServerToClientEvents>;
+
+export function setupSocketHandlers(io: TypedServer, manager: AgentManager, terminalService: TerminalService, telegramService?: TelegramService | null, gpuMonitor?: GpuMonitorService | null): void {
+  manager.on('agent:message', (agentId, msg) => {
+    io.to(`agent:${agentId}`).emit('agent:message', { agentId, message: msg as any });
   });
 
-  manager.on('agent:status', (agentId: string, status: string) => {
+  manager.on('agent:status', (agentId, status) => {
     io.emit('agent:status', { agentId, status });
   });
 
-  // Incremental message delta for efficient real-time chat streaming
-  manager.on('agent:delta', (agentId: string, delta: unknown) => {
+  manager.on('agent:delta', (agentId, delta) => {
     io.to(`agent:${agentId}`).emit('agent:delta', { agentId, delta });
   });
 
-  // Input required notification (permission prompts, choices)
-  manager.on('agent:input_required', (agentId: string, inputInfo: unknown) => {
+  manager.on('agent:input_required', (agentId, inputInfo) => {
     io.to(`agent:${agentId}`).emit('agent:input_required', { agentId, inputInfo });
   });
 
-  // Raw terminal output for live terminal attachment (from agent process stdout)
-  manager.on('agent:terminal', (agentId: string, chunk: unknown) => {
-    io.to(`agent:${agentId}`).emit('agent:terminal', { agentId, chunk });
+  manager.on('agent:terminal', (agentId, chunk) => {
+    io.to(`agent:${agentId}`).emit('agent:terminal', { agentId, chunk: chunk.data });
   });
 
-  // Full agent snapshot for real-time streaming (no HTTP re-fetch needed)
-  manager.on('agent:update', (agentId: string, agent: unknown) => {
-    const safeAgent = sanitizeAgentSnapshot(agent as Agent);
+  manager.on('agent:update', (agentId, agent) => {
+    const safeAgent = sanitizeAgentSnapshot(agent);
     io.to(`agent:${agentId}`).emit('agent:update', { agentId, agent: safeAgent });
-    // Also broadcast a lightweight version for Dashboard cards
-    io.emit('agent:snapshot', { agentId, agent: sanitizeAgentListSnapshot(agent as Agent) });
+    io.emit('agent:snapshot', { agentId, agent: sanitizeAgentListSnapshot(agent) });
   });
 
-  // PTY terminal output → client
   terminalService.on('data', (sessionId: string, data: string) => {
     if (sessionId.startsWith('gpu:')) {
       const serverName = sessionId.slice(4);
@@ -58,48 +54,43 @@ export function setupSocketHandlers(io: Server, manager: AgentManager, terminalS
     }
   });
 
-  io.on('connection', (socket: Socket) => {
-    // Join agent room to receive messages
-    socket.on('agent:join', (agentId: string) => {
+  io.on('connection', (socket: TypedSocket) => {
+    socket.on('agent:join', (agentId) => {
       socket.join(`agent:${agentId}`);
     });
 
-    socket.on('agent:leave', (agentId: string) => {
+    socket.on('agent:leave', (agentId) => {
       socket.leave(`agent:${agentId}`);
     });
 
-    // Send message to agent
-    socket.on('agent:send', ({ agentId, text }: { agentId: string; text: string }) => {
+    socket.on('agent:send', ({ agentId, text }) => {
       manager.sendMessage(agentId, text);
     });
 
-    // Interrupt agent (double-Esc)
-    socket.on('agent:interrupt', (agentId: string) => {
+    socket.on('agent:interrupt', (agentId) => {
       manager.interruptAgent(agentId);
     });
 
-    // --- PTY terminal events ---
-    socket.on('terminal:open', ({ agentId, cols, rows, initialCommand }: { agentId: string; cols?: number; rows?: number; initialCommand?: string }) => {
+    socket.on('terminal:open', ({ agentId, cols, rows, initialCommand }) => {
       const agent = manager.getAgent(agentId);
       if (!agent) return;
       const cwd = manager.resolveExecutionDirectory(agent);
       terminalService.create(agentId, cwd, cols || 120, rows || 30, initialCommand);
     });
 
-    socket.on('terminal:input', ({ agentId, data }: { agentId: string; data: string }) => {
+    socket.on('terminal:input', ({ agentId, data }) => {
       terminalService.write(agentId, data);
     });
 
-    socket.on('terminal:resize', ({ agentId, cols, rows }: { agentId: string; cols: number; rows: number }) => {
+    socket.on('terminal:resize', ({ agentId, cols, rows }) => {
       terminalService.resize(agentId, cols, rows);
     });
 
-    socket.on('terminal:close', (agentId: string) => {
+    socket.on('terminal:close', (agentId) => {
       terminalService.destroy(agentId);
     });
 
-    // --- GPU terminal events ---
-    socket.on('gpu:terminal:open', ({ serverName, cols, rows }: { serverName: string; cols?: number; rows?: number }) => {
+    socket.on('gpu:terminal:open', ({ serverName, cols, rows }) => {
       if (!gpuMonitor) return;
       const server = gpuMonitor.getServer(serverName);
       if (!server) return;
@@ -108,27 +99,25 @@ export function setupSocketHandlers(io: Server, manager: AgentManager, terminalS
       terminalService.createSsh(sessionId, sshArgs, cols || 120, rows || 30);
     });
 
-    socket.on('gpu:terminal:input', ({ serverName, data }: { serverName: string; data: string }) => {
+    socket.on('gpu:terminal:input', ({ serverName, data }) => {
       terminalService.write(`gpu:${serverName}`, data);
     });
 
-    socket.on('gpu:terminal:resize', ({ serverName, cols, rows }: { serverName: string; cols: number; rows: number }) => {
+    socket.on('gpu:terminal:resize', ({ serverName, cols, rows }) => {
       terminalService.resize(`gpu:${serverName}`, cols, rows);
     });
 
-    socket.on('gpu:terminal:close', ({ serverName }: { serverName: string }) => {
+    socket.on('gpu:terminal:close', ({ serverName }) => {
       terminalService.destroy(`gpu:${serverName}`);
     });
 
-    // Extension: reply to Telegram command
-    socket.on('telegram:reply', (data: { chatId: string; text: string; parseMode?: string }) => {
+    socket.on('telegram:reply', (data) => {
       if (telegramService) {
         telegramService.sendTg(data.chatId, data.text, data.parseMode);
       }
     });
 
-    // Extension: register additional Telegram commands
-    socket.on('telegram:register', (data: { commands: Array<{ command: string; description: string }> }) => {
+    socket.on('telegram:register', (data) => {
       if (telegramService) {
         telegramService.registerExtensionCommands(data.commands);
       }

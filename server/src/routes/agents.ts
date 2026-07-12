@@ -3,6 +3,7 @@ import type { AgentManager } from '../services/AgentManager.js';
 import type { AgentStore } from '../store/AgentStore.js';
 import type { ExternalAgentScanner } from '../services/ExternalAgentScanner.js';
 import type { AgentProvider } from '../models/Agent.js';
+import type { CreateAgentRequest, UpdateReasoningEffortRequest } from '@agent-monitor/shared';
 import { runtimeCapabilities } from '../services/RuntimeCapabilities.js';
 import { sanitizeAgentListSnapshot, sanitizeAgentSnapshot } from '../utils/agentSnapshot.js';
 
@@ -108,7 +109,7 @@ export function agentRoutes(manager: AgentManager, store: AgentStore): Router {
   // Create agent
   router.post('/', async (req, res) => {
     try {
-      const { name, directory, prompt, claudeMd, adminEmail, whatsappPhone, slackWebhookUrl, flags, provider, labels, workspaceMode, skills } = req.body;
+      const { name, directory, prompt, claudeMd, adminEmail, whatsappPhone, slackWebhookUrl, flags, provider, labels, workspaceMode, skills } = req.body as CreateAgentRequest;
       const nextProvider: AgentProvider = provider === 'codex' ? 'codex' : 'claude';
       const reasoningEffort = flags?.reasoningEffort;
 
@@ -356,7 +357,7 @@ export function agentRoutes(manager: AgentManager, store: AgentStore): Router {
       return;
     }
 
-    const requested = req.body.reasoningEffort;
+    const requested = req.body.reasoningEffort as string | undefined;
     const reasoningEffort = requested === '' || requested === null ? undefined : requested;
 
     if (reasoningEffort !== undefined && !runtimeCapabilities.isReasoningEffortSupported(agent.config.provider, reasoningEffort)) {

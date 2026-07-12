@@ -5,13 +5,19 @@ import { getSocket, joinAgent, leaveAgent } from '../api/socket';
 import { useTranslation } from '../i18n';
 import { TerminalView } from '../components/TerminalView';
 import { FileBrowserView } from '../components/FileBrowserView';
+import { PendingQuestionBanner } from '../components/PendingQuestionBanner';
+import { HistoryPicker } from '../components/HistoryPicker';
+import { BtwPopup } from '../components/BtwPopup';
 import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
 import { getAgentStatusClass, getAgentStatusLabel } from '../lib/agentStatus';
+import { buildCommitPrompt } from '../lib/commitPrompt';
+import { buildResumeCommand } from '../lib/resumeCommand';
+import { getToolMessageDetails, type ToolMessageDetails } from '../lib/toolMessages';
+import { getSlashCommandDefinitions, executeSlashCommand } from '../lib/slashCommands';
 import {
   getReasoningEffortLabel,
   getReasoningEffortOptions,
-  isReasoningEffortSupported,
   normalizeReasoningEffortSelection,
   type ReasoningEffortSelection,
 } from '../lib/reasoningEffort';
@@ -20,322 +26,8 @@ type ChatMessage = Agent['messages'][number];
 type LocalMessage = { id: string; role: string; content: string; timestamp: number };
 type DisplayMessage = ChatMessage | LocalMessage;
 type ChatMessageGroup = { id: string; messages: DisplayMessage[] };
-type ToolMessageDetails = {
-  title: string;
-  input?: string;
-  output?: string;
-  details?: string;
-};
-
-function normalizeToolField(value?: string): string | undefined {
-  const trimmed = value?.trim();
-  return trimmed ? trimmed : undefined;
-}
-
-export function getToolMessageDetails(msg: ChatMessage): ToolMessageDetails | null {
-  if (msg.role !== 'tool') return null;
-
-  const toolInput = normalizeToolField(msg.toolInput);
-  const toolResult = normalizeToolField(msg.toolResult);
-  const content = normalizeToolField(msg.content);
-  const lines = content?.split('\n') || [];
-  const firstLine = lines[0];
-  const remaining = lines.slice(1).join('\n').trim();
-  const genericToolNames = new Set(['tool', 'command', 'command_execution', 'tool_call', 'function_call']);
-  const normalizedToolName = normalizeToolField(msg.toolName);
-
-  let title = (normalizedToolName && !genericToolNames.has(normalizedToolName))
-    ? normalizedToolName
-    : (firstLine || normalizedToolName || 'Tool');
-  let details: string | undefined;
-
-  if (toolInput || toolResult) {
-    if (content) {
-      const normalizedTitle = title.trim();
-      const normalizedContent = content.trim();
-      if (normalizedContent !== normalizedTitle && normalizedContent !== `Using tool: ${normalizedTitle}`) {
-        details = normalizedContent;
-      }
-    }
-  } else if (content) {
-    if (firstLine?.startsWith('Command:')) {
-      title = firstLine;
-      details = remaining || content;
-    } else if (firstLine?.startsWith('Tool:') || firstLine?.startsWith('Using tool:')) {
-      title = firstLine;
-      details = remaining || content;
-    } else {
-      title = firstLine || title;
-      details = remaining || content;
-    }
-  }
-
-  return {
-    title,
-    input: toolInput,
-    output: toolResult,
-    details,
-  };
-}
-
-function toggleTheme() {
-  const current = document.documentElement.getAttribute('data-theme') || 'dark';
-  const next = current === 'dark' ? 'light' : 'dark';
-  document.documentElement.setAttribute('data-theme', next);
-  localStorage.setItem('agentmonitor-theme', next);
-}
-
-/**
- * Build a provider-specific interactive resume command with the agent's flags
- * so the PTY terminal can reopen the same session in a shell.
- */
-function buildResumeCommand(agent: Agent | null, runtimeCapabilities?: RuntimeCapabilities | null): string | undefined {
-  if (!agent) return undefined;
-  const provider = agent.config.provider || 'claude';
-  if (!agent.sessionId) return undefined;
-
-  // Convert camelCase flag keys to kebab-case for CLI
-  const toKebab = (s: string) => s.replace(/([a-z])([A-Z])/g, '$1-$2').toLowerCase();
-
-  if (provider === 'codex') {
-    const parts = ['codex', 'resume', '--include-non-interactive', agent.sessionId];
-    const flags = agent.config.flags || {};
-    let addedApprovalPolicyNever = false;
-
-    for (const [key, value] of Object.entries(flags)) {
-      if (key === 'resume') continue;
-      if (key === 'dangerouslySkipPermissions' && value === true) {
-        parts.push('--dangerously-bypass-approvals-and-sandbox');
-        continue;
-      }
-      if (key === 'fullAuto' && value === true) {
-        if (!addedApprovalPolicyNever) {
-          parts.push('-c', 'approval_policy="never"');
-          addedApprovalPolicyNever = true;
-        }
-        continue;
-      }
-      if (key === 'askForApprovalNever' && value === true) {
-        if (!addedApprovalPolicyNever) {
-          parts.push('-c', 'approval_policy="never"');
-          addedApprovalPolicyNever = true;
-        }
-        continue;
-      }
-      if (key === 'sandboxDangerFullAccess' && value === true) {
-        parts.push('--sandbox', 'danger-full-access');
-        continue;
-      }
-      if (key === 'reasoningEffort') {
-        if (isReasoningEffortSupported(provider, value, runtimeCapabilities)) {
-          parts.push('-c', `model_reasoning_effort="${String(value)}"`);
-        }
-        continue;
-      }
-      if (key === 'addDirs' && typeof value === 'string') {
-        for (const dir of value.split(/[,\s]+/).filter(Boolean)) {
-          parts.push('--add-dir', dir);
-        }
-        continue;
-      }
-      if (key === 'model' && value) {
-        parts.push('--model', String(value));
-        continue;
-      }
-
-      const flag = toKebab(key);
-      if (value === true) {
-        parts.push(`--${flag}`);
-      } else if (value !== false && value !== undefined && value !== null && value !== '') {
-        parts.push(`--${flag}`, String(value));
-      }
-    }
-
-    const cwd = agent.worktreePath || agent.config.directory;
-    if (cwd) {
-      parts.push('--cd', cwd);
-    }
-    return parts.join(' ');
-  }
-
-  const parts = ['claude', '--resume', agent.sessionId];
-  const flags = agent.config.flags || {};
-  const codexOnlyFlags = new Set(['fullAuto', 'askForApprovalNever', 'sandboxDangerFullAccess', 'outputSchema']);
-  for (const [key, value] of Object.entries(flags)) {
-    if (key === 'resume') continue;
-    if (codexOnlyFlags.has(key)) continue;
-    if (key === 'reasoningEffort') {
-      if (isReasoningEffortSupported(provider, value, runtimeCapabilities)) {
-        parts.push('--effort', String(value));
-      }
-      continue;
-    }
-    if (key === 'addDirs' && typeof value === 'string') {
-      for (const dir of value.split(/[,\s]+/).filter(Boolean)) {
-        parts.push('--add-dir', dir);
-      }
-      continue;
-    }
-    if (key === 'mcpConfig' && value) {
-      parts.push('--mcp-config', String(value));
-      continue;
-    }
-    const flag = toKebab(key);
-    if (value === true) {
-      parts.push(`--${flag}`);
-    } else if (value !== false && value !== undefined && value !== null && value !== '') {
-      parts.push(`--${flag}`, String(value));
-    }
-  }
-  return parts.join(' ');
-}
 
 type PendingQuestion = NonNullable<Agent['pendingQuestion']>;
-
-function PendingQuestionBanner({
-  pending,
-  onSubmit,
-}: {
-  pending: PendingQuestion;
-  onSubmit: (answers: Record<string, string>) => void | Promise<void>;
-}) {
-  const [selections, setSelections] = useState<Record<string, string[]>>({});
-  const [customAnswers, setCustomAnswers] = useState<Record<string, string>>({});
-  const [submitting, setSubmitting] = useState(false);
-
-  const toggle = (question: string, label: string, multi: boolean) => {
-    setSelections((prev) => {
-      const current = prev[question] || [];
-      if (multi) {
-        return {
-          ...prev,
-          [question]: current.includes(label) ? current.filter((l) => l !== label) : [...current, label],
-        };
-      }
-      return { ...prev, [question]: [label] };
-    });
-  };
-
-  const allAnswered = pending.questions.every((q) => {
-    const picked = selections[q.question] || [];
-    if (picked.includes('__custom__')) return (customAnswers[q.question] || '').trim().length > 0;
-    return picked.length > 0;
-  });
-
-  const submit = async () => {
-    if (!allAnswered || submitting) return;
-    setSubmitting(true);
-    const answers: Record<string, string> = {};
-    for (const q of pending.questions) {
-      const picked = selections[q.question] || [];
-      if (picked.includes('__custom__')) {
-        answers[q.question] = customAnswers[q.question]?.trim() || '';
-      } else {
-        answers[q.question] = picked.join(', ');
-      }
-    }
-    try {
-      await onSubmit(answers);
-    } finally {
-      setSubmitting(false);
-    }
-  };
-
-  return (
-    <div style={{
-      padding: 14,
-      background: 'var(--bg-card)',
-      borderRadius: 'var(--radius)',
-      border: '1px solid var(--accent, #4f8cff)',
-      margin: '0 0 8px 0',
-      display: 'flex',
-      flexDirection: 'column',
-      gap: 14,
-    }}>
-      <div style={{ fontSize: 13, color: 'var(--text-muted)', display: 'flex', alignItems: 'center', gap: 6 }}>
-        <span>❓</span> Agent is asking a question (AskUserQuestion)
-      </div>
-      {pending.questions.map((q, qi) => {
-        const picked = selections[q.question] || [];
-        const showCustom = picked.includes('__custom__');
-        return (
-          <div key={qi} style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
-            {q.header && <div style={{ fontSize: 11, color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: 0.5 }}>{q.header}</div>}
-            <div style={{ fontSize: 14, fontWeight: 600, color: 'var(--text)' }}>{q.question}</div>
-            <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
-              {q.options.map((opt, oi) => {
-                const selected = picked.includes(opt.label);
-                return (
-                  <button
-                    key={oi}
-                    onClick={() => toggle(q.question, opt.label, q.multiSelect === true)}
-                    style={{
-                      padding: '8px 12px',
-                      borderRadius: 6,
-                      border: `1px solid ${selected ? 'var(--accent, #4f8cff)' : 'var(--border)'}`,
-                      background: selected ? 'var(--accent, #4f8cff)' : 'var(--bg-tertiary)',
-                      color: selected ? '#fff' : 'var(--text)',
-                      cursor: 'pointer',
-                      textAlign: 'left',
-                      fontSize: 13,
-                    }}
-                  >
-                    <div style={{ fontWeight: 600 }}>{opt.label}</div>
-                    {opt.description && (
-                      <div style={{ fontSize: 12, color: selected ? 'rgba(255,255,255,0.85)' : 'var(--text-muted)', marginTop: 2 }}>{opt.description}</div>
-                    )}
-                  </button>
-                );
-              })}
-              <button
-                onClick={() => toggle(q.question, '__custom__', q.multiSelect === true)}
-                style={{
-                  padding: '8px 12px',
-                  borderRadius: 6,
-                  border: `1px solid ${showCustom ? 'var(--accent, #4f8cff)' : 'var(--border)'}`,
-                  background: showCustom ? 'var(--accent, #4f8cff)' : 'var(--bg-tertiary)',
-                  color: showCustom ? '#fff' : 'var(--text)',
-                  cursor: 'pointer',
-                  textAlign: 'left',
-                  fontSize: 13,
-                  fontWeight: 600,
-                }}
-              >
-                Other (custom answer)
-              </button>
-              {showCustom && (
-                <input
-                  type="text"
-                  value={customAnswers[q.question] || ''}
-                  onChange={(e) => setCustomAnswers((prev) => ({ ...prev, [q.question]: e.target.value }))}
-                  placeholder="Type your answer..."
-                  style={{
-                    padding: '8px 10px',
-                    borderRadius: 6,
-                    border: '1px solid var(--border)',
-                    background: 'var(--bg)',
-                    color: 'var(--text)',
-                    fontSize: 13,
-                  }}
-                />
-              )}
-            </div>
-          </div>
-        );
-      })}
-      <div style={{ display: 'flex', justifyContent: 'flex-end' }}>
-        <button
-          className="btn btn-sm"
-          onClick={submit}
-          disabled={!allAnswered || submitting}
-          style={{ opacity: !allAnswered || submitting ? 0.5 : 1 }}
-        >
-          {submitting ? 'Submitting...' : 'Submit answer'}
-        </button>
-      </div>
-    </div>
-  );
-}
 
 export function AgentChat() {
   const { id } = useParams<{ id: string }>();
@@ -393,52 +85,7 @@ export function AgentChat() {
   const formatReasoningEffort = (effort?: Agent['config']['flags']['reasoningEffort']) =>
     effort ? getReasoningEffortLabel(effort) : t('chat.defaultReasoningEffort');
 
-  const slashCommands = [
-    { cmd: '/agents', desc: t('chat.slashAgents') },
-    { cmd: '/btw', desc: t('chat.slashBtw') },
-    { cmd: '/side', desc: t('chat.slashSide') },
-    { cmd: '/clear', desc: t('chat.slashClear') },
-    { cmd: '/compact', desc: t('chat.slashCompact') },
-    { cmd: '/config', desc: t('chat.slashConfig') },
-    { cmd: '/context', desc: t('chat.slashContext') },
-    { cmd: '/copy', desc: t('chat.slashCopy') },
-    { cmd: '/cost', desc: t('chat.slashCost') },
-    { cmd: '/doctor', desc: t('chat.slashDoctor') },
-    { cmd: '/effort', desc: t('chat.slashEffort') },
-    { cmd: '/exit', desc: t('chat.slashExit') },
-    { cmd: '/export', desc: t('chat.slashExport') },
-    { cmd: '/fast', desc: t('chat.slashFast') },
-    { cmd: '/feedback', desc: t('chat.slashFeedback') },
-    { cmd: '/help', desc: t('chat.slashHelp') },
-    { cmd: '/hooks', desc: t('chat.slashHooks') },
-    { cmd: '/ide', desc: t('chat.slashIde') },
-    { cmd: '/keybindings', desc: t('chat.slashKeybindings') },
-    { cmd: '/login', desc: t('chat.slashLogin') },
-    { cmd: '/logout', desc: t('chat.slashLogout') },
-    { cmd: '/loop', desc: t('chat.slashLoop') },
-    { cmd: '/mcp', desc: t('chat.slashMcp') },
-    { cmd: '/memory', desc: t('chat.slashMemory') },
-    { cmd: '/model', desc: t('chat.slashModel') },
-    { cmd: '/new', desc: t('chat.slashNew') },
-    { cmd: '/permissions', desc: t('chat.slashPermissions') },
-    { cmd: '/plan', desc: t('chat.slashPlan') },
-    { cmd: '/plugin', desc: t('chat.slashPlugin') },
-    { cmd: '/plugins', desc: t('chat.slashPlugins') },
-    { cmd: '/reload-plugins', desc: t('chat.slashReloadPlugins') },
-    { cmd: '/remote-control', desc: t('chat.slashRemoteControl') },
-    { cmd: '/rename', desc: t('chat.slashRename') },
-    { cmd: '/rewind', desc: t('chat.slashRewind') },
-    { cmd: '/skills', desc: t('chat.slashSkills') },
-    { cmd: '/stats', desc: t('chat.slashStats') },
-    { cmd: '/status', desc: t('chat.slashStatus') },
-    { cmd: '/stop', desc: t('chat.slashStop') },
-    { cmd: '/tasks', desc: t('chat.slashTasks') },
-    { cmd: '/teleport', desc: t('chat.slashTeleport') },
-    { cmd: '/theme', desc: t('chat.slashTheme') },
-    { cmd: '/todos', desc: t('chat.slashTodos') },
-    { cmd: '/usage', desc: t('chat.slashUsage') },
-    { cmd: '/version', desc: t('chat.slashVersion') },
-  ];
+  const slashCommands = getSlashCommandDefinitions(t);
 
   const fetchAgent = useCallback(async (forceOverwrite = false) => {
     if (!id) return;
@@ -727,269 +374,11 @@ export function AgentChat() {
   const handleSlashSelect = (cmd: string) => {
     setShowSlash(false);
     setInput('');
-
-    switch (cmd) {
-      case '/btw':
-      case '/side':
-        setBtwState({ status: 'input' });
-        setTimeout(() => btwInputRef.current?.focus(), 50);
-        break;
-      case '/agents':
-        api.getAgents().then((agents) => {
-          if (agents.length === 0) {
-            addLocalMessage(t('chat.noAgents'));
-          } else {
-            const lines = agents.map((a) => {
-              const cost = a.costUsd !== undefined ? `$${a.costUsd.toFixed(4)}` : '';
-              return `${a.name} | ${(a.config.provider || 'claude').toUpperCase()} | ${a.status} ${cost}`;
-            });
-            addLocalMessage(lines.join('\n'));
-          }
-        });
-        break;
-      case '/help':
-        addLocalMessage(
-          slashCommands.map((c) => `${c.cmd}  ${c.desc}`).join('\n'),
-        );
-        break;
-      case '/clear':
-      case '/new':
-        if (id) {
-          api.newConversation(id).then((updated) => {
-            setAgent(updated);
-            setLocalMessages([]);
-            addStatusNotice(t('chat.newConversationStarted'));
-          }).catch((err) => {
-            addLocalMessage(`[Error] ${String(err)}`);
-          });
-        }
-        break;
-      case '/compact':
-        if (id) {
-          api.sendMessage(id, '/compact');
-        }
-        addStatusNotice('Compact requested. Token count will appear here when it completes.');
-        break;
-      case '/config':
-        if (agent) {
-          const info = [
-            `Provider: ${agent.config.provider}`,
-            `Directory: ${agent.config.directory}`,
-            `Flags: ${JSON.stringify(agent.config.flags)}`,
-            agent.config.adminEmail ? `Admin Email: ${agent.config.adminEmail}` : null,
-          ].filter(Boolean).join('\n');
-          addLocalMessage(info);
-        }
-        break;
-      case '/cost':
-        if (agent) {
-          const costInfo = agent.costUsd !== undefined
-            ? `$${agent.costUsd.toFixed(4)}`
-            : agent.tokenUsage
-              ? `Input: ${agent.tokenUsage.input} | Output: ${agent.tokenUsage.output} | Total: ${agent.tokenUsage.input + agent.tokenUsage.output} tokens`
-              : t('chat.noCostData');
-          addLocalMessage(costInfo);
-        }
-        fetchAgent();
-        break;
-      case '/export': {
-        if (agent) {
-          const exported = agent.messages
-            .map((m) => `[${m.role}] ${m.content}`)
-            .join('\n\n---\n\n');
-          const blob = new Blob([exported], { type: 'text/plain' });
-          const url = URL.createObjectURL(blob);
-          const a = document.createElement('a');
-          a.href = url;
-          a.download = `${agent.name}-conversation.txt`;
-          a.click();
-          URL.revokeObjectURL(url);
-          addStatusNotice(t('chat.exportedMsg'));
-        }
-        break;
-      }
-      case '/memory':
-        if (agent) {
-          addLocalMessage(`CLAUDE.md:\n${agent.config.claudeMd || '(empty)'}`);
-        }
-        break;
-      case '/model':
-        if (agent) {
-          const modelInfo = [
-            agent.config.flags?.model
-              ? `${t('chat.currentModel')}: ${agent.config.flags.model}`
-              : `${t('chat.currentModel')}: ${t('chat.defaultModel')}`,
-            `${t('chat.currentReasoningEffort')}: ${formatReasoningEffort(agent.config.flags.reasoningEffort)}`,
-          ].filter(Boolean).join('\n');
-          addLocalMessage(modelInfo);
-        }
-        break;
-      case '/skills': {
-        const skills = slashCommands.map(c => `${c.cmd} - ${c.desc}`);
-        addLocalMessage(t('chat.availableSkills') + '\n\n' + skills.join('\n'));
-        break;
-      }
-      case '/stats':
-        if (agent) {
-          const msgs = agent.messages;
-          const userMsgs = msgs.filter((m) => m.role === 'user').length;
-          const assistantMsgs = msgs.filter((m) => m.role === 'assistant').length;
-          const toolMsgs = msgs.filter((m) => m.role === 'tool').length;
-          const totalChars = msgs.reduce((sum, m) => sum + m.content.length, 0);
-          const duration = agent.lastActivity - agent.createdAt;
-          const durationStr = duration > 60000
-            ? `${Math.floor(duration / 60000)}m ${Math.floor((duration % 60000) / 1000)}s`
-            : `${Math.floor(duration / 1000)}s`;
-          const statsLines = [
-            `${t('chat.statsMessages')}: ${msgs.length} (${t('chat.statsUser')}: ${userMsgs}, ${t('chat.statsAssistant')}: ${assistantMsgs}, ${t('chat.statsTool')}: ${toolMsgs})`,
-            `${t('chat.statsChars')}: ${totalChars.toLocaleString()}`,
-            `${t('chat.statsDuration')}: ${durationStr}`,
-            agent.costUsd !== undefined ? `${t('chat.statsCost')}: $${agent.costUsd.toFixed(4)}` : null,
-            agent.tokenUsage ? `Tokens: ${(agent.tokenUsage.input + agent.tokenUsage.output).toLocaleString()}` : null,
-          ].filter(Boolean).join('\n');
-          addLocalMessage(statsLines);
-        }
-        fetchAgent();
-        break;
-      case '/status':
-        if (agent) {
-          const statusInfo = [
-            `${t('chat.agentName')}: ${agent.name}`,
-            `${t('chat.agentStatus')}: ${getAgentStatusLabel(agent.status)}`,
-            `Provider: ${(agent.config.provider || 'claude').toUpperCase()}`,
-            `Directory: ${agent.config.directory}`,
-            `${t('chat.currentReasoningEffort')}: ${formatReasoningEffort(agent.config.flags.reasoningEffort)}`,
-            agent.costUsd !== undefined ? `Cost: $${agent.costUsd.toFixed(4)}` : null,
-            agent.tokenUsage ? `Tokens: ${agent.tokenUsage.input + agent.tokenUsage.output}` : null,
-          ].filter(Boolean).join('\n');
-          addLocalMessage(statusInfo);
-        }
-        fetchAgent();
-        break;
-      case '/stop':
-        if (id) api.stopAgent(id);
-        break;
-      case '/context':
-        if (agent) {
-          const totalTokens = agent.tokenUsage
-            ? agent.tokenUsage.input + agent.tokenUsage.output
-            : 0;
-          const contextUsed = agent.contextWindow?.used ?? totalTokens;
-          const maxContext = agent.contextWindow?.total ?? 200000;
-          const displayUsed = Math.max(0, Math.min(maxContext, contextUsed));
-          const rawPct = maxContext > 0 ? (displayUsed / maxContext) * 100 : 0;
-          const pct = Math.max(0, Math.min(100, Math.round(rawPct)));
-          const filled = Math.max(0, Math.min(20, Math.round(pct / 5)));
-          const bar = '█'.repeat(filled) + '░'.repeat(20 - filled);
-          const contextLines = [
-            `${t('chat.contextUsage')}:`,
-            `[${bar}] ${pct}%`,
-            `${displayUsed.toLocaleString()} / ${maxContext.toLocaleString()} tokens`,
-            agent.tokenUsage ? `Input: ${agent.tokenUsage.input.toLocaleString()} | Output: ${agent.tokenUsage.output.toLocaleString()}` : '',
-          ].filter(Boolean).join('\n');
-          addLocalMessage(contextLines);
-        }
-        fetchAgent();
-        break;
-      case '/copy': {
-        if (agent) {
-          const lastAssistant = [...agent.messages].reverse().find(m => m.role === 'assistant');
-          if (lastAssistant) {
-            navigator.clipboard.writeText(lastAssistant.content).then(() => {
-              addStatusNotice(t('chat.copiedMsg'));
-            }).catch(() => {
-              addStatusNotice(t('chat.copiedMsg'));
-            });
-          } else {
-            addStatusNotice(t('chat.noCopyContent'));
-          }
-        }
-        break;
-      }
-      case '/doctor':
-        if (agent) {
-          const issues: string[] = [];
-          if (agent.status === 'error') issues.push('Agent is in error state');
-          if (!agent.config.directory) issues.push('No working directory configured');
-          if (agent.messages.length === 0) issues.push('No messages in conversation');
-          if (issues.length === 0) {
-            addLocalMessage(`${t('chat.doctorOk')}\nStatus: ${getAgentStatusLabel(agent.status)}\nProvider: ${(agent.config.provider || 'claude').toUpperCase()}\nMessages: ${agent.messages.length}`);
-          } else {
-            addLocalMessage(`${t('chat.doctorError')}\n${issues.join('\n')}`);
-          }
-        }
-        fetchAgent();
-        break;
-      case '/exit':
-        navigate('/');
-        break;
-      case '/permissions':
-        if (agent) {
-          const flags = agent.config.flags || {};
-          const flagLines = Object.entries(flags)
-            .map(([k, v]) => `  ${k}: ${v}`)
-            .join('\n');
-          addLocalMessage(`${t('chat.permissionsTitle')}:\n${flagLines || '  (none)'}`);
-        }
-        break;
-      case '/plan':
-        toggleInteractionMode();
-        break;
-      case '/plugin':
-        addLocalMessage(t('chat.pluginInfo'));
-        break;
-      case '/rename': {
-        void renameCurrentAgent();
-        break;
-      }
-      case '/tasks':
-        api.getTasks().then((tasks) => {
-          if (tasks.length === 0) {
-            addLocalMessage(t('chat.noTasks'));
-          } else {
-            const taskLines = tasks.map(tk =>
-              `[${tk.status}] ${tk.name} (step ${tk.order})${tk.error ? ' - ' + tk.error : ''}`
-            );
-            addLocalMessage(taskLines.join('\n'));
-          }
-        });
-        break;
-      case '/theme':
-        toggleTheme();
-        addStatusNotice(t('chat.themeToggled'));
-        break;
-      case '/todos': {
-        if (agent) {
-          const todoPattern = /\b(TODO|FIXME|HACK|XXX|NOTE)\b[:\s]*(.*)/gi;
-          const todos: string[] = [];
-          for (const msg of agent.messages) {
-            let match;
-            while ((match = todoPattern.exec(msg.content)) !== null) {
-              todos.push(`${match[1]}: ${match[2].trim()}`);
-            }
-          }
-          if (todos.length === 0) {
-            addLocalMessage(t('chat.noTodos'));
-          } else {
-            addLocalMessage(`${t('chat.todosFound')}\n${todos.join('\n')}`);
-          }
-        }
-        break;
-      }
-      case '/usage':
-        if (agent) {
-          const usageLines = [
-            `${t('chat.usageInfo')}:`,
-            agent.costUsd !== undefined ? `Cost: $${agent.costUsd.toFixed(4)}` : 'Cost: N/A',
-            agent.tokenUsage ? `Tokens: ${(agent.tokenUsage.input + agent.tokenUsage.output).toLocaleString()}` : 'Tokens: N/A',
-            `Messages: ${agent.messages.length}`,
-            `Provider: ${(agent.config.provider || 'claude').toUpperCase()}`,
-          ].join('\n');
-          addLocalMessage(usageLines);
-        }
-        fetchAgent();
-        break;
-    }
+    executeSlashCommand(cmd, {
+      agent, id, addLocalMessage, navigate, fetchAgent, setAgent, setLocalMessages,
+      toggleInteractionMode, renameCurrentAgent, formatReasoningEffort,
+      btwInputRef, setBtwState, t, getAgentStatusLabel, commands: slashCommands,
+    });
   };
 
   const handlePaste = (e: React.ClipboardEvent) => {
@@ -1090,37 +479,8 @@ export function AgentChat() {
 
   const handleCommit = async () => {
     if (!id || !agent) return;
-    const isWorktree = agent.workspaceMode !== 'direct' && !!agent.worktreeBranch;
-    const branch = agent.worktreeBranch || '';
-    const dir = agent.config.directory;
-
-    let prompt: string;
-    if (isWorktree) {
-      prompt = [
-        `You are on worktree branch "${branch}". The original repo is at "${dir}".`,
-        '',
-        'Do the following steps in order. Stop and report if any step fails:',
-        '',
-        '1. Run `git diff --stat` and `git status` to review all changes.',
-        `2. Go to the original repo directory ("${dir}") and run:`,
-        `   git merge --no-ff ${branch} -m "merge: ${branch}"`,
-        '   If there are merge conflicts, list them and stop — do NOT auto-resolve.',
-        '3. After a clean merge, commit any remaining uncommitted changes with a descriptive message summarizing what was done.',
-        '4. Push to the remote repository. If push fails due to auth, report the error.',
-      ].join('\n');
-    } else {
-      prompt = [
-        'Review and commit the current changes:',
-        '',
-        '1. Run `git diff --stat` and `git status` to see what changed.',
-        '2. Stage all relevant changes (skip any .env or credentials files).',
-        '3. Commit with a clear, descriptive message summarizing the work.',
-        '4. Push to the remote repository. If push fails due to auth, report the error.',
-      ].join('\n');
-    }
-
     try {
-      await api.sendMessage(id, prompt);
+      await api.sendMessage(id, buildCommitPrompt(agent));
     } catch (err) {
       addLocalMessage(`[Error] ${String(err)}`);
     }
@@ -1365,7 +725,7 @@ export function AgentChat() {
               {(agent.config.provider || 'claude').toUpperCase()}
             </span>
             {agent.source === 'external' && (
-              <span className="provider-badge" style={{ background: '#6366f1', color: '#fff', marginLeft: 4 }}>EXT</span>
+              <span className="provider-badge" style={{ background: 'var(--primary)', color: '#fff', marginLeft: 4 }}>EXT</span>
             )}
             <span className="agent-title-text">{agent.name}</span>
             {agent.workspaceMode === 'direct' ? (
@@ -1774,102 +1134,26 @@ export function AgentChat() {
         </div>
       </div>
 
-      {/* Conversation history picker (double-Esc) */}
-      {showHistoryPicker && (() => {
-        const currentUserTurns = agent?.messages.filter(m => m.role === 'user') || [];
-        const userTurns: Array<{ id: string; content: string; timestamp: number }> =
-          (agent as any)?.preRestoreUserTurns ?? currentUserTurns;
-        const currentTurnCount = currentUserTurns.length;
-        return (
-          <div className="modal-overlay" onClick={() => { setShowHistoryPicker(false); }}>
-            <div className="modal" onClick={(e) => e.stopPropagation()} style={{ maxWidth: 560, maxHeight: '75vh', display: 'flex', flexDirection: 'column' }}>
-              <div className="modal-header">
-                <span className="modal-title">{t('chat.historyPickerTitle')}</span>
-                <span style={{ fontSize: 12, color: 'var(--text-muted)' }}>{t('chat.historyPickerHint')}</span>
-                <button className="btn btn-sm btn-outline" onClick={() => { setShowHistoryPicker(false); }}>{t('common.cancel')}</button>
-              </div>
-
-              <div style={{ overflowY: 'auto', flex: 1 }}>
-                {userTurns.length === 0 ? (
-                  <div style={{ padding: 24, textAlign: 'center', color: 'var(--text-muted)' }}>{t('chat.noHistory')}</div>
-                ) : [...userTurns].reverse().map((msg, ri) => { const i = userTurns.length - 1 - ri; const isCurrentOrBefore = i < currentTurnCount; return (
-                  <div
-                    key={msg.id}
-                    onClick={() => { if (historyRestoringIdx === null) void restoreHistoryTurn(i); }}
-                    style={{
-                      padding: '10px 16px',
-                      cursor: historyRestoringIdx !== null ? 'wait' : 'pointer',
-                      background: i === historyPickerIdx ? 'rgba(var(--primary-rgb, 79,140,255), 0.15)' : 'transparent',
-                      color: 'var(--text)',
-                      opacity: isCurrentOrBefore ? 1 : 0.6,
-                      borderBottom: '1px solid var(--border)',
-                    }}
-                    onMouseEnter={() => setHistoryPickerIdx(i)}
-                  >
-                    <div style={{ fontSize: 13, fontFamily: 'monospace', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
-                      {historyRestoringIdx === i ? t('chat.rewinding') : `${msg.content.slice(0, 80)}${msg.content.length > 80 ? '…' : ''}`}
-                    </div>
-                    <div style={{ fontSize: 11, color: 'var(--text-muted)', marginTop: 2 }}>
-                      Turn {i + 1} &nbsp;·&nbsp; {new Date(msg.timestamp).toLocaleString()}
-                      {!isCurrentOrBefore && ' (restored)'}
-                    </div>
-                  </div>
-                ); })}
-              </div>
-            </div>
-          </div>
-        );
-      })()}
+      {showHistoryPicker && (
+        <HistoryPicker
+          agent={agent}
+          historyPickerIdx={historyPickerIdx}
+          historyRestoringIdx={historyRestoringIdx}
+          onClose={() => setShowHistoryPicker(false)}
+          onRestore={(i) => void restoreHistoryTurn(i)}
+          onHover={setHistoryPickerIdx}
+          t={t}
+        />
+      )}
 
       {btwState && (
-        <div className="modal-overlay" onClick={() => setBtwState(null)}>
-          <div className="btw-popup" onClick={(e) => e.stopPropagation()} onKeyDown={(e) => {
-            if (e.key === 'Escape') setBtwState(null);
-          }}>
-            <div className="btw-popup-header">
-              <span>/btw</span>
-              <button className="btn btn-sm btn-outline" onClick={() => setBtwState(null)}>&times;</button>
-            </div>
-            {btwState.status === 'input' && (
-              <div className="btw-popup-body">
-                <textarea
-                  ref={btwInputRef}
-                  className="btw-input"
-                  placeholder={t('chat.slashBtw')}
-                  rows={2}
-                  onKeyDown={(e) => {
-                    if (e.key === 'Enter' && !e.shiftKey) {
-                      e.preventDefault();
-                      const q = (e.target as HTMLTextAreaElement).value;
-                      if (q.trim()) sendBtwQuestion(q);
-                    }
-                    if (e.key === 'Escape') setBtwState(null);
-                  }}
-                />
-                <div style={{ fontSize: 11, color: 'var(--text-muted)', marginTop: 4 }}>Enter {t('common.send')} · Esc {t('common.cancel')}</div>
-              </div>
-            )}
-            {btwState.status === 'loading' && (
-              <div className="btw-popup-body">
-                <div className="btw-question">{btwState.question}</div>
-                <div className="btw-loading">{t('common.loading')}</div>
-              </div>
-            )}
-            {btwState.status === 'answer' && (
-              <div className="btw-popup-body">
-                <div className="btw-question">{btwState.question}</div>
-                <div className="btw-answer">
-                  {btwState.error ? (
-                    <span style={{ color: 'var(--danger)' }}>{btwState.error}</span>
-                  ) : (
-                    <ReactMarkdown remarkPlugins={[remarkGfm]}>{btwState.answer || ''}</ReactMarkdown>
-                  )}
-                </div>
-                <div style={{ fontSize: 11, color: 'var(--text-muted)', marginTop: 8 }}>Esc {t('common.close')}</div>
-              </div>
-            )}
-          </div>
-        </div>
+        <BtwPopup
+          btwState={btwState}
+          onClose={() => setBtwState(null)}
+          onSubmit={sendBtwQuestion}
+          btwInputRef={btwInputRef}
+          t={t}
+        />
       )}
 
     </div>

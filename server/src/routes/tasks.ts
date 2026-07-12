@@ -5,6 +5,7 @@ import type { MetaAgentManager } from '../services/MetaAgentManager.js';
 import type { AgentManager } from '../services/AgentManager.js';
 import type { HarnessOrchestrator } from '../services/HarnessOrchestrator.js';
 import type { PipelineTask } from '../models/Task.js';
+import type { CreateTaskRequest, StartHarnessRequest } from '@agent-monitor/shared';
 
 export function taskRoutes(store: AgentStore, agentManagerPipeline: MetaAgentManager, agentManager?: AgentManager, harnessOrchestrator?: HarnessOrchestrator): Router {
   const router = Router();
@@ -17,7 +18,7 @@ export function taskRoutes(store: AgentStore, agentManagerPipeline: MetaAgentMan
 
   // Create task
   router.post('/', (req, res) => {
-    const { name, prompt, directory, provider, model, claudeMd, flags, order } = req.body;
+    const { name, prompt, directory, provider, model, claudeMd, flags, order } = req.body as CreateTaskRequest;
 
     if (!name || !prompt) {
       res.status(400).json({ error: 'name and prompt are required' });
@@ -94,7 +95,7 @@ export function taskRoutes(store: AgentStore, agentManagerPipeline: MetaAgentMan
       res.status(500).json({ error: 'Harness orchestrator not available' });
       return;
     }
-    const { goal, evaluationCriteria, maxRevisions } = req.body;
+    const { goal, evaluationCriteria, maxRevisions } = req.body as StartHarnessRequest;
     if (!goal) {
       res.status(400).json({ error: 'goal is required' });
       return;
@@ -152,7 +153,7 @@ export function taskRoutes(store: AgentStore, agentManagerPipeline: MetaAgentMan
       return;
     }
 
-    const { name, prompt, directory, provider, model, claudeMd, flags, order } = req.body;
+    const { name, prompt, directory, provider, model, claudeMd, flags, order } = req.body as CreateTaskRequest;
     if (name !== undefined) task.name = name;
     if (prompt !== undefined) task.prompt = prompt;
     if (directory !== undefined) task.directory = directory;

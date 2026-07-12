@@ -1,4 +1,4 @@
-import type { AgentProvider, RuntimeCapabilities } from '../api/client';
+import type { AgentProvider, RuntimeCapabilities } from '@agent-monitor/shared';
 
 export type ModelSelection = string | 'default';
 

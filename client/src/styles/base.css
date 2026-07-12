@@ -1,0 +1,93 @@
+/* --- Reset & Base --- */
+* {
+  margin: 0;
+  padding: 0;
+  box-sizing: border-box;
+}
+
+html {
+  scroll-behavior: smooth;
+}
+
+body {
+  font-family: var(--font-body);
+  background: var(--bg);
+  color: var(--text);
+  line-height: 1.6;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+  overflow-x: hidden;
+}
+
+/* Atmospheric gradient background — Default (indigo, cool) */
+body::before {
+  content: '';
+  position: fixed;
+  inset: 0;
+  z-index: -1;
+  pointer-events: none;
+  background:
+    radial-gradient(ellipse 80% 50% at 50% -20%, rgba(99, 102, 241, 0.04), transparent),
+    radial-gradient(ellipse 60% 40% at 85% 100%, rgba(129, 140, 248, 0.025), transparent),
+    var(--bg);
+}
+
+[data-theme="light"] body::before {
+  background:
+    radial-gradient(ellipse 80% 50% at 50% -20%, rgba(79, 70, 229, 0.04), transparent),
+    radial-gradient(ellipse 60% 40% at 85% 100%, rgba(99, 102, 241, 0.03), transparent),
+    var(--bg);
+}
+
+/* Atmospheric gradient background — Terra (warm) */
+[data-scheme="terra"] body::before {
+  background:
+    radial-gradient(ellipse 80% 50% at 50% -20%, rgba(217, 119, 87, 0.04), transparent),
+    radial-gradient(ellipse 60% 40% at 85% 100%, rgba(224, 169, 70, 0.025), transparent),
+    var(--bg);
+}
+
+[data-scheme="terra"][data-theme="light"] body::before {
+  background:
+    radial-gradient(ellipse 80% 50% at 50% -20%, rgba(204, 91, 58, 0.04), transparent),
+    radial-gradient(ellipse 60% 40% at 85% 100%, rgba(196, 137, 26, 0.03), transparent),
+    var(--bg);
+}
+
+/* Subtle grain texture overlay */
+body::after {
+  content: '';
+  position: fixed;
+  inset: 0;
+  z-index: -1;
+  pointer-events: none;
+  opacity: 0.015;
+  background-image: url("data:image/svg+xml,%3Csvg viewBox='0 0 256 256' xmlns='http://www.w3.org/2000/svg'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.9' numOctaves='4' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)'/%3E%3C/svg%3E");
+  background-repeat: repeat;
+  background-size: 200px 200px;
+}
+
+/* Custom scrollbar */
+::-webkit-scrollbar {
+  width: 6px;
+  height: 6px;
+}
+
+::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+::-webkit-scrollbar-thumb {
+  background: var(--border);
+  border-radius: 3px;
+}
+
+::-webkit-scrollbar-thumb:hover {
+  background: var(--text-muted);
+}
+
+/* Selection */
+::selection {
+  background: var(--primary-dim);
+  color: var(--text);
+}

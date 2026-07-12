@@ -5,14 +5,9 @@ import { config } from '../config.js';
 import type { Agent } from '../models/Agent.js';
 import type { Template } from '../models/Template.js';
 import type { PipelineTask, AgentManagerConfig, MetaAgentConfig } from '../models/Task.js';
+import type { ServerSettings } from '@agent-monitor/shared';
 
-export interface ServerSettings {
-  agentRetentionMs: number; // default 86400000 (24h), 0 = disabled
-  promptSuggestions: string[]; // user-editable prompt quick-fill options
-  pathHistory: Record<string, string[]>; // machine hostname → recently used paths
-  deleteSessionFilesPolicy: 'ask' | 'keep' | 'purge';
-  opencliTemplateSeeded?: boolean; // legacy bootstrap marker
-}
+export type { ServerSettings };
 
 const DEFAULT_SETTINGS: ServerSettings = {
   agentRetentionMs: 86_400_000, // 24 hours
