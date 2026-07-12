@@ -148,6 +148,17 @@ export function AgentChat() {
         if (!prev) return prev;
         const existingIds = new Set(prev.messages.map(m => m.id));
         const newMsgs = data.delta.messages.filter(m => !existingIds.has(m.id));
+        const newUserMsgs = newMsgs.filter(m => m.role === 'user');
+        if (newUserMsgs.length > 0) {
+          setQueuedMessages(qPrev => {
+            let remaining = [...qPrev];
+            for (const userMsg of newUserMsgs) {
+              const idx = remaining.findIndex(q => q.text === userMsg.content);
+              if (idx >= 0) remaining.splice(idx, 1);
+            }
+            return remaining;
+          });
+        }
         return {
           ...prev,
           messages: [...prev.messages, ...newMsgs],
@@ -484,13 +495,14 @@ export function AgentChat() {
     }
   };
 
-  const handleCommit = async () => {
+  const handleCommit = () => {
     if (!id || !agent) return;
-    try {
-      await api.sendMessage(id, buildCommitPrompt(agent));
-    } catch (err) {
-      addLocalMessage(`[Error] ${String(err)}`);
-    }
+    const text = buildCommitPrompt(agent);
+    const qId = `q-${Date.now()}`;
+    setQueuedMessages(prev => [...prev, { id: qId, text }]);
+    api.sendMessage(id, text).catch(() => {
+      setQueuedMessages(prev => prev.filter(q => q.id !== qId));
+    });
   };
 
   const handleSend = async () => {
@@ -560,28 +572,15 @@ export function AgentChat() {
 
     if (!text) return;
 
-    const isRunning = agent?.status === 'running';
     setInput('');
     setAttachedFiles([]);
     setInputRequired(null);
 
-    if (isRunning) {
-      const qId = `q-${Date.now()}`;
-      setQueuedMessages(prev => [...prev, { id: qId, text }]);
-      api.sendMessage(id, text).catch(() => {
-        setQueuedMessages(prev => prev.filter(q => q.id !== qId));
-      });
-    } else {
-      setAgent(prev => {
-        if (!prev) return prev;
-        return {
-          ...prev,
-          status: 'running' as Agent['status'],
-          messages: [...prev.messages, { id: `pending-${Date.now()}`, role: 'user', content: text, timestamp: Date.now() }],
-        };
-      });
-      api.sendMessage(id, text);
-    }
+    const qId = `q-${Date.now()}`;
+    setQueuedMessages(prev => [...prev, { id: qId, text }]);
+    api.sendMessage(id, text).catch(() => {
+      setQueuedMessages(prev => prev.filter(q => q.id !== qId));
+    });
   };
 
   const handleChoiceSelect = (choice: string) => {
