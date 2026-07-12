@@ -125,7 +125,10 @@ export class AgentManager extends EventEmitter {
     }
 
     // Periodically check for stuck agents (sent user message but no response)
-    this.stuckCheckInterval = setInterval(() => this.checkStuckAgents(), STUCK_CHECK_INTERVAL_MS);
+    this.stuckCheckInterval = setInterval(() => {
+      this.checkStuckAgents();
+      this.checkGitBranches();
+    }, STUCK_CHECK_INTERVAL_MS);
   }
 
   private checkStuckAgents(): void {
@@ -158,6 +161,30 @@ export class AgentManager extends EventEmitter {
       this.store.saveAgent(agent);
 
       this.emit('agent:update', agentId, agent);
+    }
+  }
+
+  private checkGitBranches(): void {
+    for (const agent of this.store.getAllAgents()) {
+      if (agent.status !== 'running' && agent.status !== 'waiting_input') continue;
+      if (!agent.gitBranch) continue;
+
+      const cwd = this.resolveExecutionDirectory(agent);
+      try {
+        const branch = execSync('git rev-parse --abbrev-ref HEAD', {
+          cwd,
+          stdio: 'pipe',
+          timeout: 5000,
+        }).toString().trim();
+
+        if (branch === 'HEAD' || branch === agent.currentGitBranch) continue;
+
+        agent.currentGitBranch = branch;
+        this.store.saveAgent(agent);
+        this.emit('agent:update', agent.id, agent);
+      } catch {
+        // git not available or directory gone
+      }
     }
   }
 
@@ -208,7 +235,16 @@ export class AgentManager extends EventEmitter {
       } catch { return false; }
     })();
 
+    let initialBranch: string | undefined;
     if (isGitRepo && gitRoot) {
+      try {
+        const branchOut = execSync('git rev-parse --abbrev-ref HEAD', {
+          cwd: agentConfig.directory,
+          stdio: 'pipe',
+        }).toString().trim();
+        if (branchOut && branchOut !== 'HEAD') initialBranch = branchOut;
+      } catch { /* detached or no commits */ }
+
       try {
         if (workspaceMode === 'direct') {
           const result = this.worktreeManager.createDirectLink(gitRoot, branchName);
@@ -272,6 +308,8 @@ export class AgentManager extends EventEmitter {
       worktreePath,
       worktreeBranch,
       workspaceMode,
+      gitBranch: initialBranch,
+      currentGitBranch: initialBranch,
       messages: [],
       lastActivity: Date.now(),
       createdAt: Date.now(),
@@ -651,6 +689,7 @@ export class AgentManager extends EventEmitter {
         interactionMode: agent.interactionMode,
         pendingPlan: agent.pendingPlan,
         pendingQuestion: agent.pendingQuestion,
+        currentGitBranch: agent.currentGitBranch,
       });
     }
 

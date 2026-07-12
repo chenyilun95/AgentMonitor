@@ -89,6 +89,7 @@ export const zh: Record<string, string> = {
     'workspaceMode.worktreeChip': 'Worktree-{{branch}} 模式',
     'workspaceMode.directTooltip': 'Direct Edit 模式 — agent 通过软链接直接编辑原仓库（无独立分支）。',
     'workspaceMode.worktreeTooltip': 'Worktree 模式 — agent 在独立分支上工作。',
+    'workspaceMode.branchDriftWarning': '分支漂移：初始分支 {{initial}}，当前分支 {{current}}',
     'create.prompt': '提示词',
     'create.promptPlaceholder': '代理应该做什么？',
     'create.model': '模型（可选）',

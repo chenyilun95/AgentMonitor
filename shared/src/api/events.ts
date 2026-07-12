@@ -17,6 +17,7 @@ export interface AgentDelta {
   interactionMode?: AgentInteractionMode;
   pendingPlan?: AgentClientView['pendingPlan'];
   pendingQuestion?: AgentClientView['pendingQuestion'];
+  currentGitBranch?: string;
 }
 
 export interface AgentInputInfo {

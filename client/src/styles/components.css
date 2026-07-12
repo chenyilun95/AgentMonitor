@@ -379,6 +379,20 @@
   vertical-align: middle;
 }
 
+.branch-drift-badge {
+  display: inline-block;
+  font-size: 0.65em;
+  padding: 1px 6px;
+  border-radius: var(--radius-full);
+  background: rgba(239, 68, 68, 0.15);
+  color: var(--red, #ef4444);
+  font-weight: 600;
+  margin-left: 6px;
+  vertical-align: middle;
+  white-space: nowrap;
+  cursor: help;
+}
+
 /* --- View Toggle --- */
 .dashboard-view-toggle {
   display: inline-flex;

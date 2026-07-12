@@ -138,7 +138,7 @@ export function AgentChat() {
     let socketWorking = false;
 
     // Primary: incremental delta (lightweight, only new messages + metadata)
-    const onDelta = (data: { agentId: string; delta: { messages: Agent['messages']; status: string; costUsd?: number; tokenUsage?: Agent['tokenUsage']; contextWindow?: Agent['contextWindow']; lastActivity: number; interactionMode?: Agent['interactionMode']; pendingPlan?: Agent['pendingPlan']; pendingQuestion?: Agent['pendingQuestion'] } }) => {
+    const onDelta = (data: { agentId: string; delta: { messages: Agent['messages']; status: string; costUsd?: number; tokenUsage?: Agent['tokenUsage']; contextWindow?: Agent['contextWindow']; lastActivity: number; interactionMode?: Agent['interactionMode']; pendingPlan?: Agent['pendingPlan']; pendingQuestion?: Agent['pendingQuestion']; currentGitBranch?: string } }) => {
       if (data.agentId !== id) return;
       socketWorking = true;
       setAgent(prev => {
@@ -156,6 +156,7 @@ export function AgentChat() {
           interactionMode: data.delta.interactionMode ?? prev.interactionMode,
           pendingPlan: data.delta.pendingPlan === undefined ? prev.pendingPlan : (data.delta.pendingPlan || undefined),
           pendingQuestion: data.delta.pendingQuestion === undefined ? prev.pendingQuestion : (data.delta.pendingQuestion || undefined),
+          currentGitBranch: data.delta.currentGitBranch ?? prev.currentGitBranch,
         };
       });
     };
@@ -729,16 +730,28 @@ export function AgentChat() {
             )}
             <span className="agent-title-text">{agent.name}</span>
             {agent.workspaceMode === 'direct' ? (
-              <span className="card-direct" title={t('workspaceMode.directTooltip')}>
-                <span className="direct-icon" aria-hidden>🔗</span>
-                {t('workspaceMode.direct')}
-              </span>
+              <>
+                <span className="card-direct" title={t('workspaceMode.directTooltip')}>
+                  <span className="direct-icon" aria-hidden>🔗</span>
+                  {agent.gitBranch ? `Direct Edit (${agent.gitBranch})` : t('workspaceMode.direct')}
+                </span>
+                {agent.currentGitBranch && agent.gitBranch && agent.currentGitBranch !== agent.gitBranch && (
+                  <span
+                    className="branch-drift-badge"
+                    title={t('workspaceMode.branchDriftWarning', { initial: agent.gitBranch, current: agent.currentGitBranch })}
+                  >
+                    {agent.currentGitBranch}
+                  </span>
+                )}
+              </>
             ) : agent.worktreeBranch ? (
               <span className="card-branch" title={`${t('workspaceMode.worktreeTooltip')}\n${agent.worktreeBranch}`}>
                 <svg className="branch-icon" viewBox="0 0 16 16" width="12" height="12" fill="currentColor">
                   <path d="M9.5 3.25a2.25 2.25 0 1 1 3 2.122V6A2.5 2.5 0 0 1 10 8.5H6a1 1 0 0 0-1 1v1.128a2.251 2.251 0 1 1-1.5 0V5.372a2.25 2.25 0 1 1 1.5 0v1.836A2.492 2.492 0 0 1 6 7h4a1 1 0 0 0 1-1v-.628A2.25 2.25 0 0 1 9.5 3.25Zm-6 0a.75.75 0 1 0 1.5 0 .75.75 0 0 0-1.5 0Zm8.25-.75a.75.75 0 1 0 0 1.5.75.75 0 0 0 0-1.5ZM4.25 12a.75.75 0 1 0 0 1.5.75.75 0 0 0 0-1.5Z" />
                 </svg>
-                {t('workspaceMode.worktreeChip', { branch: agent.worktreeBranch.replace(/^agent-/, '') })}
+                {agent.gitBranch
+                  ? `${agent.gitBranch} → ${agent.worktreeBranch.replace(/^agent-/, '')}`
+                  : t('workspaceMode.worktreeChip', { branch: agent.worktreeBranch.replace(/^agent-/, '') })}
               </span>
             ) : null}
             <button

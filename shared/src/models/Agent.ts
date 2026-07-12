@@ -87,6 +87,8 @@ export interface Agent {
   worktreeBranch?: string;
   worktreeMerged?: boolean;
   workspaceMode?: AgentWorkspaceMode;
+  gitBranch?: string;
+  currentGitBranch?: string;
   messages: AgentMessage[];
   logs?: AgentLogEntry[];
   lastActivity: number;

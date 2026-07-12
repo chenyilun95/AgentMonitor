@@ -89,6 +89,7 @@ export const en: Record<string, string> = {
     'workspaceMode.worktreeChip': 'Worktree-{{branch}}',
     'workspaceMode.directTooltip': 'Direct Edit mode — agent edits the original repo via symlink (no isolated branch).',
     'workspaceMode.worktreeTooltip': 'Worktree mode — agent works on an isolated branch.',
+    'workspaceMode.branchDriftWarning': 'Branch drift: started on {{initial}}, now on {{current}}',
     'create.prompt': 'Prompt',
     'create.promptPlaceholder': 'What should the agent do?',
     'create.model': 'Model (optional)',
