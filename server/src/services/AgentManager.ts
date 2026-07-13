@@ -8,6 +8,7 @@ import type { Agent, AgentConfig, AgentInteractionMode, AgentLogEntry, AgentMess
 import type { AgentDelta, AgentInputInfo } from '@agent-monitor/shared';
 import { AgentStore } from '../store/AgentStore.js';
 import { AgentProcess, type StreamMessage } from './AgentProcess.js';
+import { extractImageAttachments } from '../utils/imageAttachments.js';
 import { WorktreeManager } from './WorktreeManager.js';
 import { EmailNotifier } from './EmailNotifier.js';
 import { WhatsAppNotifier } from './WhatsAppNotifier.js';
@@ -899,7 +900,7 @@ export class AgentManager extends EventEmitter {
   private handleClaudeMessage(agent: Agent, msg: StreamMessage): void {
     // With --verbose, assistant messages have: {type: "assistant", message: {content: [{type: "text", text: "..."}]}}
     if (msg.type === 'assistant') {
-      const message = msg.message as { content?: Array<{ type: string; text?: string; name?: string; input?: unknown; id?: string }> } | undefined;
+      const message = msg.message as { content?: Array<{ type: string; text?: string; name?: string; input?: unknown; id?: string; [key: string]: unknown }> } | undefined;
       if (message?.content) {
         for (const block of message.content) {
           if (block.type === 'text' && block.text) {
@@ -921,6 +922,17 @@ export class AgentManager extends EventEmitter {
               timestamp: Date.now(),
             });
             this.captureInteractiveTool(agent, block, toolMessageId);
+          } else {
+            const attachments = extractImageAttachments(block);
+            if (attachments.length > 0) {
+              agent.messages.push({
+                id: uuid(),
+                role: 'assistant',
+                content: '',
+                attachments,
+                timestamp: Date.now(),
+              });
+            }
           }
         }
         agent.lastActivity = Date.now();
@@ -952,7 +964,7 @@ export class AgentManager extends EventEmitter {
 
     // Capture tool results from 'user' type messages (Claude sends tool results as user messages)
     if (msg.type === 'user') {
-      const userMessage = msg.message as { content?: Array<{ type: string; content?: string; tool_use_id?: string }> } | undefined;
+      const userMessage = msg.message as { content?: Array<{ type: string; content?: unknown; tool_use_id?: string }> } | undefined;
       const toolResult = msg.tool_use_result as { stdout?: string; stderr?: string } | undefined;
       if (userMessage?.content) {
         for (const block of userMessage.content) {
@@ -960,11 +972,13 @@ export class AgentManager extends EventEmitter {
             let resultText = '';
             if (toolResult?.stdout) resultText = toolResult.stdout;
             else if (typeof block.content === 'string') resultText = block.content;
-            if (resultText) {
-              // Attach result to the most recent tool message without a result
-              const lastToolMsg = [...agent.messages].reverse().find(m => m.role === 'tool' && !m.toolResult);
+            const attachments = extractImageAttachments([block.content, msg.tool_use_result]);
+            if (resultText || attachments.length > 0) {
+              // Attach result to the most recent matching tool message.
+              const lastToolMsg = [...agent.messages].reverse().find(m => m.role === 'tool' && (!m.toolResult || attachments.length > 0));
               if (lastToolMsg) {
                 lastToolMsg.toolResult = resultText.length > 10000 ? resultText.slice(0, 10000) + '\n...(truncated)' : resultText;
+                if (attachments.length > 0) lastToolMsg.attachments = attachments;
                 if (toolResult?.stderr) {
                   lastToolMsg.toolResult += '\n[stderr] ' + toolResult.stderr;
                 }
@@ -1183,16 +1197,19 @@ export class AgentManager extends EventEmitter {
 
     // Codex JSONL events: thread.started, turn.started, item.started, item.completed, turn.completed
     if (msg.type === 'item.completed' && msg.item) {
+      const item = msg.item as Record<string, unknown>;
+      const attachments = extractImageAttachments(item.result ?? item.output ?? item);
       if (msg.item.type === 'agent_message') {
         agent.messages.push({
           id: uuid(),
           role: 'assistant',
           content: msg.item.text || '',
+          attachments: attachments.length > 0 ? attachments : undefined,
           timestamp: Date.now(),
         });
         agent.lastActivity = Date.now();
         this.store.saveAgent(agent);
-      } else if (msg.item.type === 'command_execution' || msg.item.type === 'tool_call' || msg.item.type === 'function_call') {
+      } else if (msg.item.type === 'command_execution' || msg.item.type === 'tool_call' || msg.item.type === 'function_call' || msg.item.type === 'mcp_tool_call' || msg.item.type === 'image_generation_call' || attachments.length > 0) {
         const item = msg.item as { type?: string; command?: string; aggregated_output?: string; exit_code?: number; text?: string };
         const toolSummary = item.command
           ? `Command: ${item.command}`
@@ -1211,6 +1228,7 @@ export class AgentManager extends EventEmitter {
           toolName: item.command ? 'command' : (item.type || 'tool'),
           toolInput: item.command || item.text || undefined,
           toolResult: toolResultParts.length > 0 ? toolResultParts.join('\n') : undefined,
+          attachments: attachments.length > 0 ? attachments : undefined,
           timestamp: Date.now(),
         });
         agent.lastActivity = Date.now();

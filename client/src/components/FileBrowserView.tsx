@@ -2,6 +2,7 @@ import { useCallback, useEffect, useMemo, useState } from 'react';
 import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
 import { api, type DirListing, type FilePreview } from '../api/client';
+import { resolveImageSource } from '../lib/imageSources';
 
 interface FileBrowserViewProps {
   rootPath: string;
@@ -20,42 +21,13 @@ function pathLabel(path: string): string {
   return parts.length ? `/${parts.slice(-3).join('/')}` : '/';
 }
 
-function isExternalUrl(src: string): boolean {
-  return /^(https?:|data:|blob:|mailto:|#)/i.test(src);
-}
-
 function dirname(filePath: string): string {
   const idx = filePath.lastIndexOf('/');
   return idx > 0 ? filePath.slice(0, idx) : '/';
 }
 
-function normalizePath(path: string): string {
-  const absolute = path.startsWith('/');
-  const parts: string[] = [];
-  for (const part of path.split('/')) {
-    if (!part || part === '.') continue;
-    if (part === '..') {
-      parts.pop();
-      continue;
-    }
-    parts.push(part);
-  }
-  return `${absolute ? '/' : ''}${parts.join('/')}`;
-}
-
 function resolveMarkdownAsset(markdownPath: string, src?: string): string | undefined {
-  if (!src || isExternalUrl(src)) return src;
-  const cleanSrc = src.split(/[?#]/, 1)[0];
-  let localSrc = cleanSrc;
-  try {
-    localSrc = decodeURI(cleanSrc);
-  } catch {
-    localSrc = cleanSrc;
-  }
-  const resolved = localSrc.startsWith('/')
-    ? normalizePath(localSrc)
-    : normalizePath(`${dirname(markdownPath)}/${localSrc}`);
-  return `/api/directories/asset?path=${encodeURIComponent(resolved)}`;
+  return resolveImageSource(dirname(markdownPath), src);
 }
 
 export function FileBrowserView({ rootPath, visible }: FileBrowserViewProps) {

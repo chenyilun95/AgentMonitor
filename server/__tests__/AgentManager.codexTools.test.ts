@@ -65,6 +65,35 @@ describe('AgentManager codex tool messages', () => {
     expect(saved?.messages[0].toolResult).toContain('[exit code] 0');
   });
 
+  it('stores image attachments returned by Codex MCP tools', () => {
+    const agent: Agent = {
+      id: 'agent-codex-image',
+      name: 'Codex Image Test',
+      status: 'running',
+      config: { provider: 'codex', directory: tmpDir, prompt: 'generate an image', flags: {} },
+      messages: [],
+      lastActivity: 1,
+      createdAt: 1,
+    };
+    store.saveAgent(agent);
+
+    (manager as unknown as {
+      handleStreamMessage: (agentId: string, msg: Record<string, unknown>, provider: string) => void;
+    }).handleStreamMessage(agent.id, {
+      type: 'item.completed',
+      item: {
+        type: 'mcp_tool_call',
+        text: 'imagegen',
+        result: { content: [{ type: 'image', path: `${tmpDir}/result.png` }] },
+      },
+    }, 'codex');
+
+    expect(store.getAgent(agent.id)?.messages[0]).toMatchObject({
+      role: 'tool',
+      attachments: [{ type: 'image', source: `${tmpDir}/result.png` }],
+    });
+  });
+
   it('truncates large log payloads before persisting', () => {
     const agent: Agent = {
       id: 'agent-large-log-payload',

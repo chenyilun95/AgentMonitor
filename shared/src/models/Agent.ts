@@ -13,6 +13,13 @@ export function isReasoningEffort(value: unknown): value is ReasoningEffort {
   return typeof value === 'string' && (REASONING_EFFORTS as readonly string[]).includes(value);
 }
 
+export interface AgentMessageAttachment {
+  type: 'image';
+  source: string;
+  name?: string;
+  mimeType?: string;
+}
+
 export interface AgentMessage {
   id: string;
   role: 'user' | 'assistant' | 'system' | 'tool';
@@ -21,6 +28,7 @@ export interface AgentMessage {
   toolName?: string;
   toolInput?: string;
   toolResult?: string;
+  attachments?: AgentMessageAttachment[];
 }
 
 export interface AgentLogEntry {

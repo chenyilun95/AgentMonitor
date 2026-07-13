@@ -15,6 +15,7 @@ import { buildCommitPrompt } from '../lib/commitPrompt';
 import { buildResumeCommand } from '../lib/resumeCommand';
 import { getToolMessageDetails, type ToolMessageDetails } from '../lib/toolMessages';
 import { getSlashCommandDefinitions, executeSlashCommand } from '../lib/slashCommands';
+import { resolveImageSource } from '../lib/imageSources';
 import {
   getReasoningEffortLabel,
   getReasoningEffortOptions,
@@ -738,6 +739,7 @@ export function AgentChat() {
   const interactionMode = agent.interactionMode || 'default';
   const isPlanMode = interactionMode === 'plan';
   const displayMessages = [...agent.messages, ...localMessages].sort((a, b) => a.timestamp - b.timestamp);
+  const workspacePath = agent.worktreePath || agent.config.directory;
   const chatMessageGroups = displayMessages.reduce<ChatMessageGroup[]>((groups, msg) => {
     if (msg.role === 'user' || groups.length === 0) {
       groups.push({ id: `turn-${msg.id}`, messages: [msg] });
@@ -941,9 +943,41 @@ export function AgentChat() {
                     </>
                   ) : (
                     renderMarkdown && msg.role === 'assistant'
-                      ? <ReactMarkdown remarkPlugins={[remarkGfm]}>{msg.content}</ReactMarkdown>
+                      ? <ReactMarkdown
+                          remarkPlugins={[remarkGfm]}
+                          components={{
+                            img: ({ src, alt, title }) => (
+                              <img
+                                className="chat-image"
+                                src={resolveImageSource(workspacePath, src)}
+                                alt={alt || ''}
+                                title={title}
+                                loading="lazy"
+                              />
+                            ),
+                          }}
+                        >{msg.content}</ReactMarkdown>
                       : msg.content
                   )}
+                  {'attachments' in msg && msg.attachments?.map((attachment, index) => {
+                    const src = resolveImageSource(workspacePath, attachment.source);
+                    return src ? (
+                      <a
+                        className="chat-image-link"
+                        href={src}
+                        target="_blank"
+                        rel="noreferrer"
+                        key={`${attachment.source}-${index}`}
+                      >
+                        <img
+                          className="chat-image"
+                          src={src}
+                          alt={attachment.name || 'Agent output image'}
+                          loading="lazy"
+                        />
+                      </a>
+                    ) : null;
+                  })}
                 </div>
               );
             })}

@@ -7,6 +7,7 @@ import { EventEmitter } from 'events';
 import type { Agent, AgentProvider } from '../models/Agent.js';
 import type { AgentStore } from '../store/AgentStore.js';
 import { runtimeCapabilities } from './RuntimeCapabilities.js';
+import { extractImageAttachments } from '../utils/imageAttachments.js';
 
 interface DiscoveredProcess {
   pid: number;
@@ -571,6 +572,7 @@ export class ExternalAgentScanner extends EventEmitter {
       if (!msg?.content || !Array.isArray(msg.content)) return null;
       // Extract text blocks
       const textParts: string[] = [];
+      const attachments = extractImageAttachments(msg.content);
       for (const block of msg.content) {
         if (typeof block === 'string') textParts.push(block);
         else if (block && typeof block === 'object') {
@@ -589,8 +591,14 @@ export class ExternalAgentScanner extends EventEmitter {
         }
       }
       const content = textParts.join('\n');
-      if (!content) return null;
-      return { id: (entry.uuid as string) || uuid(), role: 'assistant', content, timestamp: ts };
+      if (!content && attachments.length === 0) return null;
+      return {
+        id: (entry.uuid as string) || uuid(),
+        role: 'assistant',
+        content,
+        attachments: attachments.length > 0 ? attachments : undefined,
+        timestamp: ts,
+      };
     }
 
     if (type === 'tool_result' || type === 'tool') {
@@ -603,6 +611,7 @@ export class ExternalAgentScanner extends EventEmitter {
         content: content.slice(0, 500),
         toolName: (entry.tool_name as string) || 'tool',
         toolResult: content.slice(0, 2000),
+        attachments: extractImageAttachments(entry.content),
         timestamp: ts,
       };
     }
@@ -652,10 +661,12 @@ export class ExternalAgentScanner extends EventEmitter {
       }
 
       if (eventType === 'agent_message' && typeof payload?.message === 'string') {
+        const attachments = extractImageAttachments(payload.message);
         snapshot.messages.push({
           id: `codex-assistant-${ts}-${snapshot.messages.length}`,
           role: 'assistant',
           content: payload.message,
+          attachments: attachments.length > 0 ? attachments : undefined,
           timestamp: ts,
         });
         return;
@@ -724,15 +735,18 @@ export class ExternalAgentScanner extends EventEmitter {
     if (payloadType === 'function_call_output') {
       const callId = typeof payload?.call_id === 'string' ? payload.call_id : '';
       const toolResult = this.formatCodexFunctionOutput(payload?.output);
+      const attachments = extractImageAttachments(payload?.output);
       const existing = [...snapshot.messages].reverse().find((message) => message.id === callId);
       if (existing) {
         existing.toolResult = toolResult;
+        if (attachments.length > 0) existing.attachments = attachments;
       } else if (toolResult) {
         snapshot.messages.push({
           id: callId || `codex-tool-output-${ts}-${snapshot.messages.length}`,
           role: 'tool',
           content: 'Tool result',
           toolResult,
+          attachments: attachments.length > 0 ? attachments : undefined,
           timestamp: ts,
         });
       }

@@ -114,6 +114,23 @@
   color: var(--text-muted);
 }
 
+.chat-image-link {
+  display: block;
+  width: fit-content;
+  max-width: 100%;
+  margin-top: 8px;
+}
+
+.chat-image {
+  display: block;
+  max-width: min(100%, 720px);
+  max-height: 70vh;
+  object-fit: contain;
+  border-radius: var(--radius);
+  border: 1px solid var(--border-subtle);
+  background: var(--bg-input);
+}
+
 .chat-message.tool {
   background: transparent;
   border: 1px solid var(--border);
