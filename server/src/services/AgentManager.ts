@@ -17,6 +17,7 @@ import { FeishuNotifier } from './FeishuNotifier.js';
 import { SkillManager } from './SkillManager.js';
 import { getInstructionFileName } from '../utils/instructionFiles.js';
 import { normalizeUserPath, portableUserPath } from '../utils/pathUtils.js';
+import { classifyCodexStderr, normalizeStoredCodexStderr } from '../utils/codexStderr.js';
 
 /** How long (ms) after a user message with no response before we notify (not auto-interrupt) */
 const STUCK_TIMEOUT_MS = 600_000; // 10 minutes — long tasks (build, push, chrome MCP) can take time
@@ -120,6 +121,9 @@ export class AgentManager extends EventEmitter {
     // stopped — their processes died when the server restarted.
     // External agents are handled by ExternalAgentScanner (it checks if PID is still alive).
     for (const agent of this.store.getAllAgents()) {
+      if (normalizeStoredCodexStderr(agent)) {
+        this.store.saveAgent(agent);
+      }
       if (agent.source === 'external') continue;
       const portableDirectory = portableUserPath(agent.config.directory);
       if (portableDirectory !== agent.config.directory) {
@@ -430,15 +434,8 @@ export class AgentManager extends EventEmitter {
     });
 
     proc.on('terminal', (chunk: { stream: string; data: string }) => {
-      if (chunk.stream === 'stderr') {
-        const decoded = Buffer.from(chunk.data, 'base64').toString('utf-8');
-        this.appendAgentLog(agent.id, {
-          level: 'error',
-          source: 'terminal',
-          stream: 'stderr',
-          message: decoded,
-        });
-      }
+      // stderr is persisted by the dedicated event below. The terminal event is
+      // only for live streaming; storing both used to duplicate every error.
       this.emit('agent:terminal', agent.id, chunk);
     });
 
@@ -452,17 +449,22 @@ export class AgentManager extends EventEmitter {
     });
 
     proc.on('stderr', (text: string) => {
-      console.error(`[Agent ${agent.id}] stderr: ${text}`);
-      // Codex prints this informational line when stdin is piped; harmless noise.
-      if (agent.config.provider === 'codex' && text.trim() === 'Reading additional input from stdin...') {
-        return;
-      }
+      const disposition = agent.config.provider === 'codex'
+        ? classifyCodexStderr(text)
+        : 'error';
+      if (disposition === 'ignore') return;
+
+      const log = `[Agent ${agent.id}] stderr: ${text}`;
+      if (disposition === 'warn') console.warn(log);
+      else console.error(log);
       this.appendAgentLog(agent.id, {
-        level: 'error',
+        level: disposition,
         source: 'stderr',
         stream: 'stderr',
         message: text,
       });
+      if (disposition !== 'error') return;
+
       // Store stderr in messages for debugging
       const a = this.store.getAgent(agent.id);
       if (a) {
