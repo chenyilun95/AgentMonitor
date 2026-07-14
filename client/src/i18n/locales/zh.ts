@@ -52,7 +52,7 @@ export const zh: Record<string, string> = {
     'dashboard.groupByDirectory': '按目录',
     'dashboard.agentCount': '个代理',
     'dashboard.commit': '提交',
-    'dashboard.commitTooltip': '让代理提交更改',
+    'dashboard.commitTooltip': '让代理提交、拉取并推送更改',
     'dashboard.newWorktreeAgent': '新建Worktree代理',
     'dashboard.status.running': '运行中',
     'dashboard.status.stopped': '已停止',

@@ -52,7 +52,7 @@ export const en: Record<string, string> = {
     'dashboard.groupByDirectory': 'By Directory',
     'dashboard.agentCount': 'agents',
     'dashboard.commit': 'Commit',
-    'dashboard.commitTooltip': 'Ask agent to commit changes',
+    'dashboard.commitTooltip': 'Ask agent to commit, pull, and push changes',
     'dashboard.newWorktreeAgent': 'New Worktree Agent',
     'dashboard.status.running': 'Running',
     'dashboard.status.stopped': 'Stopped',
