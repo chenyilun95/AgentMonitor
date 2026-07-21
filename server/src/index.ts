@@ -1,4 +1,5 @@
 import express from 'express';
+import compression from 'compression';
 import cors from 'cors';
 import { parse as parseCookie } from 'cookie';
 import cookieParser from 'cookie-parser';
@@ -59,6 +60,7 @@ export function createApp() {
           cb(null, false);
         }
       };
+  app.use(compression());
   app.use(cors({ credentials: true, origin: corsOrigin }));
   app.use(cookieParser());
   app.use(express.json());
@@ -186,6 +188,7 @@ export function createApp() {
   // Serve built client
   const clientDist = path.resolve(__dirname, '..', '..', 'client', 'dist');
   if (fs.existsSync(clientDist)) {
+    app.use('/assets', express.static(path.join(clientDist, 'assets'), { maxAge: '1y', immutable: true }));
     app.use(express.static(clientDist));
     app.get('*', (_req, res) => {
       res.sendFile(path.join(clientDist, 'index.html'));
