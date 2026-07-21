@@ -30,11 +30,19 @@ Persistent browser profile for Xiaohongshu login: `~/.cache/codex/xiaohongshu-pl
 
 ### Step 1 — Download video
 
-Use the `xiaohongshu-note-to-markdown` skill or intercept the video URL via Playwright.
+**Preferred method**: Use greenvideo.cc via the `xiaohongshu-audio-funasr-raw` skill (no login needed):
 
-Xiaohongshu video URLs follow the pattern `sns-video-*.xhscdn.com/stream/…/*.mp4?sign=…&t=…`. These are signed and expire quickly — download immediately during the browser session.
+```bash
+python3 \
+  <skills>/xiaohongshu-audio-funasr-raw/scripts/download_xhs_via_greenvideo.py \
+  'https://www.xiaohongshu.com/explore/NOTE_ID?...' \
+  --output-dir /tmp/xhs-greenvideo \
+  --download-video
+```
 
-If the share link triggers "页面不见了" but the video still loads in the background, capture the mp4 URL from network responses via Playwright's `page.on("response", …)` callback, then download with curl:
+This produces `video.mp4` and `audio.m4a` without touching any login session.
+
+**Fallback**: If greenvideo.cc is down, intercept the video URL via Playwright. Xiaohongshu video URLs follow the pattern `sns-video-*.xhscdn.com/stream/…/*.mp4?sign=…&t=…`. Capture the mp4 URL from network responses via Playwright's `page.on("response", …)` callback, then download with curl:
 
 ```bash
 curl -L -o video.mp4 \
@@ -42,31 +50,41 @@ curl -L -o video.mp4 \
   "<captured-sns-video-url>"
 ```
 
-If login is required, run with `DISPLAY=:1` (or the user's active X display) and `--interactive-login` to let the user complete QR/SMS login in the browser.
+On headless Linux, use `xvfb-run` for non-interactive Playwright runs. For interactive login, use the user's real display.
 
 ### Step 2 — Extract audio & transcribe
 
-```bash
-# Extract audio (copy codec, no re-encoding)
-ffmpeg -i video.mp4 -vn -c:a copy audio.m4a
+If using greenvideo.cc (Step 1 preferred method), `audio.m4a` is already extracted. Otherwise:
 
-# Transcribe with FunASR/SenseVoice (chunked for long videos)
-<funasr-venv>/bin/python \
-  ~/.claude/skills/xiaohongshu-audio-funasr-raw/scripts/transcribe_xhs_audio_to_raw.py \
+```bash
+ffmpeg -i video.mp4 -vn -c:a copy audio.m4a
+```
+
+Transcribe with FunASR/SenseVoice:
+
+```bash
+# Linux
+/home/yilunchen/.venvs/funasr/bin/python \
+  <skills>/xiaohongshu-audio-funasr-raw/scripts/transcribe_xhs_audio_to_raw.py \
   --audio audio.m4a \
   --title '<中文标题>' \
   --note-id <note_id> \
   --source-url '<原始URL>' \
-  --source-provider xiaohongshu-direct \
+  --source-provider greenvideo \
+  --raw-root ~/rep/llm_wiki/raw \
+  --chunk-seconds 600
+
+# macOS
+/Users/ylchen/tmp/funasr-venv/bin/python \
+  <skills>/xiaohongshu-audio-funasr-raw/scripts/transcribe_xhs_audio_to_raw.py \
+  --audio audio.m4a \
+  --title '<中文标题>' \
+  --note-id <note_id> \
+  --source-url '<原始URL>' \
+  --source-provider greenvideo \
   --raw-root ~/rep/llm-wiki/raw \
-  --ffmpeg $(which ffmpeg) \
-  --ffprobe $(which ffprobe) \
   --chunk-seconds 600
 ```
-
-The FunASR venv location varies by machine:
-- Linux: `~/.venvs/funasr/bin/python`
-- macOS: `~/tmp/funasr-venv/bin/python`
 
 Output: `transcript.md`, `transcript.txt`, `transcript.json`, `metadata.json` under `raw/xiaohongshu/<title>/`.
 

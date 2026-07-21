@@ -14,7 +14,7 @@ import { LanguageProvider, useTranslation } from './i18n';
 function NavBar({ onLogout }: { onLogout?: () => void }) {
   const location = useLocation();
   const { t } = useTranslation();
-  const [theme, setTheme] = useState(() => localStorage.getItem('agentmonitor-theme') || 'dark');
+  const [theme, setTheme] = useState(() => localStorage.getItem('agentmonitor-theme') || 'light');
 
   return (
     <nav className="nav">

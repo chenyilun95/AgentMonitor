@@ -1,81 +1,158 @@
 ---
 name: wechat-article-to-markdown
-description: Convert WeChat public-account article URLs or exported article HTML into local Markdown documents with images downloaded and referenced by relative paths. Use when Codex needs to archive mp.weixin.qq.com articles, preserve inline images from data-src lazy loading, or batch-process WeChat links into a repository such as llm-wiki.
+description: "Convert WeChat public-account article URLs into local Markdown with downloaded images, then optionally restructure into wiki-format articles. Use when archiving mp.weixin.qq.com articles, preserving inline images from data-src lazy loading, or producing illustrated wiki articles from WeChat sources."
 ---
 
 # WeChat Article to Markdown
 
-## Workflow
+## End-to-End Pipeline
 
-1. Open each `https://mp.weixin.qq.com/s/...` URL in Playwright and wait until `document.title` and `#js_content` are populated.
-2. Export the article as JSON with `meta` and `html` fields:
+The complete workflow from WeChat article URL to wiki document:
 
-```js
-() => ({
-  meta: {
-    title: document.title,
-    sourceUrl: location.href,
-    author: document.querySelector('#js_name')?.innerText.trim() || '',
-    publishTime: document.querySelector('#publish_time')?.innerText.trim() || ''
-  },
-  html: document.querySelector('#js_content')?.innerHTML || ''
-})
+1. **Capture article** — Playwright renders the page, exports DOM content as JSON
+2. **Convert to Markdown** — script downloads images, converts HTML to Markdown
+3. **Move to raw/** — organize under `raw/wechat/<title>/`
+4. **Generate wiki document** — restructure into wiki format with interleaved images (manual/LLM step)
+
+## Step 1: Capture Article
+
+Open each `https://mp.weixin.qq.com/s/...` URL in Playwright and export as JSON:
+
+```bash
+# On Linux (headless server), wrap with xvfb-run if using headed mode
+# On macOS, run directly
+
+python3 -c "
+import json, sys
+from playwright.sync_api import sync_playwright
+with sync_playwright() as p:
+    browser = p.chromium.launch(headless=True)
+    page = browser.new_page()
+    page.goto('$URL', wait_until='networkidle')
+    page.wait_for_selector('#js_content', timeout=15000)
+    data = page.evaluate('''() => ({
+        meta: {
+            title: document.title,
+            sourceUrl: location.href,
+            author: document.querySelector('#js_name')?.innerText.trim() || '',
+            publishTime: document.querySelector('#publish_time')?.innerText.trim() || ''
+        },
+        html: document.querySelector('#js_content')?.innerHTML || ''
+    })''')
+    json.dump(data, open('/tmp/wechat-article.json', 'w', encoding='utf-8'), ensure_ascii=False, indent=2)
+    browser.close()
+"
 ```
 
-3. Run `scripts/convert_wechat_article.py` on the JSON artifact. Prefer `--output-dir` under the target repo; by default the Markdown file and image asset directory use the original Chinese article title.
-4. Validate that every Markdown image reference exists locally and that the image count matches the downloaded file count.
-
-## Script
-
-Use the bundled script:
+## Step 2: Convert to Markdown
 
 ```bash
 python3 ~/.codex/skills/wechat-article-to-markdown/scripts/convert_wechat_article.py \
-  --input /path/to/article.json \
-  --output-dir /path/to/wiki/wechat
+  --input /tmp/wechat-article.json \
+  --output-dir ~/rep/llm_wiki/raw/wechat
 ```
 
-If dependencies are missing, install them in the active Python environment:
+Output:
+
+- `<article-title>.md`: Markdown with relative image references
+- `assets/<article-title>/*.jpg|png|webp`: downloaded article images
+
+## Step 3: Organize in raw/
+
+Move the converted article into the raw directory structure:
 
 ```bash
-python3 -m pip install --user beautifulsoup4 markdownify
+TITLE="文章标题"
+mkdir -p ~/rep/llm_wiki/raw/wechat/"$TITLE"
+mv ~/rep/llm_wiki/raw/wechat/"$TITLE".md ~/rep/llm_wiki/raw/wechat/"$TITLE"/article.md
+mv ~/rep/llm_wiki/raw/wechat/assets/"$TITLE" ~/rep/llm_wiki/raw/wechat/"$TITLE"/images
 ```
 
-Optional flags:
+## Step 4: Generate Wiki Document
 
-- `--referer URL`: override the HTTP Referer used for image downloads.
-- `--title TITLE`: override the Markdown H1.
-- `--output FILE`: write to an explicit Markdown file instead of deriving the file name from the original Chinese article title.
-- `--asset-dir DIR`: write images to an explicit directory instead of `assets/<original Chinese article title>`.
-- `--no-download`: generate Markdown references without downloading images.
+WeChat articles are already text+image, so the wiki document is primarily a restructuring:
 
-The script handles WeChat-specific image behavior:
+```markdown
+# Article Title
 
-- Use the original WeChat article title as the Markdown H1 and, by default, as the Markdown file name.
-- Use `data-src` before `src` because many article images are lazy-loaded placeholders.
-- Remove URL fragments such as `#imgIndex=...` before downloading.
-- Infer image extensions from `wx_fmt` or response content type.
-- Replace embedded WeChat video/player widgets with a compact video placeholder so player controls do not pollute the article text.
-- Preserve article text with `markdownify`, then normalize excessive blank lines and adjacent image syntax.
+> **来源**：[公众号名称](URL)
+> **作者**：Author Name
+> **日期**：YYYY-MM-DD
+
+---
+
+## 核心论点
+One-paragraph summary...
+
+---
+
+## 一、Section Title
+
+![Description](../../raw/wechat/<title>/images/image-01.jpg)
+
+Content restructured from article...
+
+---
+
+## 关键链接
+| 项目 | 链接 |
+|------|------|
+| ... | ... |
+
+#Tag1 #Tag2
+```
+
+Key differences from video-based wiki docs:
+- WeChat articles already have structured text and images — less cleanup needed
+- Image paths: `../../raw/wechat/<title>/images/<filename>`
+- No timestamp ranges (articles are not time-based)
+- After creating wiki doc, add entry to `wiki/index.md`
+
+## Dependencies
+
+```bash
+python3 -m pip install --user playwright beautifulsoup4 markdownify
+python3 -m playwright install chromium
+```
+
+On Linux headless servers:
+
+```bash
+sudo apt-get install xvfb  # only if using headed Playwright mode
+```
+
+## Script Reference
+
+```bash
+python3 ~/.codex/skills/wechat-article-to-markdown/scripts/convert_wechat_article.py --help
+```
+
+Key options:
+
+- `--input PATH`: JSON file exported from Playwright
+- `--output-dir PATH`: where to write Markdown and images
+- `--referer URL`: override HTTP Referer for image downloads
+- `--title TITLE`: override the Markdown H1
+- `--output FILE`: explicit Markdown output file
+- `--asset-dir DIR`: explicit image directory
+- `--no-download`: skip image downloads
+
+The script handles WeChat-specific behavior:
+
+- `data-src` before `src` for lazy-loaded images
+- Removes URL fragments (`#imgIndex=...`) before downloading
+- Infers extensions from `wx_fmt` or response content type
+- Replaces embedded video widgets with compact placeholders
+- Normalizes excessive blank lines and adjacent image syntax
 
 ## Quality Checks
 
-After conversion, run:
+After conversion:
 
 ```bash
 grep -o '!\[[^]]*\](assets/[^)]*)' article.md | wc -l
-python3 - <<'PY'
-from pathlib import Path
-import re, sys
-md = Path(sys.argv[1])
-refs = re.findall(r'!\[[^\]]*\]\(([^)]+)\)', md.read_text(encoding='utf-8'))
-missing = [r for r in refs if not (md.parent / r).exists()]
-print('image_refs', len(refs))
-print('missing_refs', len(missing))
-if missing:
-    print('\n'.join(missing))
-    raise SystemExit(1)
-PY article.md
+ls -lh ~/rep/llm_wiki/raw/wechat/"$TITLE"/images/
+head -150 ~/rep/llm_wiki/raw/wechat/"$TITLE"/article.md
 ```
 
-Review the opening 100-150 lines with `sed -n '1,150p'` to catch obvious conversion artifacts such as missing section titles or multiple images on one line.
+Verify every Markdown image reference exists locally and the image count matches the downloaded file count.

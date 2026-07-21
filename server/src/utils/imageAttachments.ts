@@ -1,3 +1,5 @@
+import { existsSync } from 'node:fs';
+import path from 'node:path';
 import type { AgentMessageAttachment } from '../models/Agent.js';
 
 const IMAGE_EXTENSION = '(?:bmp|gif|ico|jpe?g|png|svg|webp)';
@@ -86,5 +88,46 @@ export function extractImageAttachments(value: unknown): AgentMessageAttachment[
   };
 
   visit(value, 0);
+  return attachments;
+}
+
+function isLocalRelativePath(source: string): boolean {
+  return !(/^(https?:|data:|blob:|file:|sandbox:)/i.test(source)) && !source.startsWith('/');
+}
+
+/**
+ * Resolve relative attachment paths to absolute using the agent's execution
+ * directory.  When the agent runs in a worktree, a `../` prefix escapes to
+ * `.agent-worktrees/` rather than the repo root.  Fall back to the main repo
+ * directory so gitignored assets (e.g. `raw/`) are still reachable.
+ */
+export function resolveAttachmentPaths(
+  attachments: AgentMessageAttachment[],
+  execDir: string,
+  repoDir?: string,
+): AgentMessageAttachment[] {
+  if (attachments.length === 0) return attachments;
+
+  for (const att of attachments) {
+    if (!isLocalRelativePath(att.source)) continue;
+
+    const resolved = path.resolve(execDir, att.source);
+    if (existsSync(resolved)) {
+      att.source = resolved;
+      continue;
+    }
+
+    if (repoDir && repoDir !== execDir) {
+      const fallback = path.resolve(repoDir, att.source);
+      if (existsSync(fallback)) {
+        att.source = fallback;
+        continue;
+      }
+    }
+
+    // Neither exists — keep the exec-dir resolved absolute path so the
+    // frontend doesn't need to guess worktree structure.
+    att.source = resolved;
+  }
   return attachments;
 }

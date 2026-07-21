@@ -289,17 +289,30 @@ export function agentRoutes(manager: AgentManager, store: AgentStore): Router {
         context ? `Conversation context:\n${context}` : '',
         `Side question:\n${question}`,
       ].filter(Boolean).join('\n\n');
-      const { stdout } = await execFileAsync(config.claudeBin, [
-        '-p', prompt,
-        '--output-format', 'json',
-        '--model', model,
-        '--tools', '',
-      ], {
-        cwd: manager.resolveExecutionDirectory(agent),
-        env: { ...process.env },
-        timeout: 180_000,
-        maxBuffer: 4 * 1024 * 1024,
-      });
+      let stdout: string;
+      try {
+        const result = await execFileAsync(config.claudeBin, [
+          '-p', prompt,
+          '--output-format', 'json',
+          '--model', model,
+          '--tools', '',
+        ], {
+          cwd: manager.resolveExecutionDirectory(agent),
+          env: { ...process.env },
+          timeout: 180_000,
+          maxBuffer: 4 * 1024 * 1024,
+        });
+        stdout = result.stdout;
+      } catch (execErr: unknown) {
+        const e = execErr as { stdout?: string; stderr?: string; message?: string };
+        if (e.stdout) {
+          stdout = e.stdout;
+        } else {
+          const detail = e.stderr || e.message || String(execErr);
+          res.status(502).json({ error: `Claude side question failed: ${detail}` });
+          return;
+        }
+      }
       const data = JSON.parse(stdout) as { result?: string; is_error?: boolean };
       if (data.is_error) {
         res.status(502).json({ error: data.result || 'Claude side question failed' });
@@ -307,7 +320,7 @@ export function agentRoutes(manager: AgentManager, store: AgentStore): Router {
       }
       res.json({ answer: data.result || '(no response)' });
     } catch (err) {
-      res.status(502).json({ error: `Failed to run side question through Claude: ${String(err)}` });
+      res.status(502).json({ error: `Failed to run side question: ${String(err)}` });
     }
   });
 

@@ -4,11 +4,11 @@ import { execSync } from 'child_process';
 import { readFileSync, readdirSync, existsSync, mkdirSync, writeFileSync, statSync, unlinkSync, copyFileSync } from 'fs';
 import path, { basename } from 'path';
 import os from 'os';
-import type { Agent, AgentConfig, AgentInteractionMode, AgentLogEntry, AgentMessage, AgentStatus, AgentWorkspaceMode, PendingQuestionItem, PendingQuestionOption, ReasoningEffort } from '../models/Agent.js';
+import type { Agent, AgentConfig, AgentInteractionMode, AgentLogEntry, AgentMessage, AgentMessageAttachment, AgentStatus, AgentWorkspaceMode, PendingQuestionItem, PendingQuestionOption, ReasoningEffort } from '../models/Agent.js';
 import type { AgentDelta, AgentInputInfo } from '@agent-monitor/shared';
 import { AgentStore } from '../store/AgentStore.js';
 import { AgentProcess, type StreamMessage } from './AgentProcess.js';
-import { extractImageAttachments } from '../utils/imageAttachments.js';
+import { extractImageAttachments, resolveAttachmentPaths } from '../utils/imageAttachments.js';
 import { WorktreeManager } from './WorktreeManager.js';
 import { EmailNotifier } from './EmailNotifier.js';
 import { WhatsAppNotifier } from './WhatsAppNotifier.js';
@@ -634,6 +634,12 @@ export class AgentManager extends EventEmitter {
     }
   }
 
+  private resolveAgentAttachments(agent: Agent, attachments: AgentMessageAttachment[]): AgentMessageAttachment[] {
+    const execDir = this.resolveExecutionDirectory(agent);
+    const repoDir = normalizeUserPath(agent.config.directory);
+    return resolveAttachmentPaths(attachments, execDir, repoDir !== execDir ? repoDir : undefined);
+  }
+
   resolveExecutionDirectory(agent: Agent): string {
     const configuredDirectory = normalizeUserPath(agent.config.directory);
     if (agent.worktreePath && existsSync(agent.worktreePath)) {
@@ -925,7 +931,7 @@ export class AgentManager extends EventEmitter {
             });
             this.captureInteractiveTool(agent, block, toolMessageId);
           } else {
-            const attachments = extractImageAttachments(block);
+            const attachments = this.resolveAgentAttachments(agent, extractImageAttachments(block));
             if (attachments.length > 0) {
               agent.messages.push({
                 id: uuid(),
@@ -974,7 +980,7 @@ export class AgentManager extends EventEmitter {
             let resultText = '';
             if (toolResult?.stdout) resultText = toolResult.stdout;
             else if (typeof block.content === 'string') resultText = block.content;
-            const attachments = extractImageAttachments([block.content, msg.tool_use_result]);
+            const attachments = this.resolveAgentAttachments(agent, extractImageAttachments([block.content, msg.tool_use_result]));
             if (resultText || attachments.length > 0) {
               // Attach result to the most recent matching tool message.
               const lastToolMsg = [...agent.messages].reverse().find(m => m.role === 'tool' && (!m.toolResult || attachments.length > 0));
@@ -1056,19 +1062,29 @@ export class AgentManager extends EventEmitter {
       if (isError) {
         const errors = (resultAny.errors as string[]) || [];
         const errText = errors.join('; ') || 'Claude returned an error result';
-        agent.messages.push({
-          id: uuid(),
-          role: 'system',
-          content: `[Error] ${errText}`,
-          timestamp: Date.now(),
-        });
-        // If session not found, clear the saved sessionId so next resume starts fresh
-        if (errors.some(e => e.includes('No conversation found'))) {
-          agent.sessionId = undefined;
-          delete agent.config.flags.resume;
+
+        // ede_diagnostic with stop_reason=end_turn is a benign CLI diagnostic
+        // (e.g. ExitPlanMode ending a turn with no content), not a real error.
+        const isDiagnostic = errors.every(e => /\bede_diagnostic\b/.test(e) && /\bstop_reason=end_turn\b/.test(e));
+        if (isDiagnostic) {
+          this.appendAgentLog(agent.id, { level: 'warn', source: 'stderr', stream: 'stderr', message: errText });
+          this.store.saveAgent(agent);
+          this.updateAgentStatus(agent.id, 'stopped');
+        } else {
+          agent.messages.push({
+            id: uuid(),
+            role: 'system',
+            content: `[Error] ${errText}`,
+            timestamp: Date.now(),
+          });
+          // If session not found, clear the saved sessionId so next resume starts fresh
+          if (errors.some(e => e.includes('No conversation found'))) {
+            agent.sessionId = undefined;
+            delete agent.config.flags.resume;
+          }
+          this.store.saveAgent(agent);
+          this.updateAgentStatus(agent.id, 'error');
         }
-        this.store.saveAgent(agent);
-        this.updateAgentStatus(agent.id, 'error');
       } else {
         this.addCompactTokenNotice(agent);
         this.updateAgentStatus(agent.id, 'stopped');
@@ -1200,7 +1216,7 @@ export class AgentManager extends EventEmitter {
     // Codex JSONL events: thread.started, turn.started, item.started, item.completed, turn.completed
     if (msg.type === 'item.completed' && msg.item) {
       const item = msg.item as Record<string, unknown>;
-      const attachments = extractImageAttachments(item.result ?? item.output ?? item);
+      const attachments = this.resolveAgentAttachments(agent, extractImageAttachments(item.result ?? item.output ?? item));
       if (msg.item.type === 'agent_message') {
         agent.messages.push({
           id: uuid(),

@@ -638,16 +638,24 @@ export function AgentChat() {
       if (e.key === 'ArrowDown') {
         e.preventDefault();
         setSelectedHint((s) => Math.min(s + 1, filtered.length - 1));
+        return;
       } else if (e.key === 'ArrowUp') {
         e.preventDefault();
         setSelectedHint((s) => Math.max(s - 1, 0));
+        return;
       } else if (e.key === 'Enter' || e.key === 'Tab') {
-        e.preventDefault();
         if (filtered[selectedHint]) {
+          e.preventDefault();
           handleSlashSelect(filtered[selectedHint].cmd);
+          return;
         }
+        setShowSlash(false);
+      } else if (e.key === 'Escape') {
+        setShowSlash(false);
+        return;
+      } else {
+        return;
       }
-      return;
     }
 
     // ArrowUp/ArrowDown: cycle through input history

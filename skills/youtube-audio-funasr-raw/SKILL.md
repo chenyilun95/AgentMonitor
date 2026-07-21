@@ -1,30 +1,62 @@
 ---
 name: youtube-audio-funasr-raw
-description: Archive YouTube talks into llm-wiki raw/ by downloading audio, transcribing with FunASR/SenseVoice, and optionally reconstructing interleaved slide notes from YouTube chapter screenshots, timed English captions, and detailed Chinese per-section notes. Use when processing YouTube speech, talks, podcasts, or slide videos into Markdown/HTML/PDF study notes.
+description: "Full pipeline for YouTube video talks: download audio/video → FunASR transcription → extract frames or chapter screenshots → generate wiki document with interleaved images. Use when archiving YouTube talks, podcasts, or slide videos into structured wiki articles."
 ---
 
 # YouTube Audio FunASR Raw
 
-## Audio Transcript Workflow
+## End-to-End Pipeline
 
-1. Resolve and download audio only:
+The complete workflow from YouTube URL to wiki document:
+
+1. **Download audio** (and optionally video for frame extraction)
+2. **Transcribe** audio with FunASR/SenseVoice
+3. **Extract frames** — either via chapter screenshots (preferred for talks with chapters) or regular-interval ffmpeg extraction
+4. **Generate wiki document** from transcript + frames (manual/LLM step)
+
+## Step 1: Download Audio
 
 ```bash
+# Linux — yt-dlp from system PATH or ~/.local/bin/yt-dlp
+python3 \
+  ~/.codex/skills/youtube-audio-funasr-raw/scripts/download_youtube_audio.py \
+  'https://www.youtube.com/watch?v=VIDEO_ID' \
+  --output-dir /tmp/youtube-audio
+
+# macOS
 /Users/ylchen/tmp/youtube-raw-venv/bin/python \
   ~/.codex/skills/youtube-audio-funasr-raw/scripts/download_youtube_audio.py \
   'https://www.youtube.com/watch?v=VIDEO_ID' \
   --output-dir /tmp/youtube-audio
 ```
 
-This writes:
+Output:
 
 - `audio.m4a`: extracted audio only
 - `youtube-info.json`: yt-dlp metadata
 - `source-metadata.json`: compact metadata for downstream transcription
 
-2. Transcribe with the local FunASR environment:
+To also download the video (needed for frame extraction without chapters):
 
 ```bash
+# Use the bilibili-youtube-video-download skill
+python ~/.claude/skills/bilibili-youtube-video-download/scripts/download_youtube_video.py \
+  'https://www.youtube.com/watch?v=VIDEO_ID' \
+  -o /tmp/youtube-audio/video.mp4
+```
+
+## Step 2: Transcribe with FunASR
+
+```bash
+# Linux
+/home/yilunchen/.venvs/funasr/bin/python \
+  ~/.codex/skills/youtube-audio-funasr-raw/scripts/transcribe_youtube_audio_to_raw.py \
+  --audio /tmp/youtube-audio/audio.m4a \
+  --metadata /tmp/youtube-audio/source-metadata.json \
+  --language zh \
+  --raw-root ~/rep/llm_wiki/raw
+
+# macOS
 /Users/ylchen/tmp/funasr-venv/bin/python \
   ~/.codex/skills/youtube-audio-funasr-raw/scripts/transcribe_youtube_audio_to_raw.py \
   --audio /tmp/youtube-audio/audio.m4a \
@@ -33,7 +65,7 @@ This writes:
   --raw-root ~/rep/llm-wiki/raw
 ```
 
-3. Verify the output directory contains:
+Output in `raw/youtube/<title>/`:
 
 - `audio.m4a`: copied source audio
 - `transcript.md`: readable Markdown transcript grouped by chunk offset
@@ -41,68 +73,129 @@ This writes:
 - `transcript.json`: structured raw FunASR results and per-chunk metadata
 - `metadata.json`: compact source/model metadata
 
-## Interleaved Slide Notes Workflow
+## Step 3: Extract Frames
 
-Use this when the YouTube video is a talk with visible slides or useful screen content. The script downloads a temporary low-resolution video only as a frame source, extracts representative images from chapter time ranges, downloads YouTube timed English captions, and writes graph-text interleaved notes.
+### Option A: Chapter Screenshots (preferred for talks with chapters)
 
-1. Build chapter screenshots and caption sections:
+Use when the YouTube video has chapters. Downloads a temporary low-res video, extracts representative frames per chapter, and downloads timed English captions.
 
 ```bash
+# Linux
+python3 \
+  ~/.codex/skills/youtube-audio-funasr-raw/scripts/build_youtube_slide_notes.py \
+  'https://www.youtube.com/watch?v=VIDEO_ID' \
+  --output-dir ~/rep/llm_wiki/raw/youtube/<title> \
+  --work-dir /tmp/youtube-slide-work \
+  --html --pdf
+
+# macOS
 /Users/ylchen/tmp/youtube-raw-venv/bin/python \
   ~/.codex/skills/youtube-audio-funasr-raw/scripts/build_youtube_slide_notes.py \
   'https://www.youtube.com/watch?v=VIDEO_ID' \
   --output-dir ~/rep/llm-wiki/raw/youtube/<title> \
   --work-dir /tmp/youtube-slide-work \
-  --html \
-  --pdf
+  --html --pdf
 ```
 
-This writes:
+Output:
 
-- `slides/chapter-*.png`: representative screenshots, interleaved by chapter
-- `youtube-info.json`: yt-dlp metadata
-- `youtube-captions-by-chapter.json`: chapter title, time range, English captions, and optional detailed Chinese note in `summary_zh`
-- `slide-notes.md`: Markdown with screenshots, detailed Chinese notes, and English captions
-- `slide-notes.html`: browser-readable notes when `--html` or `--pdf` is used
-- `slide-notes.pdf`: printable PDF when `--pdf` is used
+- `slides/chapter-*.png`: representative screenshots per chapter
+- `youtube-captions-by-chapter.json`: chapter title, time range, English captions
+- `slide-notes.md`: Markdown with screenshots and captions
+- `slide-notes.html` / `slide-notes.pdf`: browser-readable/printable versions
 
-2. Add detailed Chinese notes:
-
-After the first run, read `youtube-captions-by-chapter.json` and write a JSON file with detailed Chinese notes. Keep the filename `summaries-zh.json` for script compatibility, but the content should be detailed notes rather than short summaries:
+**Adding detailed Chinese notes**: After the first run, write a `summaries-zh.json`:
 
 ```json
 {
-  "1": "本节记录开场介绍、讲者身份、研究方向、主持人对机器人重要性的判断，以及现场如何引出主题。",
-  "2": "本节记录 DGX-1 的具体历史场景、Jensen 写给 OpenAI 的文字、Jim 和 Andrej 的签名细节，以及它如何连接到深度学习的几次能力跃迁。"
+  "1": "本节详细内容...",
+  "2": "本节详细内容..."
 }
 ```
 
-Then rerun the script with:
+Then rerun with `--summaries-json /tmp/youtube-slide-work/summaries-zh.json --html --pdf`.
+
+### Option B: Regular-Interval Frame Extraction (for videos without chapters)
+
+Extract one frame every 60 seconds from the downloaded video:
 
 ```bash
---summaries-json /tmp/youtube-slide-work/summaries-zh.json --html --pdf
+TITLE="Video Title"
+mkdir -p ~/rep/llm_wiki/raw/youtube/"$TITLE"/frames
+ffmpeg -y -i /tmp/youtube-audio/video.mp4 \
+  -vf "fps=1/60,scale=1280:-1" -q:v 3 \
+  ~/rep/llm_wiki/raw/youtube/"$TITLE"/frames/slide_%02d.jpg
 ```
 
-Write enough detail to preserve concepts, examples, numbers, named systems, jokes that carry meaning, and speaker claims. A good section note is usually one or more paragraphs or bullets, not a 1-3 sentence abstract. Preserve the English captions below the Chinese note so the note remains searchable against the original speech.
+Adjust `fps=1/60` for different intervals (`fps=1/30` = every 30s, `fps=1/120` = every 2min).
 
-3. Visual quality check:
+## Step 4: Generate Wiki Document
 
-Generate or inspect a contact sheet for `slides/*.png` before finalizing. The script selects chapter start, midpoint, and late frames by time; if a frame is a transition or blank, rerun with manual replacement by extracting a better timestamp with `ffmpeg -ss`.
+Create a structured wiki article under `wiki/talks/` based on the transcript and frames. Reference format: `wiki/talks/dyna-york-yang-interview.md`.
 
-## Defaults
+Structure:
 
+```markdown
+# Talk Title
+
+> **主讲人**：Name (Affiliation)
+> **主题**：Topic description
+> **时长**：约 Xmin
+> **来源**：[Source](URL)
+
+---
+
+## 核心论点
+One-paragraph summary of the main argument.
+
+---
+
+## 一、Section Title `[MM:SS-MM:SS]`
+
+![Description](../../raw/youtube/<title>/frames/slide_XX.jpg)
+
+Content from transcript, cleaned up and structured...
+
+---
+
+## 关键链接
+| 项目 | 链接 |
+|------|------|
+| ... | ... |
+
+#Tag1 #Tag2
+```
+
+Key guidelines:
+- Image paths: `../../raw/youtube/<title>/frames/slide_XX.jpg` (or `slides/chapter-XX.png` if using chapter screenshots)
+- Clean up ASR errors in technical terms
+- Add timestamp ranges to section headers
+- Include quantitative results in tables where possible
+- After creating wiki doc, add entry to `wiki/index.md`
+
+## Platform-Specific Defaults
+
+### Linux
+- yt-dlp: `~/.local/bin/yt-dlp` or system PATH
+- Python/FunASR: `/home/yilunchen/.venvs/funasr/bin/python`
+- ffmpeg/ffprobe: system PATH
+- Repo root: `~/rep/llm_wiki`
+
+### macOS
 - yt-dlp Python environment: `/Users/ylchen/tmp/youtube-raw-venv/bin/python`
-- Python/FunASR environment: `/Users/ylchen/tmp/funasr-venv/bin/python`
-- Model: `iic/SenseVoiceSmall`
-- VAD model: `fsmn-vad`
+- Python/FunASR: `/Users/ylchen/tmp/funasr-venv/bin/python`
 - ffmpeg: `/opt/homebrew/bin/ffmpeg`
 - ffprobe: `/opt/homebrew/bin/ffprobe`
-- Output root: `~/rep/llm-wiki/raw`
-- Output namespace: `youtube/<safe-title>/`
-- Chunk size: `600` seconds
-- Language: use `en` for English talks, `zh` for Chinese talks, or override explicitly
+- Repo root: `~/rep/llm-wiki`
 
-## Scripts
+### Common
+- ASR model: `iic/SenseVoiceSmall`
+- VAD model: `fsmn-vad`
+- Output namespace: `raw/youtube/<safe-title>/`
+- Chunk size: `600` seconds
+- Language: `en` for English talks, `zh` for Chinese talks
+
+## Script Reference
 
 ```bash
 python ~/.codex/skills/youtube-audio-funasr-raw/scripts/download_youtube_audio.py --help
@@ -110,36 +203,41 @@ python ~/.codex/skills/youtube-audio-funasr-raw/scripts/transcribe_youtube_audio
 python ~/.codex/skills/youtube-audio-funasr-raw/scripts/build_youtube_slide_notes.py --help
 ```
 
-Common options:
+Key options for `download_youtube_audio.py`:
 
-- `download_youtube_audio.py URL`: download audio only; when YouTube exposes only muxed media, download the smallest acceptable muxed format and immediately extract audio.
-- `--extractor-args ARGS`: pass yt-dlp extractor args, for example `youtube:player_client=android`.
-- `--format FORMAT`: pass yt-dlp format selection, for example `18` when audio-only formats require a PO token.
-- `--title TITLE`: override the raw output title while keeping YouTube metadata.
-- `--video-id ID`: override inferred video id.
-- `--metadata PATH`: pass `source-metadata.json` from the download step.
-- `--language LANG`: ASR language, commonly `en` or `zh`.
-- `--raw-root PATH`: defaults to `~/rep/llm-wiki/raw`.
-- `--output-dir PATH`: explicit output directory, overriding `raw-root/youtube/<safe-title>`.
-- `--chunk-seconds N`: defaults to `600`.
-- `--keep-chunks`: keep generated 16 kHz mono WAV chunks for debugging.
-- `build_youtube_slide_notes.py URL`: build graph-text interleaved notes from chapter frames and timed captions.
-- `--work-dir PATH`: temporary directory for downloaded video and captions.
-- `--summaries-json PATH`: insert detailed Chinese per-section notes into `slide-notes.md/html/pdf`.
-- `--html` / `--pdf`: generate HTML and PDF versions. PDF requires a local Chrome executable.
+- `URL`: YouTube video URL
+- `--output-dir PATH`: where to write downloaded files
+- `--extractor-args ARGS`: yt-dlp extractor args (e.g. `youtube:player_client=android`)
+- `--format FORMAT`: yt-dlp format selection (e.g. `18` for PO token issues)
+- `--title TITLE`: override output title
+
+Key options for `transcribe_youtube_audio_to_raw.py`:
+
+- `--audio PATH`: local audio file
+- `--metadata PATH`: `source-metadata.json` from download step
+- `--language LANG`: `en` or `zh`
+- `--raw-root PATH`: output root directory
+- `--chunk-seconds N`: defaults to `600`
+
+Key options for `build_youtube_slide_notes.py`:
+
+- `URL`: YouTube video URL
+- `--output-dir PATH`: where to write slide notes and screenshots
+- `--work-dir PATH`: temporary directory for downloaded video/captions
+- `--summaries-json PATH`: detailed Chinese per-section notes
+- `--html` / `--pdf`: generate browser-readable/printable versions
 
 ## Quality Checks
 
-After transcription, run:
+After transcription:
 
 ```bash
-ls -lh /tmp/youtube-audio
-python3 -m json.tool /tmp/youtube-audio/source-metadata.json
-ls -lh ~/rep/llm-wiki/raw/youtube/<title>
-wc -m ~/rep/llm-wiki/raw/youtube/<title>/transcript.txt
-sed -n '1,80p' ~/rep/llm-wiki/raw/youtube/<title>/transcript.md
+ls -lh ~/rep/llm_wiki/raw/youtube/<title>
+ls -lh ~/rep/llm_wiki/raw/youtube/<title>/frames/  # or slides/
+wc -m ~/rep/llm_wiki/raw/youtube/<title>/transcript.txt
+head -80 ~/rep/llm_wiki/raw/youtube/<title>/transcript.md
 ```
 
-SenseVoice may misspell names, acronyms, and robotics terms. Keep `transcript.json` for raw segment data and do a correction pass before publication.
+SenseVoice may misspell names, acronyms, and domain terms. Keep `transcript.json` for raw data and do a correction pass when generating wiki documents.
 
-For slide notes, verify that `slides/` images are meaningful and that detailed Chinese notes are aligned with the matching chapter. YouTube auto captions may be cleaner than local ASR for English timing, but still need terminology review.
+For slide notes, verify that `slides/` images are meaningful and aligned with the matching chapter. YouTube auto captions may be cleaner than local ASR for English timing.

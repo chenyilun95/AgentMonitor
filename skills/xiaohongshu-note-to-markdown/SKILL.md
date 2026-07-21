@@ -1,9 +1,16 @@
 ---
 name: xiaohongshu-note-to-markdown
-description: "Archive Xiaohongshu / 小红书 note URLs into local Markdown with extracted note text and downloaded media assets. Use when Codex needs to process xiaohongshu.com login/share/explore links, preserve video notes by capturing real mp4/m3u8 network requests behind blob playback URLs, reuse a local browser login profile, or optionally wait for the user to complete QR/SMS login verification."
+description: "Archive Xiaohongshu / 小红书 note URLs into local Markdown with extracted note text and downloaded media assets. Best for image/text notes. For video notes, prefer the xiaohongshu-audio-funasr-raw skill which uses greenvideo.cc to bypass login walls and provides the full video→transcript→frames→wiki pipeline."
 ---
 
 # Xiaohongshu Note to Markdown
+
+## When to Use Which Skill
+
+- **Image/text notes** (图文笔记): Use this skill. It captures rendered DOM text and images.
+- **Video notes** (视频笔记 / 直播回放): Use the `xiaohongshu-audio-funasr-raw` skill instead. It downloads video via greenvideo.cc (no login needed), transcribes audio, extracts frames, and produces structured wiki documents.
+
+This skill often hits login walls on video notes, resulting in wrong/missing images (login-wall screenshots instead of actual content). The audio-funasr skill avoids this entirely.
 
 ## Workflow
 
@@ -15,22 +22,37 @@ description: "Archive Xiaohongshu / 小红书 note URLs into local Markdown with
 
 ## Script
 
+**On Linux** (headless server), wrap with `xvfb-run` for headed browser mode:
+
+```bash
+# Find the Python with playwright installed (e.g. miniconda)
+PYTHON=$(which python3)  # or ~/miniconda3/bin/python
+
+xvfb-run $PYTHON ~/.codex/skills/xiaohongshu-note-to-markdown/scripts/xhs_note_to_markdown.py \
+  "https://www.xiaohongshu.com/explore/..." \
+  --output-dir /path/to/raw/xiaohongshu
+```
+
+**On macOS** (display available):
+
 ```bash
 python3 ~/.codex/skills/xiaohongshu-note-to-markdown/scripts/xhs_note_to_markdown.py \
   "https://www.xiaohongshu.com/explore/..." \
-  --output-dir /path/to/wiki/xiaohongshu
+  --output-dir /path/to/raw/xiaohongshu
 ```
 
 If the page is blocked by login:
 
 ```bash
-python3 ~/.codex/skills/xiaohongshu-note-to-markdown/scripts/xhs_note_to_markdown.py \
+# Add --interactive-login and let the user complete QR/SMS login in the browser
+# Use --login-timeout 300 if the user needs more time
+xvfb-run $PYTHON ~/.codex/skills/xiaohongshu-note-to-markdown/scripts/xhs_note_to_markdown.py \
   "https://www.xiaohongshu.com/explore/..." \
-  --output-dir /path/to/wiki/xiaohongshu \
+  --output-dir /path/to/raw/xiaohongshu \
   --interactive-login
 ```
 
-With `--interactive-login`, the script opens Chromium and waits while the user completes QR/SMS login in the browser. Do not request or paste account passwords, SMS codes, cookies, or tokens into Codex. Use `--login-timeout 300` if the user needs more time.
+Do not request or paste account passwords, SMS codes, cookies, or tokens.
 
 The default browser profile is `~/.cache/codex/xiaohongshu-playwright`. Override it with `--user-data-dir`.
 
@@ -43,6 +65,12 @@ python3 -m pip install --user playwright beautifulsoup4
 python3 -m playwright install chromium
 ```
 
+On Linux, also install xvfb for headed browser automation:
+
+```bash
+sudo apt-get install xvfb
+```
+
 ## Output
 
 The script writes:
@@ -53,8 +81,9 @@ The script writes:
 
 The Markdown contains source URL, note ID, author, note text, hashtags, local media links, and basic engagement/comment text when it is visible in the rendered page.
 
-## Practical Notes
+## Known Limitations
 
+- **Login wall on video notes**: Xiaohongshu frequently blocks video playback and full content access behind a login wall. Images captured from such pages are login-wall screenshots, not actual content frames. For video notes, use the `xiaohongshu-audio-funasr-raw` skill instead.
+- **xvfb-run required on Linux**: The Playwright script runs in headed mode. On headless Linux servers, `xvfb-run` provides a virtual display.
 - Some media URLs are signed and expire. Download immediately during the same browser session.
-- Some notes expose text without login but still show a login modal. If extraction quality is poor, rerun with `--interactive-login`.
-- Do not automate likes, comments, follows, posting, or other account actions in this skill. Keep the scope to user-directed archival of accessible notes.
+- Do not automate likes, comments, follows, posting, or other account actions. Keep the scope to user-directed archival of accessible notes.

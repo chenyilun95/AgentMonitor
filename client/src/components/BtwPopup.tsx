@@ -20,7 +20,7 @@ interface BtwPopupProps {
 export function BtwPopup({ btwState, onClose, onSubmit, btwInputRef, t }: BtwPopupProps) {
   return (
     <div className="modal-overlay" onClick={onClose}>
-      <div className="btw-popup" onClick={(e) => e.stopPropagation()} onKeyDown={(e) => {
+      <div className="btw-popup" tabIndex={-1} ref={(el) => { if (el && btwState.status !== 'input') el.focus(); }} onClick={(e) => e.stopPropagation()} onKeyDown={(e) => {
         if (e.key === 'Escape') onClose();
       }}>
         <div className="btw-popup-header">
