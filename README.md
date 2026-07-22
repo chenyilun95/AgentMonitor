@@ -15,8 +15,6 @@ Choose a project → start or discover an agent → chat / terminal / files
                  → review its state and changes → resume, clone, or orchestrate more agents
 ```
 
-![Agent Monitor dashboard](docs/screenshots/dashboard.png)
-
 ## What the application contains
 
 The top-level navigation reflects the current product structure.
@@ -55,8 +53,6 @@ The session page also handles the interaction patterns that autonomous agents ne
 - optional restoration of both conversation and Git snapshot for isolated worktrees;
 - editing the active provider instruction file without recreating the agent.
 
-![Agent chat](docs/screenshots/agent-chat.png)
-
 ### Direct edit and isolated worktrees
 
 Every monitor-created agent uses one of two workspace modes:
@@ -76,8 +72,6 @@ The Agent Team Panel offers two orchestration styles:
 - **Harness Mode** — give the system a goal and optional evaluation criteria. A planner decomposes the work, generator agents execute it, and evaluator agents accept it or request revisions up to a configured limit.
 
 Pipeline agents use the same providers, directories, instruction templates, status model, and session UI as individually created agents.
-
-![Agent team pipeline](docs/screenshots/pipeline.png)
 
 ## Feature summary
 

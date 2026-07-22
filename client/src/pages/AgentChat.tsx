@@ -43,6 +43,7 @@ export function AgentChat() {
   const [expandedTools, setExpandedTools] = useState<Set<string>>(new Set());
   const [showTerminal, setShowTerminal] = useState(false);
   const [showFiles, setShowFiles] = useState(false);
+  const [targetFilePath, setTargetFilePath] = useState<string | null>(null);
   const [renderMarkdown, setRenderMarkdown] = useState(() => localStorage.getItem('agentmonitor-markdown') !== 'false');
   const messagesContainerRef = useRef<HTMLDivElement>(null);
   const messagesEndRef = useRef<HTMLDivElement>(null);
@@ -774,6 +775,11 @@ export function AgentChat() {
   const isPlanMode = interactionMode === 'plan';
   const displayMessages = [...agent.messages, ...localMessages].sort((a, b) => a.timestamp - b.timestamp);
   const workspacePath = agent.worktreePath || agent.config.directory;
+  const openWorkspaceMarkdownFile = (markdownPath: string) => {
+    setTargetFilePath(markdownPath);
+    setShowTerminal(false);
+    setShowFiles(true);
+  };
   const chatMessageGroups = displayMessages.reduce<ChatMessageGroup[]>((groups, msg) => {
     if (msg.role === 'user' || groups.length === 0) {
       groups.push({ id: `turn-${msg.id}`, messages: [msg] });
@@ -908,7 +914,10 @@ export function AgentChat() {
             onClick={() => {
               setShowFiles(prev => {
                 const next = !prev;
-                if (next) setShowTerminal(false);
+                if (next) {
+                  setTargetFilePath(null);
+                  setShowTerminal(false);
+                }
                 return next;
               });
             }}
@@ -954,7 +963,11 @@ export function AgentChat() {
       </div>
 
       {id && <TerminalView agentId={id} visible={showTerminal} resumeCommand={buildResumeCommand(agent, runtimeCapabilities)} />}
-      <FileBrowserView rootPath={agent.worktreePath || agent.config.directory} visible={showFiles} />
+      <FileBrowserView
+        rootPath={workspacePath}
+        visible={showFiles}
+        targetFilePath={targetFilePath}
+      />
       <div ref={messagesContainerRef} className="chat-messages" style={{ display: showTerminal || showFiles ? 'none' : undefined }}>
         {chatMessageGroups.map((group) => (
           <div key={group.id} className="chat-turn">
@@ -1003,7 +1016,12 @@ export function AgentChat() {
                     </>
                   ) : (
                     renderMarkdown && msg.role === 'assistant'
-                      ? <ChatMarkdown content={msg.content} workspacePath={workspacePath} />
+                      ? <ChatMarkdown
+                          content={msg.content}
+                          workspacePath={workspacePath}
+                          configuredRoot={agent.config.directory}
+                          onOpenMarkdownFile={openWorkspaceMarkdownFile}
+                        />
                       : msg.content
                   )}
                   {'attachments' in msg && msg.attachments?.map((attachment, index) => {

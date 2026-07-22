@@ -1,5 +1,5 @@
-import { render } from '@testing-library/react';
-import { describe, expect, it } from 'vitest';
+import { fireEvent, render } from '@testing-library/react';
+import { describe, expect, it, vi } from 'vitest';
 import { ChatMarkdown } from '../src/components/ChatMarkdown';
 
 describe('ChatMarkdown', () => {
@@ -21,5 +21,34 @@ describe('ChatMarkdown', () => {
     );
 
     expect(getByRole('table')).toBeInTheDocument();
+  });
+
+  it('opens Markdown links in the workspace file browser', () => {
+    const onOpenMarkdownFile = vi.fn();
+    const { getByRole } = render(
+      <ChatMarkdown
+        content="[README](/repo/README.md)"
+        workspacePath="/tmp/worktree"
+        configuredRoot="/repo"
+        onOpenMarkdownFile={onOpenMarkdownFile}
+      />,
+    );
+
+    fireEvent.click(getByRole('link', { name: 'README' }));
+    expect(onOpenMarkdownFile).toHaveBeenCalledWith('/tmp/worktree/README.md');
+  });
+
+  it('opens inline Markdown file references from the keyboard', () => {
+    const onOpenMarkdownFile = vi.fn();
+    const { getByRole } = render(
+      <ChatMarkdown
+        content="`docs/guide.md`"
+        workspacePath="/tmp/worktree"
+        onOpenMarkdownFile={onOpenMarkdownFile}
+      />,
+    );
+
+    fireEvent.keyDown(getByRole('link'), { key: 'Enter' });
+    expect(onOpenMarkdownFile).toHaveBeenCalledWith('/tmp/worktree/docs/guide.md');
   });
 });

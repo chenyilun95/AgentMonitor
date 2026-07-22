@@ -84,6 +84,17 @@
   padding: 2px 5px;
   border-radius: 3px;
 }
+.chat-message.assistant .chat-file-link {
+  color: var(--primary);
+  cursor: pointer;
+  text-decoration: underline;
+  text-decoration-style: dotted;
+  text-underline-offset: 3px;
+}
+.chat-message.assistant .chat-file-link:hover {
+  color: var(--primary-hover);
+  text-decoration-style: solid;
+}
 .chat-message.assistant ul,
 .chat-message.assistant ol {
   margin: 4px 0;

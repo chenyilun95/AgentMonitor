@@ -97,4 +97,45 @@ describe('FileBrowserView', () => {
       expect(screen.getByText('File type is not previewable: image.png')).toBeInTheDocument();
     });
   });
+
+  it('opens a requested Markdown file and switches to its directory', async () => {
+    const fetchMock = vi.fn(async (url: string) => {
+      if (url.startsWith('/api/directories/file')) {
+        return jsonResponse({
+          path: '/repo/docs/guide.md',
+          name: 'guide.md',
+          extension: '.md',
+          size: 7,
+          mtime: 1,
+          content: '# Guide',
+          truncated: false,
+          language: 'markdown',
+          isMarkdown: true,
+        });
+      }
+
+      return jsonResponse({
+        path: '/repo/docs',
+        parent: '/repo',
+        entries: [
+          { name: 'guide.md', path: '/repo/docs/guide.md', isDirectory: false, size: 7, isTextPreviewable: true },
+        ],
+      });
+    });
+    vi.stubGlobal('fetch', fetchMock);
+
+    render(<FileBrowserView rootPath="/repo" visible targetFilePath="/repo/docs/guide.md" />);
+
+    await waitFor(() => {
+      expect(screen.getByRole('heading', { name: 'Guide' })).toBeInTheDocument();
+    });
+    expect(fetchMock).toHaveBeenCalledWith(
+      '/api/directories?path=%2Frepo%2Fdocs',
+      expect.anything(),
+    );
+    expect(fetchMock).toHaveBeenCalledWith(
+      '/api/directories/file?path=%2Frepo%2Fdocs%2Fguide.md',
+      expect.anything(),
+    );
+  });
 });

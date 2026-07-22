@@ -15,8 +15,6 @@ Agent Monitor 是一个本地优先的 **Claude Code** 与 **Codex** 工作台�
          → 查看状态与改动 → 恢复、克隆，或继续编排更多 Agent
 ```
 
-![Agent Monitor 仪表盘](docs/screenshots/dashboard.png)
-
 ## 当前产品结构
 
 顶部导航就是当前产品的信息架构。
@@ -55,8 +53,6 @@ Agent Monitor 是一个本地优先的 **Claude Code** 与 **Codex** 工作台�
 - 在隔离 worktree 中选择性恢复对话和 Git 快照；
 - 无需重建 Agent 即可编辑当前 Provider 的指令文件。
 
-![Agent 对话](docs/screenshots/agent-chat.png)
-
 ### Direct Edit 与隔离 Worktree
 
 每个由 Agent Monitor 创建的 Agent 都使用以下一种工作区模式：
@@ -76,8 +72,6 @@ Agent Team Panel 提供两种编排方式：
 - **Harness Mode**：输入目标和可选验收标准；Planner 拆解任务，Generator 执行，Evaluator 验收或要求修订，直到通过或达到修订上限。
 
 流水线 Agent 与单独创建的 Agent 共用 Provider、目录、指令模板、状态模型和会话页面。
-
-![Agent Team 流水线](docs/screenshots/pipeline.png)
 
 ## 功能概览
 

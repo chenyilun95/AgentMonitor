@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
 import { api, type DirListing, type FilePreview } from '../api/client';
@@ -7,6 +7,7 @@ import { resolveImageSource } from '../lib/imageSources';
 interface FileBrowserViewProps {
   rootPath: string;
   visible: boolean;
+  targetFilePath?: string | null;
 }
 
 function formatBytes(size?: number): string {
@@ -30,13 +31,14 @@ function resolveMarkdownAsset(markdownPath: string, src?: string): string | unde
   return resolveImageSource(dirname(markdownPath), src);
 }
 
-export function FileBrowserView({ rootPath, visible }: FileBrowserViewProps) {
+export function FileBrowserView({ rootPath, visible, targetFilePath }: FileBrowserViewProps) {
   const [listing, setListing] = useState<DirListing | null>(null);
   const [currentPath, setCurrentPath] = useState(rootPath);
   const [preview, setPreview] = useState<FilePreview | null>(null);
   const [loadingList, setLoadingList] = useState(false);
   const [loadingFile, setLoadingFile] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const listRequestRef = useRef(0);
   const [viewMode, setViewMode] = useState<'preview' | 'raw'>(() =>
     localStorage.getItem('agentmonitor-file-view-mode') === 'raw' ? 'raw' : 'preview',
   );
@@ -48,16 +50,19 @@ export function FileBrowserView({ rootPath, visible }: FileBrowserViewProps) {
   }, [rootPath]);
 
   const loadDirectory = useCallback(async (dirPath: string) => {
+    const requestId = ++listRequestRef.current;
     setLoadingList(true);
     setError(null);
     try {
       const next = await api.listDirectory(dirPath);
+      if (requestId !== listRequestRef.current) return;
       setListing(next);
       setCurrentPath(next.path);
     } catch (err) {
+      if (requestId !== listRequestRef.current) return;
       setError(err instanceof Error ? err.message : String(err));
     } finally {
-      setLoadingList(false);
+      if (requestId === listRequestRef.current) setLoadingList(false);
     }
   }, []);
 
@@ -79,6 +84,14 @@ export function FileBrowserView({ rootPath, visible }: FileBrowserViewProps) {
       setLoadingFile(false);
     }
   }, []);
+
+  useEffect(() => {
+    if (!visible || !targetFilePath) return;
+    const targetDirectory = dirname(targetFilePath);
+    setCurrentPath(targetDirectory);
+    void loadDirectory(targetDirectory);
+    void openFile(targetFilePath);
+  }, [loadDirectory, openFile, targetFilePath, visible]);
 
   const sortedEntries = useMemo(() => listing?.entries || [], [listing]);
 
