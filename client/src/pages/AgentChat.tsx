@@ -9,6 +9,7 @@ import { PendingQuestionBanner } from '../components/PendingQuestionBanner';
 import { HistoryPicker } from '../components/HistoryPicker';
 import { BtwPopup } from '../components/BtwPopup';
 import { ChatMarkdown } from '../components/ChatMarkdown';
+import { ChatImage } from '../components/ChatImage';
 import { getAgentStatusClass, getAgentStatusLabel } from '../lib/agentStatus';
 import { buildCommitPrompt, buildMergeToBasePrompt, buildUpdateFromBasePrompt } from '../lib/commitPrompt';
 import { buildResumeCommand } from '../lib/resumeCommand';
@@ -1026,22 +1027,12 @@ export function AgentChat() {
                   )}
                   {'attachments' in msg && msg.attachments?.map((attachment, index) => {
                     const src = resolveImageSource(workspacePath, attachment.source);
-                    return src ? (
-                      <a
-                        className="chat-image-link"
-                        href={src}
-                        target="_blank"
-                        rel="noreferrer"
-                        key={`${attachment.source}-${index}`}
-                      >
-                        <img
-                          className="chat-image"
-                          src={src}
-                          alt={attachment.name || 'Agent output image'}
-                          loading="lazy"
-                        />
-                      </a>
-                    ) : null;
+                    return src ? <ChatImage
+                      key={`${attachment.source}-${index}`}
+                      src={src}
+                      alt={attachment.name || 'Agent output image'}
+                      linked
+                    /> : null;
                   })}
                 </div>
               );

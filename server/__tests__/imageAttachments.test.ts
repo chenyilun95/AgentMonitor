@@ -13,6 +13,19 @@ describe('extractImageAttachments', () => {
     ]);
   });
 
+  it('does not treat README and search output as generated image attachments', () => {
+    expect(extractImageAttachments([
+      '# Docs\n\n![Dashboard](docs/screenshots/dashboard.png)',
+      'README.md:18:![Dashboard](docs/screenshots/dashboard.png)',
+      'const fixture = "/repo/image.png";',
+    ])).toEqual([]);
+  });
+
+  it('does not scan large command output containing image references', () => {
+    const output = `Generated report\n${'source line\n'.repeat(500)}![Result](artifacts/result.png)`;
+    expect(extractImageAttachments(output)).toEqual([]);
+  });
+
   it('extracts Anthropic base64 image blocks', () => {
     expect(extractImageAttachments({
       type: 'image',

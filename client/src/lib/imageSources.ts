@@ -19,6 +19,7 @@ function normalizePath(filePath: string): string {
 /** Convert an agent-visible local image path into the authenticated asset route. */
 export function resolveImageSource(workspacePath: string, source?: string): string | undefined {
   if (!source) return source;
+  if (source.length > 4_096 || /[\r\n]/.test(source) || source.includes('\\n')) return undefined;
   if (isBrowserImageSource(source)) return source;
 
   let localSource = source.split(/[?#]/, 1)[0];

@@ -5,6 +5,7 @@ import remarkMath from 'remark-math';
 import 'katex/dist/katex.min.css';
 import { resolveImageSource } from '../lib/imageSources';
 import { resolveWorkspaceMarkdownLink } from '../lib/markdownFileLinks';
+import { ChatImage } from './ChatImage';
 
 interface ChatMarkdownProps {
   content: string;
@@ -73,15 +74,10 @@ export function ChatMarkdown({
             </code>
           );
         },
-        img: ({ src, alt, title }) => (
-          <img
-            className="chat-image"
-            src={resolveImageSource(workspacePath, src)}
-            alt={alt || ''}
-            title={title}
-            loading="lazy"
-          />
-        ),
+        img: ({ src, alt, title }) => {
+          const resolved = resolveImageSource(workspacePath, src);
+          return resolved ? <ChatImage src={resolved} alt={alt || ''} title={title} /> : null;
+        },
       }}
     >
       {content}

@@ -24,4 +24,9 @@ describe('resolveImageSource', () => {
       '/api/directories/asset?path=%2Frepo%2Fworktree%2Foutput%2Fchart.svg',
     );
   });
+
+  it('rejects serialized output and implausibly large image sources', () => {
+    expect(resolveImageSource('/repo', '/repo/image.png\\nREADME.md\\ndocs/demo.gif')).toBeUndefined();
+    expect(resolveImageSource('/repo', `https://example.com/image.png?${'x'.repeat(4_100)}`)).toBeUndefined();
+  });
 });

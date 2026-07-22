@@ -8,6 +8,8 @@ const LOCAL_IMAGE_PATH_RE = new RegExp(`(?<![A-Za-z0-9._-])(?:file:\\/\\/|sandbo
 const REMOTE_IMAGE_URL_RE = new RegExp(`https?:\\/\\/[^\\s"'<>]+?\\.${IMAGE_EXTENSION}(?:[?#][^\\s"'<>]*)?`, 'gi');
 const MARKDOWN_IMAGE_RE = /!\[[^\]]*\]\((?:<)?([^)>\s]+)(?:>)?(?:\s+["'][^"']*["'])?\)/gi;
 const MAX_DATA_URL_LENGTH = 15 * 1024 * 1024;
+const MAX_SCANNABLE_TEXT_LENGTH = 4_096;
+const IMAGE_OUTPUT_HINT_RE = /\b(?:created|generated|saved|wrote|written)\b|\b(?:image|output|screenshot)\s+(?:at|file|path|to)\b|(?:生成|保存)|(?:输出|图片|截图)(?:文件|路径|位于)/i;
 
 function asRecord(value: unknown): Record<string, unknown> | undefined {
   return typeof value === 'object' && value !== null ? value as Record<string, unknown> : undefined;
@@ -41,7 +43,17 @@ export function extractImageAttachments(value: unknown): AgentMessageAttachment[
       add(text);
       return;
     }
-    if (FULL_IMAGE_SOURCE_RE.test(text)) add(text);
+    const trimmed = text.trim();
+    if (FULL_IMAGE_SOURCE_RE.test(trimmed)) {
+      add(trimmed);
+      return;
+    }
+
+    // Command output often contains source code, README content, grep results,
+    // or serialized JSON with image-looking paths. Treat those as text unless
+    // the concise output explicitly says that an image was produced.
+    if (text.length > MAX_SCANNABLE_TEXT_LENGTH || !IMAGE_OUTPUT_HINT_RE.test(text)) return;
+
     for (const match of text.matchAll(MARKDOWN_IMAGE_RE)) add(match[1]);
     for (const match of text.matchAll(REMOTE_IMAGE_URL_RE)) add(match[0]);
     const withoutRemoteUrls = text.replace(REMOTE_IMAGE_URL_RE, '');
