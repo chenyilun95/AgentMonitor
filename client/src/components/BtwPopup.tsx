@@ -1,4 +1,4 @@
-import type { RefObject } from 'react';
+import type { MutableRefObject } from 'react';
 import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
 
@@ -13,7 +13,7 @@ interface BtwPopupProps {
   btwState: BtwState;
   onClose: () => void;
   onSubmit: (question: string) => void;
-  btwInputRef: RefObject<HTMLTextAreaElement | null>;
+  btwInputRef: MutableRefObject<HTMLTextAreaElement | null>;
   t: (key: string) => string;
 }
 
@@ -30,7 +30,9 @@ export function BtwPopup({ btwState, onClose, onSubmit, btwInputRef, t }: BtwPop
         {btwState.status === 'input' && (
           <div className="btw-popup-body">
             <textarea
-              ref={btwInputRef}
+              ref={(element) => {
+                btwInputRef.current = element;
+              }}
               className="btw-input"
               placeholder={t('chat.slashBtw')}
               rows={2}
