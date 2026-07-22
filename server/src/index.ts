@@ -153,7 +153,7 @@ export function createApp() {
   app.use('/api/external', externalRoutes(externalScanner));
   app.use('/api/templates', templateRoutes(store));
   app.use('/api/sessions', sessionRoutes());
-  app.use('/api/directories', directoryRoutes());
+  app.use('/api/directories', directoryRoutes(store));
   app.use('/api/tasks', taskRoutes(store, agentManagerPipeline, manager, harnessOrchestrator));
   app.use('/api/settings', settingsRoutes(store));
   app.use('/api/upload-image', uploadRoutes());

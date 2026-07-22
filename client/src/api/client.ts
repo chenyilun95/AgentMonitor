@@ -2,6 +2,7 @@ import type {
   AgentClientView,
   AgentFlags,
   AgentInteractionMode,
+  AgentQueuedMessage,
   AgentManagerConfig,
   AgentProvider,
   AgentWorkspaceMode,
@@ -128,11 +129,19 @@ export const api = {
       method: 'DELETE',
       body: opts ? JSON.stringify(opts) : undefined,
     }),
-  sendMessage: (id: string, text: string) =>
-    request('/agents/' + id + '/message', {
+  sendMessage: (id: string, text: string, queueMessageId?: string) =>
+    request<{ ok: boolean; disposition: 'started' | 'queued'; queuedMessage?: AgentQueuedMessage; agent: AgentClientView }>('/agents/' + id + '/message', {
       method: 'POST',
-      body: JSON.stringify({ text }),
+      body: JSON.stringify({ text, queueMessageId }),
     }),
+  cancelQueuedMessage: (id: string, messageId: string) =>
+    request<AgentClientView>(`/agents/${id}/queue/${messageId}`, { method: 'DELETE' }),
+  resumeQueuedMessages: (id: string) =>
+    request<AgentClientView>(`/agents/${id}/queue/resume`, { method: 'POST' }),
+  updateWorktree: (id: string) =>
+    request<AgentClientView>(`/agents/${id}/worktree/update`, { method: 'POST' }),
+  mergeWorktree: (id: string) =>
+    request<AgentClientView>(`/agents/${id}/worktree/merge`, { method: 'POST' }),
   updateInteractionMode: (id: string, mode: AgentInteractionMode) =>
     request<AgentClientView>('/agents/' + id + '/interaction-mode', {
       method: 'PUT',
@@ -241,6 +250,24 @@ export const api = {
     ),
   validateDirectory: (path: string) =>
     request<{ exists: boolean; path?: string }>(`/directories/validate?path=${encodeURIComponent(path)}`),
+  getSavedDirectories: () => request<{ paths: string[] }>('/directories/saved'),
+  saveDirectory: (path: string) =>
+    request<{ path: string }>('/directories/saved', {
+      method: 'POST',
+      body: JSON.stringify({ path }),
+    }),
+  deleteSavedDirectory: (path: string) =>
+    request<{ ok: boolean }>(`/directories/saved?path=${encodeURIComponent(path)}`, { method: 'DELETE' }),
+  getDirectoryGitInfo: (path: string) =>
+    request<{ isGit: boolean; root?: string; branch?: string; upstream?: string }>(`/directories/git-info?path=${encodeURIComponent(path)}`),
+  pullDirectory: (path: string) =>
+    request<{ ok: boolean; info: { isGit: boolean; root?: string; branch?: string; upstream?: string } }>('/directories/git-pull', {
+      method: 'POST', body: JSON.stringify({ path }),
+    }),
+  pushDirectory: (path: string) =>
+    request<{ ok: boolean; info: { isGit: boolean; root?: string; branch?: string; upstream?: string } }>('/directories/git-push', {
+      method: 'POST', body: JSON.stringify({ path }),
+    }),
 
   // Pipeline Tasks
   getTasks: () => request<PipelineTask[]>('/tasks'),

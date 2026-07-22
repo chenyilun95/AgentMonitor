@@ -118,6 +118,41 @@ describe('AgentManager restoreConversation', () => {
     expect(startProcessSpy).toHaveBeenCalledOnce();
   });
 
+  it('marks a previously merged worktree as pending when a new turn starts', () => {
+    const agent: Agent = {
+      id: 'agent-new-work-after-merge',
+      name: 'Merged Worktree',
+      status: 'stopped',
+      config: { provider: 'codex', directory: tmpDir, prompt: 'old prompt', flags: {} },
+      worktreePath: tmpDir,
+      worktreeBranch: 'agent-test',
+      workspaceMode: 'worktree',
+      worktreeMerged: true,
+      messages: [],
+      lastActivity: 1,
+      createdAt: 1,
+    };
+    store.saveAgent(agent);
+    vi.spyOn(manager as unknown as { startProcess: (agent: Agent) => void }, 'startProcess').mockImplementation(() => {});
+
+    manager.sendMessage(agent.id, 'new work');
+
+    expect(store.getAgent(agent.id)?.worktreeMerged).toBe(false);
+  });
+
+  it('rejects worktree mode for a non-Git directory instead of editing it directly', async () => {
+    await expect(manager.createAgent('Non Git Worktree', {
+      provider: 'codex',
+      directory: tmpDir,
+      prompt: 'do work',
+      claudeMd: '# Internal instructions',
+      flags: {},
+    }, undefined, { workspaceMode: 'worktree' })).rejects.toThrow('requires an existing Git repository');
+
+    expect(fs.existsSync(path.join(tmpDir, 'AGENTS.md'))).toBe(false);
+    expect(store.getAllAgents()).toHaveLength(0);
+  });
+
   it('reuses the saved session id when resuming a stopped codex agent', () => {
     const agent: Agent = {
       id: 'agent-codex-resume',
@@ -202,17 +237,55 @@ describe('AgentManager restoreConversation', () => {
     const startProcessSpy = vi.spyOn(manager as unknown as { startProcess: (agent: Agent) => void }, 'startProcess')
       .mockImplementation(() => {});
 
-    manager.sendMessage(agent.id, 'follow-up while busy');
+    const result = manager.sendMessage(agent.id, 'follow-up while busy', 'client-stable-id');
 
     expect(sendMessage).not.toHaveBeenCalled();
-    expect(store.getAgent(agent.id)?.messages.at(-1)?.content).toBe('[Queued] "follow-up while busy"');
+    expect(result?.disposition).toBe('queued');
+    expect(result?.queuedMessage?.id).toBe('client-stable-id');
+    expect(store.getAgent(agent.id)?.messages.at(-1)?.content).toBe('current prompt');
+    expect(store.getAgent(agent.id)?.queuedMessages).toEqual([
+      expect.objectContaining({ id: result?.queuedMessage?.id, text: 'follow-up while busy' }),
+    ]);
 
     (manager as unknown as { startNextQueuedMessage: (agentId: string) => void }).startNextQueuedMessage(agent.id);
 
     const saved = store.getAgent(agent.id);
     expect(saved?.config.prompt).toBe('follow-up while busy');
+    expect(saved?.queuedMessages).toEqual([]);
     expect(saved?.config.flags.resume).toBe(agent.sessionId);
     expect(startProcessSpy).toHaveBeenCalledOnce();
+  });
+
+  it('pauses persisted queue messages after a server restart until explicitly resumed', () => {
+    const agent: Agent = {
+      id: 'agent-restart-queue',
+      name: 'Restart Queue Test',
+      status: 'running',
+      config: { provider: 'codex', directory: tmpDir, prompt: 'active turn', flags: {} },
+      messages: [{ id: 'u1', role: 'user', content: 'active turn', timestamp: 1 }],
+      queuedMessages: [{ id: 'q1', text: 'next turn', createdAt: 2 }],
+      lastActivity: 2,
+      createdAt: 1,
+    };
+    store.saveAgent(agent);
+
+    const restartedManager = new AgentManager(store);
+    const restartedInterval = (restartedManager as unknown as { stuckCheckInterval?: ReturnType<typeof setInterval> }).stuckCheckInterval;
+    const savedAfterRestart = store.getAgent(agent.id);
+    expect(savedAfterRestart?.status).toBe('stopped');
+    expect(savedAfterRestart?.queuePaused).toBe(true);
+    expect(savedAfterRestart?.queuedMessages?.map(message => message.text)).toEqual(['next turn']);
+    expect(savedAfterRestart?.messages.at(-1)?.content).toContain('server restarted');
+
+    const startProcessSpy = vi.spyOn(restartedManager as unknown as { startProcess: (agent: Agent) => void }, 'startProcess')
+      .mockImplementation(() => {});
+    restartedManager.resumeQueuedMessages(agent.id);
+
+    expect(store.getAgent(agent.id)?.queuePaused).toBe(false);
+    expect(store.getAgent(agent.id)?.queuedMessages).toEqual([]);
+    expect(store.getAgent(agent.id)?.messages.at(-1)?.content).toBe('next turn');
+    expect(startProcessSpy).toHaveBeenCalledOnce();
+    if (restartedInterval) clearInterval(restartedInterval);
   });
 
   it('restarts a waiting Codex process instead of writing to its closed stdin', () => {

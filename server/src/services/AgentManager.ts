@@ -4,7 +4,7 @@ import { execSync } from 'child_process';
 import { readFileSync, readdirSync, existsSync, mkdirSync, writeFileSync, statSync, unlinkSync, copyFileSync } from 'fs';
 import path, { basename } from 'path';
 import os from 'os';
-import type { Agent, AgentConfig, AgentInteractionMode, AgentLogEntry, AgentMessage, AgentMessageAttachment, AgentStatus, AgentWorkspaceMode, PendingQuestionItem, PendingQuestionOption, ReasoningEffort } from '../models/Agent.js';
+import type { Agent, AgentConfig, AgentInteractionMode, AgentLogEntry, AgentMessage, AgentMessageAttachment, AgentQueuedMessage, AgentStatus, AgentWorkspaceMode, PendingQuestionItem, PendingQuestionOption, ReasoningEffort } from '../models/Agent.js';
 import type { AgentDelta, AgentInputInfo } from '@agent-monitor/shared';
 import { AgentStore } from '../store/AgentStore.js';
 import { AgentProcess, type StreamMessage } from './AgentProcess.js';
@@ -15,9 +15,9 @@ import { WhatsAppNotifier } from './WhatsAppNotifier.js';
 import { SlackNotifier } from './SlackNotifier.js';
 import { FeishuNotifier } from './FeishuNotifier.js';
 import { SkillManager } from './SkillManager.js';
-import { getInstructionFileName } from '../utils/instructionFiles.js';
 import { normalizeUserPath, portableUserPath } from '../utils/pathUtils.js';
 import { classifyCodexStderr, normalizeStoredCodexStderr } from '../utils/codexStderr.js';
+import { getGitDirectoryInfo, mergeWorktree, updateWorktree } from './GitOperations.js';
 
 /** How long (ms) after a user message with no response before we notify (not auto-interrupt) */
 const STUCK_TIMEOUT_MS = 600_000; // 10 minutes — long tasks (build, push, chrome MCP) can take time
@@ -35,6 +35,16 @@ Rules:
 - Put the final plan in exactly one <proposed_plan>...</proposed_plan> block.
 - Do not ask for approval inside the plan. AgentMonitor will show explicit approval controls.`;
 const PLAN_APPROVAL_MESSAGE = 'User has approved the proposed plan. Proceed with implementation according to the approved plan.';
+const WORKTREE_MODE_INSTRUCTIONS = `## Worktree Mode
+
+You are working in an isolated Git worktree on a dedicated agent branch.
+- Commit changes only on the worktree branch.
+- During normal development tasks, do not merge into or push the base branch.
+- You may update from or integrate into the base branch only when the current user request is an explicit AgentMonitor Git integration instruction. Follow that instruction's checks and scope exactly.
+- Do not copy changed files into the original working tree.
+- Shared resources such as ports, databases, containers, and external caches are not isolated.`;
+
+export class AgentWorkspaceError extends Error {}
 
 interface DeleteAgentOptions {
   purgeSessionFiles?: boolean;
@@ -103,7 +113,6 @@ export class AgentManager extends EventEmitter {
   private skillManager: SkillManager | null;
   /** Track when a user message was sent per agent (agentId → timestamp) */
   private pendingUserMessage: Map<string, number> = new Map();
-  private queuedUserMessages: Map<string, Array<{ displayText: string; processText: string }>> = new Map();
   private stuckCheckInterval: ReturnType<typeof setInterval> | null = null;
   private lastGitBranchCheckAt = 0;
 
@@ -133,6 +142,15 @@ export class AgentManager extends EventEmitter {
       if (agent.status === 'running' || agent.status === 'waiting_input') {
         agent.status = 'stopped';
         agent.pid = undefined;
+        if (agent.queuedMessages?.length) {
+          agent.queuePaused = true;
+          agent.messages.push({
+            id: uuid(),
+            role: 'system',
+            content: '[Interrupted] The server restarted before the active turn completed. Queued messages are paused until you resume them.',
+            timestamp: Date.now(),
+          });
+        }
         this.store.saveAgent(agent);
       }
     }
@@ -297,6 +315,13 @@ export class AgentManager extends EventEmitter {
       } catch { return false; }
     })();
 
+    if (workspaceMode === 'worktree' && skipWorktree) {
+      throw new AgentWorkspaceError('A resumed provider session cannot be attached to a new Git worktree. Use Direct Edit mode for this session.');
+    }
+    if (workspaceMode === 'worktree' && (!isGitRepo || !gitRoot)) {
+      throw new AgentWorkspaceError('Worktree mode requires an existing Git repository. Choose Direct Edit for a non-Git directory.');
+    }
+
     let initialBranch: string | undefined;
     if (isGitRepo && gitRoot) {
       try {
@@ -318,45 +343,16 @@ export class AgentManager extends EventEmitter {
           const result = this.worktreeManager.createWorktree(
             gitRoot,
             branchName,
-            agentConfig.claudeMd,
-            agentConfig.provider,
           );
           worktreePath = result.worktreePath;
           worktreeBranch = result.branch;
         }
       } catch (err) {
-        console.warn('[AgentManager] Workspace setup failed, using directory directly:', err);
-        worktreePath = undefined;
-        if (workspaceMode !== 'direct' && agentConfig.claudeMd) {
-          writeFileSync(
-            path.join(agentConfig.directory, getInstructionFileName(agentConfig.provider)),
-            agentConfig.claudeMd,
-          );
+        if (workspaceMode === 'worktree') {
+          throw new AgentWorkspaceError(`Failed to create Git worktree: ${err instanceof Error ? err.message : String(err)}`);
         }
-      }
-    } else {
-      // Not a git repo — work directly in the directory, no worktree needed
-      if (workspaceMode !== 'direct' && agentConfig.claudeMd) {
-        writeFileSync(
-          path.join(agentConfig.directory, getInstructionFileName(agentConfig.provider)),
-          agentConfig.claudeMd,
-        );
-      }
-    }
-
-    // Deploy selected skills into the worktree via symlinks
-    const skillTarget = worktreePath || agentConfig.directory;
-    if (agentConfig.skills && agentConfig.skills.length > 0 && this.skillManager) {
-      try {
-        this.worktreeManager.deploySkills(
-          skillTarget,
-          agentConfig.skills,
-          agentConfig.provider,
-          this.skillManager.getSkillsDir(),
-        );
-        console.log(`[AgentManager] Deployed ${agentConfig.skills.length} skill(s) to ${skillTarget}`);
-      } catch (err) {
-        console.warn('[AgentManager] Skill deployment failed:', err);
+        console.warn('[AgentManager] Direct workspace link setup failed, using the original directory:', err);
+        worktreePath = undefined;
       }
     }
 
@@ -674,6 +670,26 @@ export class AgentManager extends EventEmitter {
 
   private composeProcessPrompt(agent: Agent): string {
     let prompt = agent.config.prompt;
+
+    if (agent.workspaceMode === 'worktree') {
+      const configuredInstructions = agent.config.claudeMd?.trim();
+      prompt = [
+        configuredInstructions ? `## AgentMonitor Instructions\n\n${configuredInstructions}` : '',
+        WORKTREE_MODE_INSTRUCTIONS,
+        `Worktree branch: ${agent.worktreeBranch || '(unknown)'}`,
+        `Original repository: ${agent.config.directory}`,
+        `User request:\n${prompt}`,
+      ].filter(Boolean).join('\n\n');
+    }
+
+    if (agent.config.skills?.length && this.skillManager) {
+      const skillsRoot = this.skillManager.getSkillsDir();
+      const availableSkills = agent.config.skills.map(name => {
+        const skill = this.skillManager?.getSkill(name);
+        return `- ${name}: ${skill?.description || name} (${path.join(skillsRoot, name, 'SKILL.md')})`;
+      }).join('\n');
+      prompt = `${prompt}\n\n## Available Skills\n\n${availableSkills}\n\nRead the corresponding SKILL.md before using a skill.`;
+    }
 
     // Append structured output instruction if schema is provided
     if (agent.config.flags.outputSchema) {
@@ -1693,26 +1709,38 @@ export class AgentManager extends EventEmitter {
     return agent;
   }
 
-  sendMessage(agentId: string, text: string): void {
+  sendMessage(agentId: string, text: string, queueMessageId?: string): { disposition: 'started' | 'queued'; queuedMessage?: AgentQueuedMessage } | undefined {
     const agent = this.store.getAgent(agentId);
-    if (!agent) return;
+    if (!agent) return undefined;
     const processText = this.wrapPlanModeMessage(agent, text);
 
     const proc = this.processes.get(agentId);
-    if (proc && agent.status !== 'waiting_input') {
-      // Agent is running — queue the message for later. Don't add to message
-      // history yet so it doesn't appear mid-conversation (matches TUI /btw).
-      this.enqueueUserMessage(agentId, text, processText);
-      agent.messages.push({
-        id: uuid(),
-        role: 'system',
-        content: `[Queued] "${text.length > 80 ? text.slice(0, 80) + '...' : text}"`,
-        timestamp: Date.now(),
-      });
+    if (!proc && agent.queuePaused && agent.queuedMessages?.length) {
+      const queuedMessage = this.enqueueUserMessage(agent, text, queueMessageId);
       agent.lastActivity = Date.now();
       this.store.saveAgent(agent);
       this.emit('agent:update', agentId, agent);
-      return;
+      return { disposition: 'queued', queuedMessage };
+    }
+    if (proc && agent.status !== 'waiting_input') {
+      // Agent is running — queue the message for later. Don't add to message
+      // history yet so it doesn't appear mid-conversation (matches TUI /btw).
+      const queuedMessage = this.enqueueUserMessage(agent, text, queueMessageId);
+      agent.lastActivity = Date.now();
+      this.store.saveAgent(agent);
+      this.emit('agent:update', agentId, agent);
+      return { disposition: 'queued', queuedMessage };
+    }
+
+    if (proc && agent.config.provider === 'codex') {
+      // Codex exec is turn-based: stdin is closed after startup. Keep the
+      // message queued until the current process exits, then resume it once.
+      const queuedMessage = this.enqueueUserMessage(agent, text, queueMessageId);
+      agent.lastActivity = Date.now();
+      this.store.saveAgent(agent);
+      this.emit('agent:update', agentId, agent);
+      proc.stop();
+      return { disposition: 'queued', queuedMessage };
     }
 
     // Message will be sent immediately — add to history now.
@@ -1720,14 +1748,6 @@ export class AgentManager extends EventEmitter {
 
     if (proc) {
       // status === 'waiting_input' with a live process
-      if (agent.config.provider === 'codex') {
-        // Codex exec is turn-based: stdin is closed after startup, so a live
-        // process cannot accept another prompt. Queue it and let the exit
-        // handler resume the session in a fresh `codex exec resume` process.
-        this.enqueueUserMessage(agentId, text, processText);
-        proc.stop();
-        return;
-      }
       this.updateAgentStatus(agentId, 'running');
       this.pendingUserMessage.set(agentId, Date.now());
       proc.sendMessage(processText);
@@ -1738,6 +1758,7 @@ export class AgentManager extends EventEmitter {
     } else if (agent.status === 'stopped' || agent.status === 'error') {
       this.resumeAgent(agent, processText);
     }
+    return { disposition: 'started' };
   }
 
   private addUserMessageToHistory(agent: Agent, text: string): void {
@@ -1747,6 +1768,7 @@ export class AgentManager extends EventEmitter {
       }
       delete agent.preRestoreSnapshot;
     }
+    if (agent.worktreeBranch) agent.worktreeMerged = false;
     const turnIndex = agent.messages.filter(m => m.role === 'user').length;
     this.takeCodeSnapshot(agent, turnIndex);
     agent.messages.push({
@@ -1766,30 +1788,105 @@ export class AgentManager extends EventEmitter {
     this.emit('agent:update', agent.id, agent);
   }
 
-  private enqueueUserMessage(agentId: string, displayText: string, processText: string): void {
-    const queued = this.queuedUserMessages.get(agentId) || [];
-    queued.push({ displayText, processText });
-    this.queuedUserMessages.set(agentId, queued);
+  private enqueueUserMessage(agent: Agent, text: string, messageId?: string): AgentQueuedMessage {
+    const queuedMessage: AgentQueuedMessage = {
+      id: messageId || uuid(),
+      text,
+      createdAt: Date.now(),
+      interactionMode: agent.interactionMode,
+    };
+    agent.queuedMessages = [...(agent.queuedMessages || []), queuedMessage];
+    return queuedMessage;
   }
 
   private startNextQueuedMessage(agentId: string): void {
-    const queued = this.queuedUserMessages.get(agentId);
-    if (!queued || queued.length === 0) {
-      this.queuedUserMessages.delete(agentId);
-      return;
-    }
-    const next = queued.shift()!;
-
-    if (queued.length === 0) {
-      this.queuedUserMessages.delete(agentId);
-    }
-
     const agent = this.store.getAgent(agentId);
-    if (!agent || agent.status === 'error') return;
+    if (!agent || agent.status === 'error' || agent.queuePaused || !agent.queuedMessages?.length) return;
+    const next = agent.queuedMessages[0];
+    agent.queuedMessages = agent.queuedMessages.slice(1);
+    agent.queuePaused = false;
+    this.store.saveAgent(agent);
+    this.emit('agent:update', agentId, agent);
 
-    this.addUserMessageToHistory(agent, next.displayText);
+    this.addUserMessageToHistory(agent, next.text);
     this.pendingUserMessage.set(agentId, Date.now());
-    this.resumeAgent(agent, next.processText);
+    const processText = next.interactionMode === 'plan'
+      ? `${PLAN_MODE_INSTRUCTIONS}\n\nUser request:\n${next.text}`
+      : next.text;
+    this.resumeAgent(agent, processText);
+  }
+
+  cancelQueuedMessage(agentId: string, messageId: string): Agent | undefined {
+    const agent = this.store.getAgent(agentId);
+    if (!agent) return undefined;
+    const queued = agent.queuedMessages || [];
+    if (!queued.some(message => message.id === messageId)) return agent;
+    agent.queuedMessages = queued.filter(message => message.id !== messageId);
+    if (agent.queuedMessages.length === 0) agent.queuePaused = false;
+    agent.lastActivity = Date.now();
+    this.store.saveAgent(agent);
+    this.emit('agent:update', agentId, agent);
+    return agent;
+  }
+
+  resumeQueuedMessages(agentId: string): Agent | undefined {
+    const agent = this.store.getAgent(agentId);
+    if (!agent) return undefined;
+    if (!agent.queuedMessages?.length) {
+      agent.queuePaused = false;
+      this.store.saveAgent(agent);
+      return agent;
+    }
+    if (this.processes.has(agentId)) return agent;
+    agent.queuePaused = false;
+    if (agent.status === 'error') agent.status = 'stopped';
+    this.store.saveAgent(agent);
+    this.emit('agent:update', agentId, agent);
+    this.startNextQueuedMessage(agentId);
+    return this.store.getAgent(agentId);
+  }
+
+  async updateAgentWorktree(agentId: string): Promise<Agent> {
+    const agent = this.store.getAgent(agentId);
+    if (!agent) throw new Error('Agent not found');
+    if (agent.workspaceMode === 'direct' || !agent.worktreePath || !agent.worktreeBranch || !agent.gitBranch) {
+      throw new Error('Agent does not have an isolated worktree');
+    }
+    if (agent.status === 'running' || agent.status === 'waiting_input') {
+      throw new Error('Stop the agent before updating its worktree');
+    }
+    await updateWorktree(agent.worktreePath, agent.gitBranch);
+    agent.worktreeMerged = false;
+    agent.lastActivity = Date.now();
+    this.store.saveAgent(agent);
+    this.emit('agent:update', agentId, agent);
+    return agent;
+  }
+
+  async mergeAgentWorktree(agentId: string): Promise<Agent> {
+    const agent = this.store.getAgent(agentId);
+    if (!agent) throw new Error('Agent not found');
+    if (agent.workspaceMode === 'direct' || !agent.worktreePath || !agent.worktreeBranch || !agent.gitBranch) {
+      throw new Error('Agent does not have an isolated worktree');
+    }
+    if (agent.status === 'running' || agent.status === 'waiting_input') {
+      throw new Error('Stop the agent before merging its worktree');
+    }
+    const targetRoot = getGitDirectoryInfo(agent.config.directory).root;
+    const activeDirect = this.store.getAllAgents().find(other => {
+      if (other.id === agent.id || other.workspaceMode !== 'direct') return false;
+      if (other.status !== 'running' && other.status !== 'waiting_input') return false;
+      return targetRoot && getGitDirectoryInfo(other.config.directory).root === targetRoot;
+    });
+    if (activeDirect) {
+      throw new Error(`Stop Direct Edit agent "${activeDirect.name}" before merging into the original repository`);
+    }
+    await mergeWorktree(agent.config.directory, agent.worktreePath, agent.worktreeBranch, agent.gitBranch);
+    agent.worktreeMerged = true;
+    agent.lastActivity = Date.now();
+    this.store.saveAgent(agent);
+    this.emit('agent:update', agentId, agent);
+    return agent;
   }
 
   private resumeAgent(agent: Agent, newPrompt: string): void {
@@ -1845,7 +1942,8 @@ export class AgentManager extends EventEmitter {
     }
 
     this.pendingUserMessage.delete(agentId);
-    this.queuedUserMessages.delete(agentId);
+    agent.queuedMessages = [];
+    agent.queuePaused = false;
     agent.messages = [];
     agent.status = 'stopped';
     agent.pid = undefined;
@@ -1893,7 +1991,11 @@ export class AgentManager extends EventEmitter {
   async stopAgent(agentId: string): Promise<void> {
     const agent = this.store.getAgent(agentId);
     const proc = this.processes.get(agentId);
-    this.queuedUserMessages.delete(agentId);
+    if (agent) {
+      agent.queuedMessages = [];
+      agent.queuePaused = false;
+      this.store.saveAgent(agent);
+    }
 
     // Send /compact before stopping if session is large
     if (proc && agent?.sessionId) {
@@ -1962,11 +2064,8 @@ export class AgentManager extends EventEmitter {
   updateClaudeMd(agentId: string, content: string): void {
     const agent = this.store.getAgent(agentId);
     if (!agent) return;
-    // Write to the provider-specific instruction file so the running agent sees the change.
-    if (agent.worktreePath) {
-      this.worktreeManager.updateClaudeMd(agent.worktreePath, content, agent.config.provider);
-    }
-    // Persist to agent config so it survives restart / shows correctly in UI
+    // Keep monitor-specific instructions out of the checked-out files. They
+    // are injected into the process prompt on the next provider turn.
     agent.config.claudeMd = content;
     this.store.saveAgent(agent);
   }
@@ -2121,7 +2220,10 @@ export class AgentManager extends EventEmitter {
     const agent = this.store.getAgent(agentId);
     if (!agent) throw new Error(`Agent ${agentId} not found`);
     let warning: string | undefined;
-    this.queuedUserMessages.delete(agentId);
+    if (agent) {
+      agent.queuedMessages = [];
+      agent.queuePaused = false;
+    }
 
     // Stop the running process first
     const proc = this.processes.get(agentId);

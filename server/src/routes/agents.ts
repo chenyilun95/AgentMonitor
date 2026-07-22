@@ -1,7 +1,7 @@
 import { Router } from 'express';
 import { execFile } from 'child_process';
 import { promisify } from 'util';
-import type { AgentManager } from '../services/AgentManager.js';
+import { AgentWorkspaceError, type AgentManager } from '../services/AgentManager.js';
 import type { AgentStore } from '../store/AgentStore.js';
 import type { ExternalAgentScanner } from '../services/ExternalAgentScanner.js';
 import type { AgentProvider } from '../models/Agent.js';
@@ -149,7 +149,9 @@ export function agentRoutes(manager: AgentManager, store: AgentStore): Router {
 
       res.status(201).json(agent);
     } catch (err) {
-      res.status(500).json({ error: String(err) });
+      res.status(err instanceof AgentWorkspaceError ? 400 : 500).json({
+        error: err instanceof Error ? err.message : String(err),
+      });
     }
   });
 
@@ -190,13 +192,60 @@ export function agentRoutes(manager: AgentManager, store: AgentStore): Router {
 
   // Send message to agent
   router.post('/:id/message', (req, res) => {
-    const { text } = req.body;
+    const { text, queueMessageId } = req.body;
     if (!text) {
       res.status(400).json({ error: 'text is required' });
       return;
     }
-    manager.sendMessage(req.params.id, text);
-    res.json({ ok: true });
+    if (queueMessageId !== undefined && (
+      typeof queueMessageId !== 'string'
+      || queueMessageId.length > 128
+      || !/^[A-Za-z0-9:_-]+$/.test(queueMessageId)
+    )) {
+      res.status(400).json({ error: 'queueMessageId is invalid' });
+      return;
+    }
+    const result = manager.sendMessage(req.params.id, text, queueMessageId);
+    const agent = manager.getAgent(req.params.id);
+    if (!result || !agent) {
+      res.status(404).json({ error: 'Agent not found' });
+      return;
+    }
+    res.json({ ok: true, ...result, agent: sanitizeAgentSnapshot(agent) });
+  });
+
+  router.delete('/:id/queue/:messageId', (req, res) => {
+    const agent = manager.cancelQueuedMessage(req.params.id, req.params.messageId);
+    if (!agent) {
+      res.status(404).json({ error: 'Agent not found' });
+      return;
+    }
+    res.json(sanitizeAgentSnapshot(agent));
+  });
+
+  router.post('/:id/queue/resume', (req, res) => {
+    const agent = manager.resumeQueuedMessages(req.params.id);
+    if (!agent) {
+      res.status(404).json({ error: 'Agent not found' });
+      return;
+    }
+    res.json(sanitizeAgentSnapshot(agent));
+  });
+
+  router.post('/:id/worktree/update', async (req, res) => {
+    try {
+      res.json(sanitizeAgentSnapshot(await manager.updateAgentWorktree(req.params.id)));
+    } catch (error) {
+      res.status(409).json({ error: error instanceof Error ? error.message : String(error) });
+    }
+  });
+
+  router.post('/:id/worktree/merge', async (req, res) => {
+    try {
+      res.json(sanitizeAgentSnapshot(await manager.mergeAgentWorktree(req.params.id)));
+    } catch (error) {
+      res.status(409).json({ error: error instanceof Error ? error.message : String(error) });
+    }
   });
 
   router.put('/:id/interaction-mode', (req, res) => {

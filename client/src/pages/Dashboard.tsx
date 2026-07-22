@@ -1,10 +1,10 @@
 import { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { api, type Agent, type DeleteSessionFilesPolicy } from '../api/client';
+import { api, type Agent, type DeleteSessionFilesPolicy, type DirListing } from '../api/client';
 import { getSocket } from '../api/socket';
 import { useTranslation } from '../i18n';
 import { getAgentStatusClass } from '../lib/agentStatus';
-import { buildCommitPrompt } from '../lib/commitPrompt';
+import { buildCommitPrompt, buildMergeToBasePrompt, buildUpdateFromBasePrompt } from '../lib/commitPrompt';
 
 export function Dashboard() {
   const [agents, setAgents] = useState<Agent[]>([]);
@@ -12,6 +12,11 @@ export function Dashboard() {
   const [showSettings, setShowSettings] = useState(false);
   const [retentionHours, setRetentionHours] = useState(24);
   const [deleteSessionFilesPolicy, setDeleteSessionFilesPolicy] = useState<DeleteSessionFilesPolicy>('keep');
+  const [savedDirectories, setSavedDirectories] = useState<string[]>([]);
+  const [directoryDialog, setDirectoryDialog] = useState<{ path: string; listing?: DirListing; error?: string } | null>(null);
+  const [gitInfo, setGitInfo] = useState<Record<string, { isGit: boolean; branch?: string; upstream?: string }>>({});
+  const [gitBusy, setGitBusy] = useState<string | null>(null);
+  const [gitErrors, setGitErrors] = useState<Record<string, string>>({});
   const [deleteDialog, setDeleteDialog] = useState<{
     agentId: string;
     agentName: string;
@@ -41,6 +46,12 @@ export function Dashboard() {
       const s = await api.getSettings();
       setRetentionHours(s.agentRetentionMs / 3_600_000);
       setDeleteSessionFilesPolicy(s.deleteSessionFilesPolicy || 'keep');
+      try {
+        const saved = await api.getSavedDirectories();
+        setSavedDirectories(saved.paths);
+      } catch {
+        setSavedDirectories(Array.from(new Set(Object.values(s.pathHistory || {}).flat())));
+      }
     } catch {
       // ignore
     }
@@ -95,6 +106,20 @@ export function Dashboard() {
     };
   }, []);
 
+  useEffect(() => {
+    const directories = Array.from(new Set([
+      ...savedDirectories,
+      ...agents.map(agent => agent.config.directory),
+    ]));
+    void Promise.all(directories.map(async directory => {
+      try {
+        return [directory, await api.getDirectoryGitInfo(directory)] as const;
+      } catch {
+        return [directory, { isGit: false }] as const;
+      }
+    })).then(entries => setGitInfo(Object.fromEntries(entries)));
+  }, [savedDirectories, agents]);
+
   const handleStopAll = async () => {
     await api.stopAllAgents();
     fetchAgents();
@@ -145,6 +170,75 @@ export function Dashboard() {
       fetchAgents();
     } catch (err) {
       console.error('Failed to send commit prompt:', err);
+    }
+  };
+
+  const handleWorktreePrompt = async (e: React.MouseEvent, agent: Agent, action: 'update' | 'merge') => {
+    e.stopPropagation();
+    const key = `${action}:${agent.id}`;
+    setGitBusy(key);
+    try {
+      const prompt = action === 'update'
+        ? buildUpdateFromBasePrompt(agent)
+        : buildMergeToBasePrompt(agent);
+      await api.sendMessage(agent.id, prompt);
+      await fetchAgents();
+    } catch (err) {
+      console.error(`Failed to send Worktree ${action} prompt:`, err);
+    } finally {
+      setGitBusy(null);
+    }
+  };
+
+  const handleNewPath = () => {
+    setDirectoryDialog({ path: '' });
+  };
+
+  const browseDirectory = async (path?: string) => {
+    try {
+      const listing = await api.listDirectory(path?.trim() || undefined);
+      setDirectoryDialog(current => ({ path: current?.path || listing.path, listing }));
+    } catch (err) {
+      setDirectoryDialog(current => ({ path: current?.path || path || '', error: String(err) }));
+    }
+  };
+
+  const saveSelectedDirectory = async (path: string) => {
+    try {
+      const saved = await api.saveDirectory(path.trim());
+      setSavedDirectories((prev) => (
+        prev.includes(saved.path) ? prev : [saved.path, ...prev]
+      ));
+      setGroupBy('directory');
+      localStorage.setItem('agentmonitor-group-by', 'directory');
+      setDirectoryDialog(null);
+    } catch (err) {
+      setDirectoryDialog(current => ({ path: current?.path || path, listing: current?.listing, error: String(err) }));
+    }
+  };
+
+  const runGitAction = async (key: string, action: () => Promise<unknown>) => {
+    setGitBusy(key);
+    setGitErrors((prev) => ({ ...prev, [key]: '' }));
+    try {
+      await action();
+      await fetchAgents();
+    } catch (err) {
+      setGitErrors((prev) => ({
+        ...prev,
+        [key]: err instanceof Error ? err.message : String(err),
+      }));
+    } finally {
+      setGitBusy(null);
+    }
+  };
+
+  const handleDeletePath = async (path: string) => {
+    try {
+      await api.deleteSavedDirectory(path);
+      setSavedDirectories((prev) => prev.filter((item) => item !== path));
+    } catch (err) {
+      window.alert(String(err));
     }
   };
 
@@ -374,7 +468,7 @@ export function Dashboard() {
             </span>
           )}
         </div>
-        <div style={{ display: 'flex', gap: 6, marginTop: 8 }}>
+        <div style={{ display: 'flex', gap: 6, marginTop: 8, flexWrap: 'wrap' }}>
           <button
             className="btn btn-sm btn-outline"
             onClick={(e) => { e.stopPropagation(); navigate(`/create?from=${agent.id}`); }}
@@ -385,10 +479,40 @@ export function Dashboard() {
           <button
             className="btn btn-sm btn-outline"
             onClick={(e) => handleCommit(e, agent)}
-            title={t('dashboard.commitTooltip')}
+            title={t(agent.workspaceMode !== 'direct' && agent.worktreeBranch
+              ? 'dashboard.commitWorktreeTooltip'
+              : 'dashboard.commitTooltip')}
           >
-            {t('dashboard.commit')}
+            {t(agent.workspaceMode !== 'direct' && agent.worktreeBranch
+              ? 'dashboard.commitWorktree'
+              : 'dashboard.commit')}
           </button>
+          {agent.workspaceMode !== 'direct' && agent.worktreeBranch && agent.gitBranch && (
+            <>
+              <button
+                className="btn btn-sm btn-outline"
+                disabled={agent.status === 'running' || agent.status === 'waiting_input' || gitBusy === `update:${agent.id}`}
+                onClick={(e) => {
+                  e.stopPropagation();
+                  void handleWorktreePrompt(e, agent, 'update');
+                }}
+                title={t('dashboard.updateFromBase', { branch: agent.gitBranch })}
+              >
+                {t('dashboard.updateFromBase', { branch: agent.gitBranch })}
+              </button>
+              <button
+                className="btn btn-sm btn-outline"
+                disabled={agent.status === 'running' || agent.status === 'waiting_input' || gitBusy === `merge:${agent.id}`}
+                onClick={(e) => {
+                  e.stopPropagation();
+                  void handleWorktreePrompt(e, agent, 'merge');
+                }}
+                title={t('dashboard.mergeToBase', { branch: agent.gitBranch })}
+              >
+                {t('dashboard.mergeToBase', { branch: agent.gitBranch })}
+              </button>
+            </>
+          )}
           {(agent.status === 'running' || agent.status === 'waiting_input') && (
             <button
               className="btn btn-sm btn-outline"
@@ -458,6 +582,9 @@ export function Dashboard() {
           )}
           <button className="btn" onClick={() => navigate('/create')}>
             {t('dashboard.newAgent')}
+          </button>
+          <button className="btn btn-outline" onClick={handleNewPath}>
+            {t('dashboard.newPath')}
           </button>
           {displayAgents.length > 0 && (
             <button className="btn btn-danger" onClick={handleStopAll}>
@@ -538,13 +665,16 @@ export function Dashboard() {
         </div>
       )}
 
-      {visibleAgents.length === 0 ? (
+      {groupBy === 'time' && visibleAgents.length === 0 ? (
         <div style={{ textAlign: 'center', padding: 48, color: 'var(--text-muted)' }}>
           {t('dashboard.empty')}
         </div>
       ) : groupBy === 'directory' ? (
         (() => {
           const dirMap = new Map<string, Agent[]>();
+          for (const dir of savedDirectories) {
+            dirMap.set(dir, []);
+          }
           for (const a of visibleAgents) {
             const dir = a.config.directory;
             const list = dirMap.get(dir) || [];
@@ -552,10 +682,17 @@ export function Dashboard() {
             dirMap.set(dir, list);
           }
           const groups = Array.from(dirMap.entries()).sort((a, b) => {
-            const aMax = Math.max(...a[1].map(x => x.lastActivity));
-            const bMax = Math.max(...b[1].map(x => x.lastActivity));
+            const aMax = a[1].length > 0 ? Math.max(...a[1].map(x => x.lastActivity)) : 0;
+            const bMax = b[1].length > 0 ? Math.max(...b[1].map(x => x.lastActivity)) : 0;
             return bMax - aMax;
           });
+          if (groups.length === 0) {
+            return (
+              <div style={{ textAlign: 'center', padding: 48, color: 'var(--text-muted)' }}>
+                {t('dashboard.empty')}
+              </div>
+            );
+          }
           return (
             <div className="directory-groups">
               {groups.map(([dir, groupAgents]) => {
@@ -569,11 +706,42 @@ export function Dashboard() {
                         {dirShort}
                       </span>
                       <span className="directory-group-stats">
+                        {gitInfo[dir]?.isGit && gitInfo[dir].branch && (
+                          <span>{gitInfo[dir].branch} · </span>
+                        )}
                         {groupAgents.length} {t('dashboard.agentCount')}
                         {runningCount > 0 && (
                           <span className="directory-group-running"> · {runningCount} {t('dashboard.status.running').toLowerCase()}</span>
                         )}
                       </span>
+                      {gitInfo[dir]?.isGit && (
+                        <>
+                          <button
+                            className="btn btn-sm btn-outline"
+                            disabled={gitBusy === `pull:${dir}`}
+                            onClick={() => void runGitAction(`pull:${dir}`, () => api.pullDirectory(dir))}
+                          >
+                            {t('dashboard.pull')}
+                          </button>
+                          {gitErrors[`pull:${dir}`] && (
+                            <span className="directory-git-error" role="alert" title={gitErrors[`pull:${dir}`]}>
+                              {gitErrors[`pull:${dir}`]}
+                            </span>
+                          )}
+                          <button
+                            className="btn btn-sm btn-outline"
+                            disabled={gitBusy === `push:${dir}`}
+                            onClick={() => void runGitAction(`push:${dir}`, () => api.pushDirectory(dir))}
+                          >
+                            {t('dashboard.push')}
+                          </button>
+                          {gitErrors[`push:${dir}`] && (
+                            <span className="directory-git-error" role="alert" title={gitErrors[`push:${dir}`]}>
+                              {gitErrors[`push:${dir}`]}
+                            </span>
+                          )}
+                        </>
+                      )}
                       <button
                         className="btn btn-sm btn-secondary"
                         onClick={() => navigate(`/create?directory=${encodeURIComponent(dir)}&mode=direct`)}
@@ -586,10 +754,21 @@ export function Dashboard() {
                       >
                         {t('dashboard.newWorktreeAgent')}
                       </button>
+                      <button
+                        type="button"
+                        className="directory-group-remove"
+                        aria-label={`${t('dashboard.deletePath')}: ${dir}`}
+                        title={t('dashboard.deletePath')}
+                        onClick={() => handleDeletePath(dir)}
+                      >
+                        &minus;
+                      </button>
                     </div>
-                    <div className="card-grid">
-                      {groupAgents.map((agent) => renderAgentCard(agent))}
-                    </div>
+                    {groupAgents.length > 0 && (
+                      <div className="card-grid">
+                        {groupAgents.map((agent) => renderAgentCard(agent))}
+                      </div>
+                    )}
                   </div>
                 );
               })}
@@ -599,6 +778,54 @@ export function Dashboard() {
       ) : (
         <div className="card-grid">
           {visibleAgents.map((agent) => renderAgentCard(agent))}
+        </div>
+      )}
+
+      {directoryDialog && (
+        <div className="modal-overlay" onClick={() => setDirectoryDialog(null)}>
+          <div className="modal directory-picker-modal" onClick={(event) => event.stopPropagation()}>
+            <h2>{t('dashboard.newPath')}</h2>
+            <div className="directory-picker-input-row">
+              <input
+                autoFocus
+                value={directoryDialog.path}
+                placeholder={t('create.workingDirPlaceholder')}
+                onChange={(event) => setDirectoryDialog(current => current ? { ...current, path: event.target.value, error: undefined } : null)}
+                onKeyDown={(event) => {
+                  if (event.key === 'Enter' && directoryDialog.path.trim()) void saveSelectedDirectory(directoryDialog.path);
+                }}
+              />
+              <button className="btn btn-outline" onClick={() => void browseDirectory(directoryDialog.path)}>{t('common.browse')}</button>
+              <button className="btn" disabled={!directoryDialog.path.trim()} onClick={() => void saveSelectedDirectory(directoryDialog.path)}>{t('common.select')}</button>
+            </div>
+            {savedDirectories.length > 0 && (
+              <div className="directory-picker-history">
+                {savedDirectories
+                  .filter(path => !directoryDialog.path || path.toLowerCase().includes(directoryDialog.path.toLowerCase()))
+                  .map(path => (
+                    <button key={path} type="button" onClick={() => setDirectoryDialog(current => current ? { ...current, path } : null)}>{path}</button>
+                  ))}
+              </div>
+            )}
+            {directoryDialog.error && <div className="form-error">{directoryDialog.error}</div>}
+            {directoryDialog.listing && (
+              <div className="dir-browser directory-picker-browser">
+                <div className="directory-picker-current">
+                  <code>{directoryDialog.listing.path}</code>
+                  <button className="btn btn-sm" onClick={() => void saveSelectedDirectory(directoryDialog.listing!.path)}>{t('common.select')}</button>
+                </div>
+                {directoryDialog.listing.parent && directoryDialog.listing.parent !== directoryDialog.listing.path && (
+                  <button type="button" className="dir-entry is-dir" onClick={() => void browseDirectory(directoryDialog.listing!.parent)}>../</button>
+                )}
+                {directoryDialog.listing.entries.filter(entry => entry.isDirectory).map(entry => (
+                  <div key={entry.path} className="directory-picker-entry">
+                    <button type="button" className="dir-entry is-dir" onClick={() => void browseDirectory(entry.path)}>{entry.name}/</button>
+                    <button type="button" className="btn btn-sm" onClick={() => void saveSelectedDirectory(entry.path)}>{t('common.select')}</button>
+                  </div>
+                ))}
+              </div>
+            )}
+          </div>
         </div>
       )}
 

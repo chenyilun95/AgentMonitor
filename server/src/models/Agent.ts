@@ -8,6 +8,7 @@ export {
   PROVIDER_REASONING_EFFORTS,
   isReasoningEffort,
   type AgentMessage,
+  type AgentQueuedMessage,
   type AgentMessageAttachment,
   type AgentLogEntry,
   type AgentFlags,

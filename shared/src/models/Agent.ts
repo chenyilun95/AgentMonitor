@@ -31,6 +31,13 @@ export interface AgentMessage {
   attachments?: AgentMessageAttachment[];
 }
 
+export interface AgentQueuedMessage {
+  id: string;
+  text: string;
+  createdAt: number;
+  interactionMode?: AgentInteractionMode;
+}
+
 export interface AgentLogEntry {
   id: string;
   timestamp: number;
@@ -98,6 +105,8 @@ export interface Agent {
   gitBranch?: string;
   currentGitBranch?: string;
   messages: AgentMessage[];
+  queuedMessages?: AgentQueuedMessage[];
+  queuePaused?: boolean;
   logs?: AgentLogEntry[];
   lastActivity: number;
   createdAt: number;

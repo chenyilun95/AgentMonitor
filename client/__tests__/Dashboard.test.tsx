@@ -12,7 +12,14 @@ vi.mock('../src/api/client', async () => {
     api: {
       getAgents: vi.fn(),
       getSettings: vi.fn(),
+      getSavedDirectories: vi.fn(),
       renameAgent: vi.fn(),
+      saveDirectory: vi.fn(),
+      deleteSavedDirectory: vi.fn(),
+      getDirectoryGitInfo: vi.fn(),
+      pullDirectory: vi.fn(),
+      pushDirectory: vi.fn(),
+      sendMessage: vi.fn(),
     },
   };
 });
@@ -139,5 +146,124 @@ describe('Dashboard', () => {
       expect(api.renameAgent).toHaveBeenCalledWith('agent-1', 'Renamed agent');
     });
     expect(screen.getByText('Renamed agent')).toBeInTheDocument();
+  });
+
+  it('keeps saved directory groups visible without agents', async () => {
+    vi.mocked(api.getAgents).mockResolvedValue([]);
+    vi.mocked(api.getSettings).mockResolvedValue({
+      agentRetentionMs: 86_400_000,
+      promptSuggestions: [],
+      pathHistory: { workstation: ['/tmp/saved-project'] },
+      deleteSessionFilesPolicy: 'keep',
+    });
+    vi.mocked(api.getSavedDirectories).mockResolvedValue({ paths: ['/tmp/saved-project'] });
+
+    render(
+      <MemoryRouter>
+        <LanguageProvider>
+          <Dashboard />
+        </LanguageProvider>
+      </MemoryRouter>,
+    );
+
+    expect(await screen.findByText('/tmp/saved-project')).toBeInTheDocument();
+    expect(screen.getByText(/0 agents|0 个代理/)).toBeInTheDocument();
+  });
+
+  it('adds and removes a saved directory from the dashboard', async () => {
+    vi.mocked(api.getAgents).mockResolvedValue([]);
+    vi.mocked(api.getSettings).mockResolvedValue({
+      agentRetentionMs: 86_400_000,
+      promptSuggestions: [],
+      pathHistory: {},
+      deleteSessionFilesPolicy: 'keep',
+    });
+    vi.mocked(api.getSavedDirectories).mockResolvedValue({ paths: [] });
+    vi.mocked(api.saveDirectory).mockResolvedValue({ path: '/tmp/new-project' });
+    vi.mocked(api.deleteSavedDirectory).mockResolvedValue({ ok: true });
+
+    render(
+      <MemoryRouter>
+        <LanguageProvider>
+          <Dashboard />
+        </LanguageProvider>
+      </MemoryRouter>,
+    );
+
+    fireEvent.click(await screen.findByRole('button', { name: /New Path|新建路径/ }));
+    fireEvent.change(screen.getByPlaceholderText('/path/to/project'), { target: { value: '/tmp/new-project' } });
+    fireEvent.click(screen.getByRole('button', { name: /Select|选择/ }));
+    expect(await screen.findByText('/tmp/new-project')).toBeInTheDocument();
+    expect(api.saveDirectory).toHaveBeenCalledWith('/tmp/new-project');
+
+    fireEvent.click(screen.getByRole('button', { name: /Remove path: \/tmp\/new-project|删除路径: \/tmp\/new-project/ }));
+    await waitFor(() => expect(screen.queryByText('/tmp/new-project')).not.toBeInTheDocument());
+    expect(api.deleteSavedDirectory).toHaveBeenCalledWith('/tmp/new-project');
+  });
+
+  it('shows directory Git errors inline instead of opening an alert', async () => {
+    vi.mocked(api.getAgents).mockResolvedValue([]);
+    vi.mocked(api.getSettings).mockResolvedValue({
+      agentRetentionMs: 86_400_000,
+      promptSuggestions: [],
+      pathHistory: {},
+      deleteSessionFilesPolicy: 'keep',
+    });
+    vi.mocked(api.getSavedDirectories).mockResolvedValue({ paths: ['/tmp/repo'] });
+    vi.mocked(api.getDirectoryGitInfo).mockResolvedValue({ isGit: true, branch: 'main', upstream: 'origin/main' });
+    vi.mocked(api.pushDirectory).mockRejectedValue(new Error('push rejected: fetch first'));
+    const alert = vi.spyOn(window, 'alert').mockImplementation(() => undefined);
+
+    render(
+      <MemoryRouter>
+        <LanguageProvider>
+          <Dashboard />
+        </LanguageProvider>
+      </MemoryRouter>,
+    );
+
+    fireEvent.click(await screen.findByRole('button', { name: /^Push$|^推送$/ }));
+
+    expect(await screen.findByRole('alert')).toHaveTextContent('push rejected: fetch first');
+    expect(alert).not.toHaveBeenCalled();
+  });
+
+  it('sends Worktree update and merge actions to the agent as prompts', async () => {
+    const agent = {
+      ...makeAgent('agent-1', 'Worktree agent', 1000, 'stopped'),
+      workspaceMode: 'worktree' as const,
+      worktreePath: '/tmp/project/.agent-worktrees/agent-1',
+      worktreeBranch: 'agent-1',
+      gitBranch: 'main',
+    };
+    vi.mocked(api.getAgents).mockResolvedValue([agent]);
+    vi.mocked(api.getSettings).mockResolvedValue({
+      agentRetentionMs: 86_400_000,
+      promptSuggestions: [],
+      pathHistory: {},
+      deleteSessionFilesPolicy: 'keep',
+    });
+    vi.mocked(api.getSavedDirectories).mockResolvedValue({ paths: [] });
+    vi.mocked(api.sendMessage).mockResolvedValue({ ok: true, disposition: 'started', agent });
+
+    render(
+      <MemoryRouter>
+        <LanguageProvider>
+          <Dashboard />
+        </LanguageProvider>
+      </MemoryRouter>,
+    );
+
+    fireEvent.click(await screen.findByRole('button', { name: /Update from main|从 main 更新/ }));
+    await waitFor(() => expect(api.sendMessage).toHaveBeenCalledWith(
+      'agent-1',
+      expect.stringContaining('Update the current Worktree branch "agent-1"'),
+    ));
+
+    fireEvent.click(screen.getByRole('button', { name: /Merge to main|合并到 main/ }));
+    await waitFor(() => expect(api.sendMessage).toHaveBeenCalledWith(
+      'agent-1',
+      expect.stringContaining('Merge the current Worktree branch "agent-1" back into its original branch "main"'),
+    ));
   });
 });

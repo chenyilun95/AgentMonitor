@@ -459,6 +459,81 @@
   color: var(--green, #22c55e);
 }
 
+.directory-git-error {
+  max-width: 260px;
+  overflow: hidden;
+  color: var(--red, #ef4444);
+  font-size: 0.75rem;
+  line-height: 1.25;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.directory-group-remove {
+  width: 26px;
+  height: 26px;
+  padding: 0;
+  border: 1px solid var(--border);
+  border-radius: 50%;
+  background: transparent;
+  color: var(--text-muted);
+  font-size: 18px;
+  line-height: 1;
+  cursor: pointer;
+}
+
+.directory-group-remove:hover {
+  border-color: var(--red, #ef4444);
+  color: var(--red, #ef4444);
+  background: color-mix(in srgb, var(--red, #ef4444) 10%, transparent);
+}
+
+.directory-picker-modal {
+  width: min(720px, calc(100vw - 32px));
+  max-height: min(720px, calc(100vh - 48px));
+  overflow: auto;
+}
+
+.directory-picker-input-row,
+.directory-picker-current,
+.directory-picker-entry {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.directory-picker-input-row input,
+.directory-picker-current code,
+.directory-picker-entry .dir-entry {
+  flex: 1;
+  min-width: 0;
+}
+
+.directory-picker-history {
+  display: flex;
+  flex-direction: column;
+  margin: 8px 0;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  overflow: hidden;
+}
+
+.directory-picker-history button {
+  padding: 7px 10px;
+  border: 0;
+  border-bottom: 1px solid var(--border);
+  background: var(--bg-secondary);
+  color: var(--text-primary);
+  text-align: left;
+  cursor: pointer;
+}
+
+.directory-picker-history button:last-child { border-bottom: 0; }
+.directory-picker-history button:hover { background: var(--bg-tertiary); }
+.directory-picker-browser { margin-top: 12px; }
+.directory-picker-current { padding: 8px 10px; }
+.directory-picker-entry .dir-entry { border: 0; text-align: left; }
+
 /* --- Status Badges --- */
 .status {
   display: inline-flex;

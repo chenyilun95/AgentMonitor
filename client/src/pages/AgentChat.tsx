@@ -8,10 +8,9 @@ import { FileBrowserView } from '../components/FileBrowserView';
 import { PendingQuestionBanner } from '../components/PendingQuestionBanner';
 import { HistoryPicker } from '../components/HistoryPicker';
 import { BtwPopup } from '../components/BtwPopup';
-import ReactMarkdown from 'react-markdown';
-import remarkGfm from 'remark-gfm';
+import { ChatMarkdown } from '../components/ChatMarkdown';
 import { getAgentStatusClass, getAgentStatusLabel } from '../lib/agentStatus';
-import { buildCommitPrompt } from '../lib/commitPrompt';
+import { buildCommitPrompt, buildMergeToBasePrompt, buildUpdateFromBasePrompt } from '../lib/commitPrompt';
 import { buildResumeCommand } from '../lib/resumeCommand';
 import { getToolMessageDetails, type ToolMessageDetails } from '../lib/toolMessages';
 import { getSlashCommandDefinitions, executeSlashCommand } from '../lib/slashCommands';
@@ -63,12 +62,12 @@ export function AgentChat() {
   const [historyRestoringIdx, setHistoryRestoringIdx] = useState<number | null>(null);
   const [attachedFiles, setAttachedFiles] = useState<File[]>([]);
   const [uploadingCount, setUploadingCount] = useState(0);
-  const [queuedMessages, setQueuedMessages] = useState<Array<{ id: string; text: string }>>([]);
   const [btwState, setBtwState] = useState<{ status: 'input' | 'loading' | 'answer'; question?: string; answer?: string; error?: string } | null>(null);
   const btwInputRef = useRef<HTMLTextAreaElement>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
   const [selectedReasoningEffort, setSelectedReasoningEffort] = useState<ReasoningEffortSelection>('default');
   const [updatingReasoningEffort, setUpdatingReasoningEffort] = useState(false);
+  const [gitAction, setGitAction] = useState<'update' | 'merge' | null>(null);
   const [runtimeCapabilities, setRuntimeCapabilities] = useState<RuntimeCapabilities | null>(null);
 
   const addLocalMessage = (content: string, role = 'system') => {
@@ -105,6 +104,11 @@ export function AgentChat() {
             interactionMode: data.interactionMode,
             pendingPlan: data.pendingPlan,
             pendingQuestion: data.pendingQuestion,
+            queuedMessages: data.queuedMessages,
+            queuePaused: data.queuePaused,
+            worktreeMerged: data.worktreeMerged,
+            currentGitBranch: data.currentGitBranch,
+            lastActivity: data.lastActivity,
           };
         }
         return data;
@@ -142,24 +146,10 @@ export function AgentChat() {
     const onDelta = (data: { agentId: string; delta: { messages: Agent['messages']; status: string; costUsd?: number; tokenUsage?: Agent['tokenUsage']; contextWindow?: Agent['contextWindow']; lastActivity: number; interactionMode?: Agent['interactionMode']; pendingPlan?: Agent['pendingPlan']; pendingQuestion?: Agent['pendingQuestion']; currentGitBranch?: string } }) => {
       if (data.agentId !== id) return;
       socketWorking = true;
-      if (data.delta.status !== 'running') {
-        setQueuedMessages([]);
-      }
       setAgent(prev => {
         if (!prev) return prev;
         const existingIds = new Set(prev.messages.map(m => m.id));
         const newMsgs = data.delta.messages.filter(m => !existingIds.has(m.id));
-        const newUserMsgs = newMsgs.filter(m => m.role === 'user');
-        if (newUserMsgs.length > 0) {
-          setQueuedMessages(qPrev => {
-            let remaining = [...qPrev];
-            for (const userMsg of newUserMsgs) {
-              const idx = remaining.findIndex(q => q.text === userMsg.content);
-              if (idx >= 0) remaining.splice(idx, 1);
-            }
-            return remaining;
-          });
-        }
         return {
           ...prev,
           messages: [...prev.messages, ...newMsgs],
@@ -180,9 +170,6 @@ export function AgentChat() {
     const onUpdate = (data: { agentId: string; agent: Agent }) => {
       if (data.agentId === id && data.agent) {
         socketWorking = true;
-        if (data.agent.status !== 'running') {
-          setQueuedMessages([]);
-        }
         // Only apply if server has at least as many messages (avoid overwriting optimistic messages)
         setAgent(prev => {
           if (!prev) return data.agent;
@@ -197,6 +184,11 @@ export function AgentChat() {
             interactionMode: data.agent.interactionMode,
             pendingPlan: data.agent.pendingPlan,
             pendingQuestion: data.agent.pendingQuestion,
+            queuedMessages: data.agent.queuedMessages,
+            queuePaused: data.agent.queuePaused,
+            worktreeMerged: data.agent.worktreeMerged,
+            currentGitBranch: data.agent.currentGitBranch,
+            lastActivity: data.agent.lastActivity,
           };
         });
       }
@@ -273,7 +265,14 @@ export function AgentChat() {
 
   useEffect(() => {
     if (!didInitialScrollRef.current) return;
-    messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
+    const container = messagesContainerRef.current;
+    if (!container) return;
+    const target = Math.max(0, container.scrollHeight - container.clientHeight);
+    if (typeof container.scrollTo === 'function') {
+      container.scrollTo({ top: target, behavior: 'smooth' });
+    } else {
+      container.scrollTop = target;
+    }
   }, [agent?.messages?.length, localMessages.length]);
 
   useEffect(() => {
@@ -496,25 +495,30 @@ export function AgentChat() {
     }
   };
 
-  const handleCommit = () => {
+  const handleCommit = async () => {
     if (!id || !agent) return;
     const text = buildCommitPrompt(agent);
-    if (agent.status === 'running') {
-      const qId = `q-${Date.now()}`;
-      setQueuedMessages(prev => [...prev, { id: qId, text }]);
-      api.sendMessage(id, text).catch(() => {
-        setQueuedMessages(prev => prev.filter(q => q.id !== qId));
-      });
-    } else {
-      setAgent(prev => {
-        if (!prev) return prev;
-        return {
-          ...prev,
-          status: 'running' as Agent['status'],
-          messages: [...prev.messages, { id: `pending-${Date.now()}`, role: 'user', content: text, timestamp: Date.now() }],
-        };
-      });
-      api.sendMessage(id, text);
+    try {
+      const result = await api.sendMessage(id, text);
+      setAgent(result.agent);
+    } catch (err) {
+      addLocalMessage(`[Error] ${String(err)}`);
+    }
+  };
+
+  const handleWorktreeAction = async (action: 'update' | 'merge') => {
+    if (!id || !agent) return;
+    setGitAction(action);
+    try {
+      const prompt = action === 'update'
+        ? buildUpdateFromBasePrompt(agent)
+        : buildMergeToBasePrompt(agent);
+      const result = await api.sendMessage(id, prompt);
+      setAgent(result.agent);
+    } catch (err) {
+      addLocalMessage(`[Error] ${err instanceof Error ? err.message : String(err)}`);
+    } finally {
+      setGitAction(null);
     }
   };
 
@@ -585,27 +589,49 @@ export function AgentChat() {
 
     if (!text) return;
 
-    const isRunning = agent?.status === 'running';
     setInput('');
     setAttachedFiles([]);
     setInputRequired(null);
 
-    if (isRunning) {
-      const qId = `q-${Date.now()}`;
-      setQueuedMessages(prev => [...prev, { id: qId, text }]);
-      api.sendMessage(id, text).catch(() => {
-        setQueuedMessages(prev => prev.filter(q => q.id !== qId));
-      });
-    } else {
+    const queueMessageId = `client-${Date.now()}-${Math.random().toString(36).slice(2)}`;
+    const expectQueue = agentRef.current?.status === 'running';
+    if (expectQueue) {
+      setAgent(prev => prev ? {
+        ...prev,
+        queuedMessages: [
+          ...(prev.queuedMessages || []),
+          {
+            id: queueMessageId,
+            text,
+            createdAt: Date.now(),
+            interactionMode: prev.interactionMode,
+          },
+        ],
+      } : prev);
+    }
+
+    try {
+      const result = await api.sendMessage(id, text, queueMessageId);
       setAgent(prev => {
-        if (!prev) return prev;
+        if (!prev || result.disposition === 'started') return result.agent;
+        const queuedById = new Map((prev.queuedMessages || []).map(message => [message.id, message]));
+        for (const message of result.agent.queuedMessages || []) queuedById.set(message.id, message);
+        if (result.queuedMessage) queuedById.set(result.queuedMessage.id, result.queuedMessage);
         return {
           ...prev,
-          status: 'running' as Agent['status'],
-          messages: [...prev.messages, { id: `pending-${Date.now()}`, role: 'user', content: text, timestamp: Date.now() }],
+          status: result.agent.status,
+          queuedMessages: Array.from(queuedById.values()).sort((a, b) => a.createdAt - b.createdAt),
+          queuePaused: result.agent.queuePaused,
+          lastActivity: Math.max(prev.lastActivity, result.agent.lastActivity),
         };
       });
-      api.sendMessage(id, text);
+    } catch (err) {
+      setAgent(prev => prev ? {
+        ...prev,
+        queuedMessages: (prev.queuedMessages || []).filter(message => message.id !== queueMessageId),
+      } : prev);
+      setInput(text);
+      addLocalMessage(`[Error] ${String(err)}`);
     }
   };
 
@@ -890,9 +916,35 @@ export function AgentChat() {
           >
             Files
           </button>
-          <button className="btn btn-sm btn-outline" onClick={handleCommit} title={t('dashboard.commitTooltip')}>
-            {t('dashboard.commit')}
+          <button
+            className="btn btn-sm btn-outline"
+            onClick={handleCommit}
+            title={t(agent.workspaceMode !== 'direct' && agent.worktreeBranch
+              ? 'dashboard.commitWorktreeTooltip'
+              : 'dashboard.commitTooltip')}
+          >
+            {t(agent.workspaceMode !== 'direct' && agent.worktreeBranch
+              ? 'dashboard.commitWorktree'
+              : 'dashboard.commit')}
           </button>
+          {agent.workspaceMode !== 'direct' && agent.worktreeBranch && agent.gitBranch && (
+            <>
+              <button
+                className="btn btn-sm btn-outline"
+                disabled={agent.status === 'running' || agent.status === 'waiting_input' || gitAction !== null}
+                onClick={() => void handleWorktreeAction('update')}
+              >
+                {t('dashboard.updateFromBase', { branch: agent.gitBranch })}
+              </button>
+              <button
+                className="btn btn-sm btn-outline"
+                disabled={agent.status === 'running' || agent.status === 'waiting_input' || gitAction !== null}
+                onClick={() => void handleWorktreeAction('merge')}
+              >
+                {t('dashboard.mergeToBase', { branch: agent.gitBranch })}
+              </button>
+            </>
+          )}
           {(agent.status === 'running' || agent.status === 'waiting_input') && (
             <button className="btn btn-sm btn-danger" onClick={() => id && api.stopAgent(id)}>
               {t('common.stop')}
@@ -951,20 +1003,7 @@ export function AgentChat() {
                     </>
                   ) : (
                     renderMarkdown && msg.role === 'assistant'
-                      ? <ReactMarkdown
-                          remarkPlugins={[remarkGfm]}
-                          components={{
-                            img: ({ src, alt, title }) => (
-                              <img
-                                className="chat-image"
-                                src={resolveImageSource(workspacePath, src)}
-                                alt={alt || ''}
-                                title={title}
-                                loading="lazy"
-                              />
-                            ),
-                          }}
-                        >{msg.content}</ReactMarkdown>
+                      ? <ChatMarkdown content={msg.content} workspacePath={workspacePath} />
                       : msg.content
                   )}
                   {'attachments' in msg && msg.attachments?.map((attachment, index) => {
@@ -1124,7 +1163,7 @@ export function AgentChat() {
             )}
           </div>
         )}
-        {((agent.status === 'waiting_input' || inputRequired) || queuedMessages.length > 0) && (
+        {((agent.status === 'waiting_input' || inputRequired) || (agent.queuedMessages?.length || 0) > 0) && (
           <div className="chat-notify-bar">
             {(agent.status === 'waiting_input' || inputRequired) && (
               <>
@@ -1145,12 +1184,42 @@ export function AgentChat() {
                 )}
               </>
             )}
-            {queuedMessages.length > 0 && (
+            {(agent.queuedMessages?.length || 0) > 0 && (
               <div className="chat-notify-queue">
-                <span className="chat-notify-queue-label">{t('chat.queued')} ({queuedMessages.length})</span>
-                {queuedMessages.map((q) => (
+                <span className="chat-notify-queue-label">{t('chat.queued')} ({agent.queuedMessages?.length || 0})</span>
+                {agent.queuePaused && (
+                  <button
+                    type="button"
+                    className="btn btn-sm btn-outline"
+                    onClick={async () => {
+                      try {
+                        setAgent(await api.resumeQueuedMessages(agent.id));
+                      } catch (err) {
+                        addLocalMessage(`[Error] ${String(err)}`);
+                      }
+                    }}
+                  >
+                    {t('chat.resumeQueue')}
+                  </button>
+                )}
+                {(agent.queuedMessages || []).map((q) => (
                   <div key={q.id} className="chat-notify-queue-item">
-                    {q.text.length > 120 ? q.text.slice(0, 120) + '...' : q.text}
+                    <span>{q.text.length > 120 ? q.text.slice(0, 120) + '...' : q.text}</span>
+                    <button
+                      type="button"
+                      className="chat-notify-queue-remove"
+                      aria-label={`${t('common.delete')}: ${q.text}`}
+                      title={t('common.delete')}
+                      onClick={async () => {
+                        try {
+                          setAgent(await api.cancelQueuedMessage(agent.id, q.id));
+                        } catch (err) {
+                          addLocalMessage(`[Error] ${String(err)}`);
+                        }
+                      }}
+                    >
+                      &minus;
+                    </button>
                   </div>
                 ))}
               </div>

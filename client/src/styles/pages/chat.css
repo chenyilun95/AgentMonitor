@@ -113,6 +113,16 @@
   padding: 4px 12px;
   color: var(--text-muted);
 }
+.chat-message.assistant .katex-display {
+  margin: 10px 0;
+  overflow-x: auto;
+  overflow-y: hidden;
+  padding: 2px 0;
+}
+.chat-message.assistant .katex {
+  white-space: normal;
+  word-break: normal;
+}
 
 .chat-image-link {
   display: block;
@@ -338,6 +348,10 @@
 }
 
 .chat-notify-queue-item {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
   font-size: 0.82em;
   color: var(--text-secondary);
   padding: 3px 8px;
@@ -346,6 +360,19 @@
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
+}
+
+.chat-notify-queue-remove {
+  border: 0;
+  background: transparent;
+  color: var(--text-muted);
+  cursor: pointer;
+  font-size: 18px;
+  line-height: 1;
+}
+
+.chat-notify-queue-remove:hover {
+  color: var(--red);
 }
 
 /* Side prompt dialog */

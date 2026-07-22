@@ -370,4 +370,22 @@ export class AgentStore {
     this.settings.pathHistory[machine] = [normalizedPath, ...filtered].slice(0, 20);
     fs.writeFileSync(this.settingsFile, JSON.stringify(this.settings, null, 2));
   }
+
+  removePath(dirPath: string): void {
+    const normalizedPath = normalizeUserPath(dirPath);
+    let changed = false;
+    for (const [machine, paths] of Object.entries(this.settings.pathHistory || {})) {
+      const filtered = paths.filter(p => normalizeUserPath(p) !== normalizedPath);
+      if (filtered.length === paths.length) continue;
+      changed = true;
+      if (filtered.length > 0) {
+        this.settings.pathHistory[machine] = filtered;
+      } else {
+        delete this.settings.pathHistory[machine];
+      }
+    }
+    if (changed) {
+      fs.writeFileSync(this.settingsFile, JSON.stringify(this.settings, null, 2));
+    }
+  }
 }

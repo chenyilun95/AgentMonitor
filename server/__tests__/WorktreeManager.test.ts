@@ -36,11 +36,13 @@ describe('WorktreeManager', () => {
     expect(fs.existsSync(result.worktreePath)).toBe(true);
   });
 
-  it('creates a worktree with CLAUDE.md', () => {
-    const result = manager.createWorktree(tmpDir, 'test-branch-md', '# My Config');
+  it('does not modify a tracked CLAUDE.md in the worktree', () => {
+    fs.writeFileSync(path.join(tmpDir, 'CLAUDE.md'), '# Repository Config');
+    execSync('git add CLAUDE.md && git commit -m "add instructions"', { cwd: tmpDir, stdio: 'pipe' });
+    const result = manager.createWorktree(tmpDir, 'test-branch-md');
     const claudeMd = fs.readFileSync(path.join(result.worktreePath, 'CLAUDE.md'), 'utf-8');
-    expect(claudeMd).toContain('# My Config');
-    expect(claudeMd).toContain('## Worktree Mode');
+    expect(claudeMd).toBe('# Repository Config');
+    expect(execSync('git status --porcelain', { cwd: result.worktreePath, encoding: 'utf8' })).toBe('');
   });
 
   it('removes a worktree', () => {
@@ -52,30 +54,9 @@ describe('WorktreeManager', () => {
     expect(fs.existsSync(result.worktreePath)).toBe(false);
   });
 
-  it('updates CLAUDE.md in a worktree', () => {
-    const result = manager.createWorktree(tmpDir, 'update-md', '# Old');
-    manager.updateClaudeMd(result.worktreePath, '# New');
-    const content = manager.getClaudeMd(result.worktreePath);
-    expect(content).toBe('# New');
-  });
-
-  it('creates and updates AGENTS.md for codex worktrees', () => {
-    const result = manager.createWorktree(tmpDir, 'codex-md', '# Codex Config', 'codex');
-    const agentsMd = fs.readFileSync(path.join(result.worktreePath, 'AGENTS.md'), 'utf-8');
-    expect(agentsMd).toContain('# Codex Config');
-    expect(agentsMd).toContain('## Worktree Mode');
-
-    manager.updateClaudeMd(result.worktreePath, '# Updated Codex Config', 'codex');
-    const content = manager.getClaudeMd(result.worktreePath, 'codex');
-    expect(content).toBe('# Updated Codex Config');
-  });
-
-  it('getClaudeMd returns null if no file', () => {
-    const result = manager.createWorktree(tmpDir, 'no-md');
-    // No CLAUDE.md was written
-    const content = manager.getClaudeMd(result.worktreePath);
-    // README.md exists from init, but CLAUDE.md may or may not
-    // Just check it returns string or null
-    expect(content === null || typeof content === 'string').toBe(true);
+  it('does not create an untracked AGENTS.md for Codex worktrees', () => {
+    const result = manager.createWorktree(tmpDir, 'codex-md');
+    expect(fs.existsSync(path.join(result.worktreePath, 'AGENTS.md'))).toBe(false);
+    expect(execSync('git status --porcelain', { cwd: result.worktreePath, encoding: 'utf8' })).toBe('');
   });
 });
