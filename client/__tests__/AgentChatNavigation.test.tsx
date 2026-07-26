@@ -1,4 +1,4 @@
-import { render, screen, waitFor } from '@testing-library/react';
+import { fireEvent, render, screen, waitFor } from '@testing-library/react';
 import { MemoryRouter, Route, Routes } from 'react-router-dom';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { AgentChat } from '../src/pages/AgentChat';
@@ -161,5 +161,56 @@ describe('AgentChat connection handling', () => {
     expect(screen.getByRole('alert')).toHaveTextContent(
       /same files and branch|共享相同的文件和分支/,
     );
+  });
+
+  it('jumps from the history controls to the latest message', async () => {
+    const agent = {
+      id: 'agent-1',
+      name: 'Long conversation',
+      status: 'stopped',
+      config: {
+        provider: 'codex',
+        directory: '/tmp/project',
+        prompt: 'Review history',
+        flags: {},
+      },
+      messages: [{
+        id: 'message-1',
+        role: 'assistant',
+        content: 'Latest response',
+        timestamp: 1,
+      }],
+      messagePage: {
+        hasMore: false,
+        total: 1,
+      },
+      lastActivity: 1,
+      createdAt: 1,
+    } as Agent;
+    vi.mocked(api.getAgent).mockResolvedValue(agent);
+    vi.mocked(api.getRuntimeCapabilities).mockRejectedValue(new Error('not needed'));
+
+    render(
+      <MemoryRouter initialEntries={['/agent/agent-1']}>
+        <LanguageProvider>
+          <Routes>
+            <Route path="/agent/:id" element={<AgentChat />} />
+          </Routes>
+        </LanguageProvider>
+      </MemoryRouter>,
+    );
+
+    expect(await screen.findByText('Latest response')).toBeInTheDocument();
+    const container = document.querySelector('.chat-messages') as HTMLDivElement;
+    const scrollTo = vi.fn();
+    Object.defineProperties(container, {
+      scrollHeight: { configurable: true, value: 1200 },
+      clientHeight: { configurable: true, value: 300 },
+      scrollTo: { configurable: true, value: scrollTo },
+    });
+
+    fireEvent.click(screen.getByRole('button', { name: /Jump to bottom|跳到底部/ }));
+
+    expect(scrollTo).toHaveBeenCalledWith({ top: 900, behavior: 'smooth' });
   });
 });

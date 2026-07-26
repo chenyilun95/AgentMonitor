@@ -148,6 +148,7 @@ export const zh: Record<string, string> = {
     'chat.historyPickerTitle': '历史对话',
     'chat.historyPickerHint': '↑↓ 导航 · Enter 选择 · Esc 关闭',
     'chat.loadEarlier': '加载更早消息',
+    'chat.jumpToLatest': '跳到底部',
     'chat.messageCount': '已加载 {{loaded}} / {{total}} 条',
     'chat.noHistory': '暂无对话历史。',
     'chat.restoreTitle': '还原到此节点？',

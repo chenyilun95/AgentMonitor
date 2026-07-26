@@ -60,3 +60,27 @@
   box-shadow: var(--shadow-glow);
   transform: translateY(-1px);
 }
+
+.pipeline-status {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  color: var(--pipeline-status-color, var(--text-muted));
+  font-size: 13px;
+  font-weight: 600;
+  white-space: nowrap;
+}
+
+.pipeline-status-dot {
+  width: 7px;
+  height: 7px;
+  flex: 0 0 auto;
+  border-radius: 50%;
+  background: currentColor;
+  box-shadow: 0 0 7px currentColor;
+}
+
+.pipeline-task-status {
+  font-size: 11px;
+  text-transform: capitalize;
+}

@@ -129,8 +129,12 @@
     flex-wrap: wrap;
   }
 
-  .directory-group-path {
+  .directory-group-identity {
     width: 100%;
+  }
+
+  .directory-group-path {
+    flex: 1;
     overflow-wrap: anywhere;
   }
 
@@ -158,6 +162,13 @@
     flex-basis: auto;
     padding: 0 12px;
     font-size: 13px;
+  }
+
+  .directory-group-identity .directory-group-remove {
+    width: 26px;
+    height: 26px;
+    flex-basis: 26px;
+    font-size: 18px;
   }
 
   .modal-overlay {

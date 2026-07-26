@@ -149,6 +149,7 @@ export const en: Record<string, string> = {
     'chat.historyPickerHint': '↑↓ navigate · Enter select · Esc close',
     'chat.noHistory': 'No conversation history.',
     'chat.loadEarlier': 'Load earlier messages',
+    'chat.jumpToLatest': 'Jump to bottom',
     'chat.messageCount': '{{loaded}} of {{total}} messages',
     'chat.restoreTitle': 'Restore to this turn?',
     'chat.restoreCodeAndConv': 'Restore code and conversation',

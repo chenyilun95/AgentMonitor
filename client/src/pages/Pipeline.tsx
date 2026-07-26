@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback, useRef } from 'react';
+import { useState, useEffect, useCallback, useRef, type CSSProperties } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { api, type PipelineTask, type AgentManagerConfig, type AgentProvider, type Template, type HarnessState } from '../api/client';
 import { getSocket } from '../api/socket';
@@ -304,15 +304,10 @@ export function Pipeline() {
                 {t('pipeline.addTask')}
               </button>
               <span
-                style={{
-                  fontSize: 13,
-                  padding: '4px 10px',
-                  borderRadius: 12,
-                  background: metaConfig?.running ? 'var(--green)' : 'var(--bg-input)',
-                  color: metaConfig?.running ? 'white' : 'var(--text-muted)',
-                  fontWeight: 600,
-                }}
+                className="pipeline-status"
+                style={{ '--pipeline-status-color': metaConfig?.running ? 'var(--green)' : 'var(--text-muted)' } as CSSProperties}
               >
+                <span className="pipeline-status-dot" />
                 {t('pipeline.manager')} {metaConfig?.running ? t('pipeline.running') : t('pipeline.stopped')}
               </span>
               {metaConfig?.running ? (
@@ -377,14 +372,11 @@ export function Pipeline() {
             </div>
           ) : (
             <div style={{ display: 'flex', alignItems: 'center', gap: 16 }}>
-              <span style={{
-                fontSize: 13,
-                padding: '4px 10px',
-                borderRadius: 12,
-                background: 'var(--green)',
-                color: 'white',
-                fontWeight: 600,
-              }}>
+              <span
+                className="pipeline-status"
+                style={{ '--pipeline-status-color': getStatusColor(harnessState.status) } as CSSProperties}
+              >
+                <span className="pipeline-status-dot" />
                 {t('pipeline.harnessStatus')}: {t(`pipeline.harness${harnessState.status.charAt(0).toUpperCase() + harnessState.status.slice(1)}` as 'pipeline.harnessPlanning')}
               </span>
               {harnessState.totalGenerators > 0 && (
@@ -433,15 +425,10 @@ export function Pipeline() {
                             {getRoleBadge(task.role)}
                           </span>
                           <span
-                            style={{
-                              fontSize: 11,
-                              fontWeight: 600,
-                              padding: '1px 8px',
-                              borderRadius: 10,
-                              background: getStatusColor(task.status),
-                              color: 'white',
-                            }}
+                            className="pipeline-status pipeline-task-status"
+                            style={{ '--pipeline-status-color': getStatusColor(task.status) } as CSSProperties}
                           >
+                            <span className="pipeline-status-dot" />
                             {task.status}
                           </span>
                         </div>

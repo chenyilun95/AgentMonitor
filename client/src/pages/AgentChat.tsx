@@ -386,6 +386,23 @@ export function AgentChat() {
     }
   }, [agent?.messages?.length, localMessages.length]);
 
+  const scrollToLatestMessage = useCallback(() => {
+    prependScrollRef.current = null;
+    skipNextAutoScrollRef.current = false;
+    didInitialScrollRef.current = true;
+    const container = messagesContainerRef.current;
+    if (container) {
+      const target = Math.max(0, container.scrollHeight - container.clientHeight);
+      if (typeof container.scrollTo === 'function') {
+        container.scrollTo({ top: target, behavior: 'smooth' });
+      } else {
+        container.scrollTop = target;
+      }
+      return;
+    }
+    messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
+  }, []);
+
   useEffect(() => {
     if (agent) {
       setSelectedReasoningEffort(
@@ -1136,16 +1153,27 @@ export function AgentChat() {
         targetFilePath={targetFilePath}
       />
       <div ref={messagesContainerRef} className="chat-messages" style={{ display: showTerminal || showFiles ? 'none' : undefined }}>
-        {agent.messagePage?.hasMore && (
+        {agent.messagePage && agent.messages.length > 0 && (
           <div className="chat-load-earlier">
-            <button
-              type="button"
-              className="btn btn-sm btn-outline"
-              disabled={loadingEarlierMessages}
-              onClick={() => void loadEarlierMessages()}
-            >
-              {loadingEarlierMessages ? t('common.loading') : t('chat.loadEarlier')}
-            </button>
+            <div className="chat-history-actions">
+              {agent.messagePage.hasMore && (
+                <button
+                  type="button"
+                  className="btn btn-sm btn-outline"
+                  disabled={loadingEarlierMessages}
+                  onClick={() => void loadEarlierMessages()}
+                >
+                  {loadingEarlierMessages ? t('common.loading') : t('chat.loadEarlier')}
+                </button>
+              )}
+              <button
+                type="button"
+                className="btn btn-sm btn-outline"
+                onClick={scrollToLatestMessage}
+              >
+                {t('chat.jumpToLatest')}
+              </button>
+            </div>
             <span>{t('chat.messageCount', {
               loaded: agent.messages.length,
               total: agent.messagePage.total,

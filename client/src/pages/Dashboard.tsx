@@ -820,10 +820,23 @@ export function Dashboard() {
                 return (
                   <div key={project.key} className="directory-group">
                     <div className="directory-group-header">
-                      <span className="directory-group-path" title={dir}>
-                        <span className="card-meta-icon">&#128193;</span>
-                        {dirShort}
-                      </span>
+                      <div className="directory-group-identity">
+                        <span className="directory-group-path" title={dir}>
+                          <span className="card-meta-icon">&#128193;</span>
+                          {dirShort}
+                        </span>
+                        {project.savedPaths.length > 0 && groupAgents.length === 0 && (
+                          <button
+                            type="button"
+                            className="directory-group-icon-button directory-group-remove"
+                            aria-label={`${t('dashboard.deletePath')}: ${dir}`}
+                            title={t('dashboard.deletePath')}
+                            onClick={() => void Promise.all(project.savedPaths.map(path => api.deleteSavedDirectory(path))).then(fetchSettings)}
+                          >
+                            &minus;
+                          </button>
+                        )}
+                      </div>
                       <span className="directory-group-stats">
                         {project.isGit && gitInfo[launchPath]?.branch && (
                           <span>{gitInfo[launchPath].branch} · </span>
@@ -882,17 +895,6 @@ export function Dashboard() {
                           >
                             <span aria-hidden>+</span>
                             <span>Worktree</span>
-                          </button>
-                        )}
-                        {project.savedPaths.length > 0 && groupAgents.length === 0 && (
-                          <button
-                            type="button"
-                            className="directory-group-icon-button directory-group-remove"
-                            aria-label={`${t('dashboard.deletePath')}: ${dir}`}
-                            title={t('dashboard.deletePath')}
-                            onClick={() => void Promise.all(project.savedPaths.map(path => api.deleteSavedDirectory(path))).then(fetchSettings)}
-                          >
-                            &minus;
                           </button>
                         )}
                       </div>

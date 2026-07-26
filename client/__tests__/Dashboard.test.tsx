@@ -170,8 +170,10 @@ describe('Dashboard', () => {
 
     expect(await screen.findByText('/tmp/saved-project')).toBeInTheDocument();
     expect(screen.getByText(/0 agents|0 个代理/)).toBeInTheDocument();
-    expect(screen.getByRole('button', { name: /Remove path: \/tmp\/saved-project|删除路径: \/tmp\/saved-project/ }))
-      .toBeInTheDocument();
+    const removeButton = screen.getByRole('button', { name: /Remove path: \/tmp\/saved-project|删除路径: \/tmp\/saved-project/ });
+    expect(removeButton).toBeInTheDocument();
+    expect(removeButton.closest('.directory-group-identity')).not.toBeNull();
+    expect(removeButton.closest('.directory-group-icon-actions')).toBeNull();
   });
 
   it('hides the saved-directory remove action while the group has agents', async () => {

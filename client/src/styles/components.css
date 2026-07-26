@@ -461,6 +461,13 @@
   margin-bottom: 8px;
 }
 
+.directory-group-identity {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  min-width: 0;
+}
+
 .directory-group-path {
   font-size: 0.9em;
   font-weight: 600;
@@ -468,6 +475,7 @@
   display: flex;
   align-items: center;
   gap: 4px;
+  min-width: 0;
 }
 
 .directory-group-stats {
@@ -594,15 +602,14 @@
 .directory-picker-current { padding: 8px 10px; }
 .directory-picker-entry .dir-entry { border: 0; text-align: left; }
 
-/* --- Status Badges --- */
+/* --- Lightweight status indicators --- */
 .status {
   display: inline-flex;
   align-items: center;
   gap: 6px;
   font-size: 13px;
   font-weight: 600;
-  padding: 3px 10px;
-  border-radius: var(--radius-full);
+  padding: 0;
   letter-spacing: 0.02em;
   text-transform: capitalize;
 }
@@ -615,7 +622,6 @@
 }
 
 .status-running {
-  background: var(--green-dim);
   color: var(--green);
 }
 
@@ -626,7 +632,6 @@
 }
 
 .status-error {
-  background: var(--red-dim);
   color: var(--red);
 }
 
@@ -637,7 +642,6 @@
 
 .status-stopped,
 .status-waiting_input {
-  background: var(--yellow-dim);
   color: var(--yellow);
 }
 
