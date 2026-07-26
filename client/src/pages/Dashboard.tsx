@@ -830,29 +830,48 @@ export function Dashboard() {
                           )}
                         </>
                       )}
-                      <button
-                        className="btn btn-sm btn-secondary"
-                        onClick={() => navigate(`/create?directory=${encodeURIComponent(launchPath)}&mode=direct`)}
-                      >
-                        {t('dashboard.newAgent')}
-                      </button>
-                      <button
-                        className="btn btn-sm btn-secondary"
-                        onClick={() => navigate(`/create?directory=${encodeURIComponent(launchPath)}&mode=worktree`)}
-                      >
-                        {t('dashboard.newWorktreeAgent')}
-                      </button>
-                      {project.savedPaths.length > 0 && (
-                        <button
-                          type="button"
-                          className="directory-group-remove"
-                          aria-label={`${t('dashboard.deletePath')}: ${dir}`}
-                          title={t('dashboard.deletePath')}
-                          onClick={() => void Promise.all(project.savedPaths.map(path => api.deleteSavedDirectory(path))).then(fetchSettings)}
-                        >
-                          &minus;
-                        </button>
-                      )}
+                      <div className="directory-group-icon-actions">
+                        <details className="directory-group-add-menu">
+                          <summary
+                            className="directory-group-icon-button directory-group-add"
+                            aria-label={t('dashboard.newAgent')}
+                            title={t('dashboard.newAgent')}
+                          >
+                            <span aria-hidden>+</span>
+                          </summary>
+                          <div className="directory-group-add-options">
+                            <button
+                              type="button"
+                              onClick={(event) => {
+                                event.currentTarget.closest('details')?.removeAttribute('open');
+                                navigate(`/create?directory=${encodeURIComponent(launchPath)}&mode=direct`);
+                              }}
+                            >
+                              {t('dashboard.newAgent')}
+                            </button>
+                            <button
+                              type="button"
+                              onClick={(event) => {
+                                event.currentTarget.closest('details')?.removeAttribute('open');
+                                navigate(`/create?directory=${encodeURIComponent(launchPath)}&mode=worktree`);
+                              }}
+                            >
+                              {t('dashboard.newWorktreeAgent')}
+                            </button>
+                          </div>
+                        </details>
+                        {project.savedPaths.length > 0 && (
+                          <button
+                            type="button"
+                            className="directory-group-icon-button directory-group-remove"
+                            aria-label={`${t('dashboard.deletePath')}: ${dir}`}
+                            title={t('dashboard.deletePath')}
+                            onClick={() => void Promise.all(project.savedPaths.map(path => api.deleteSavedDirectory(path))).then(fetchSettings)}
+                          >
+                            &minus;
+                          </button>
+                        )}
+                      </div>
                     </div>
                     {groupAgents.length > 0 && (
                       <div className="card-grid">

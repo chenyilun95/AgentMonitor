@@ -490,17 +490,84 @@
   white-space: nowrap;
 }
 
-.directory-group-remove {
+.directory-group-icon-actions {
+  position: relative;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.directory-group-add-menu {
+  position: relative;
+}
+
+.directory-group-icon-button {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
   width: 26px;
   height: 26px;
+  flex: 0 0 26px;
   padding: 0;
   border: 1px solid var(--border);
   border-radius: 50%;
   background: transparent;
   color: var(--text-muted);
   font-size: 18px;
+  font-family: var(--font-body);
   line-height: 1;
   cursor: pointer;
+  list-style: none;
+  transition: border-color 0.15s ease, color 0.15s ease, background 0.15s ease;
+}
+
+.directory-group-icon-button::-webkit-details-marker {
+  display: none;
+}
+
+.directory-group-add:hover,
+.directory-group-add-menu[open] .directory-group-add {
+  border-color: var(--primary);
+  color: var(--primary);
+  background: var(--primary-dim);
+}
+
+.directory-group-add-options {
+  position: absolute;
+  z-index: 30;
+  top: calc(100% + 7px);
+  right: 0;
+  display: flex;
+  flex-direction: column;
+  width: max-content;
+  min-width: 190px;
+  overflow: hidden;
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  background: var(--bg-card);
+  box-shadow: var(--shadow-lg);
+}
+
+.directory-group-add-options button {
+  padding: 9px 12px;
+  border: 0;
+  border-bottom: 1px solid var(--border-subtle);
+  background: transparent;
+  color: var(--text);
+  font: inherit;
+  font-size: 13px;
+  text-align: left;
+  white-space: nowrap;
+  cursor: pointer;
+}
+
+.directory-group-add-options button:last-child {
+  border-bottom: 0;
+}
+
+.directory-group-add-options button:hover {
+  background: var(--primary-dim);
+  color: var(--primary);
 }
 
 .directory-group-remove:hover {
