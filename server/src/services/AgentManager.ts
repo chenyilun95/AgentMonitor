@@ -49,6 +49,7 @@ export class AgentWorkspaceError extends Error {}
 
 interface DeleteAgentOptions {
   purgeSessionFiles?: boolean;
+  discardWorkspaceChanges?: boolean;
 }
 
 export interface RestoreConversationResult {
@@ -2154,31 +2155,80 @@ export class AgentManager extends EventEmitter {
   }
 
   async deleteAgent(agentId: string, opts: DeleteAgentOptions = {}): Promise<void> {
-    await this.stopAgent(agentId);
     const agent = this.store.getAgent(agentId);
     if (!agent) return;
+
+    const inspectWorktreeChanges = (worktreeBranch: string, baseBranch: string): boolean => {
+      try {
+        const worktreeExists = !!agent.worktreePath && existsSync(agent.worktreePath);
+        const dirty = worktreeExists && execFileSync('git', ['status', '--porcelain'], {
+          cwd: agent.worktreePath,
+          encoding: 'utf8',
+          stdio: ['ignore', 'pipe', 'pipe'],
+          timeout: 5000,
+        }).trim().length > 0;
+        try {
+          execFileSync('git', ['merge-base', '--is-ancestor', worktreeBranch, baseBranch], {
+            cwd: normalizeUserPath(agent.config.directory),
+            stdio: 'ignore',
+            timeout: 5000,
+          });
+          return dirty;
+        } catch (error) {
+          if ((error as { status?: number }).status !== 1) throw error;
+          return true;
+        }
+      } catch (error) {
+        throw new AgentWorkspaceError(
+          `Could not verify that worktree "${agent.worktreePath || agent.worktreeBranch}" is safe to delete: ${error instanceof Error ? error.message : String(error)}`,
+        );
+      }
+    };
+
+    if (agent.workspaceMode === 'worktree' && agent.worktreeBranch && agent.baseBranch) {
+      const hasUnsafeChanges = inspectWorktreeChanges(agent.worktreeBranch, agent.baseBranch);
+      agent.hasUnintegratedChanges = hasUnsafeChanges || undefined;
+      this.store.saveAgent(agent);
+      if (hasUnsafeChanges && !opts.discardWorkspaceChanges) {
+        throw new AgentWorkspaceError(
+          'This worktree has uncommitted files or commits that are not merged into the base branch. Integrate the changes first, or explicitly choose to discard them.',
+        );
+      }
+    }
+
+    await this.stopAgent(agentId);
+    if (
+      agent.workspaceMode === 'worktree'
+      && agent.worktreeBranch
+      && agent.baseBranch
+      && !opts.discardWorkspaceChanges
+      && inspectWorktreeChanges(agent.worktreeBranch, agent.baseBranch)
+    ) {
+      agent.hasUnintegratedChanges = true;
+      this.store.saveAgent(agent);
+      throw new AgentWorkspaceError(
+        'The worktree changed while the Agent was stopping. It was kept; review or integrate the changes before deleting it.',
+      );
+    }
+
+    this.releaseCodeSnapshots(agent);
+
+    if (agent.worktreePath) {
+      if (agent.workspaceMode === 'direct') {
+        this.worktreeManager.removeDirectLink(agent.worktreePath);
+      } else if (agent.worktreeBranch) {
+        this.worktreeManager.removeWorktree(
+          normalizeUserPath(agent.config.directory),
+          agent.worktreePath,
+          agent.worktreeBranch,
+        );
+      }
+    }
 
     if (opts.purgeSessionFiles) {
       this.purgeSessionFiles(agent);
     }
 
-    this.releaseCodeSnapshots(agent);
-
-    if (agent?.worktreePath) {
-      try {
-        if (agent.workspaceMode === 'direct') {
-          this.worktreeManager.removeDirectLink(agent.worktreePath);
-        } else if (agent.worktreeBranch) {
-          this.worktreeManager.removeWorktree(
-            normalizeUserPath(agent.config.directory),
-            agent.worktreePath,
-            agent.worktreeBranch,
-          );
-        }
-      } catch (err) {
-        console.warn('[AgentManager] Workspace cleanup failed:', err);
-      }
-    }
     this.store.deleteAgent(agentId);
     this.emit('agent:status', agentId, 'deleted');
   }

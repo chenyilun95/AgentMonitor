@@ -1,4 +1,4 @@
-import { execSync } from 'child_process';
+import { execFileSync, execSync } from 'child_process';
 import fs from 'fs';
 import path from 'path';
 
@@ -42,21 +42,23 @@ export class WorktreeManager {
   }
 
   removeWorktree(repoDir: string, worktreePath: string, branchName: string): void {
-    try {
-      execSync(`git worktree remove "${worktreePath}" --force`, {
+    if (fs.existsSync(worktreePath)) {
+      execFileSync('git', ['worktree', 'remove', worktreePath, '--force'], {
         cwd: repoDir,
         stdio: 'pipe',
       });
-    } catch {
-      // worktree may already be gone
     }
-    try {
-      execSync(`git branch -D "${branchName}"`, {
+
+    const branchExists = execFileSync('git', ['branch', '--list', branchName], {
+      cwd: repoDir,
+      encoding: 'utf8',
+      stdio: 'pipe',
+    }).trim().length > 0;
+    if (branchExists) {
+      execFileSync('git', ['branch', '-D', branchName], {
         cwd: repoDir,
         stdio: 'pipe',
       });
-    } catch {
-      // branch may already be gone
     }
   }
 
@@ -79,15 +81,12 @@ export class WorktreeManager {
   }
 
   removeDirectLink(worktreePath: string): void {
-    try {
-      const stat = fs.lstatSync(worktreePath);
-      if (stat.isSymbolicLink()) {
-        fs.unlinkSync(worktreePath);
-      }
-      // If it isn't a symlink, refuse to touch it — caller likely passed wrong path.
-    } catch {
-      // already gone
+    const stat = fs.lstatSync(worktreePath, { throwIfNoEntry: false });
+    if (!stat) return;
+    if (!stat.isSymbolicLink()) {
+      throw new Error(`Refusing to remove non-symlink direct workspace: ${worktreePath}`);
     }
+    fs.unlinkSync(worktreePath);
   }
 
 }

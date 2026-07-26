@@ -20,9 +20,14 @@ export function Dashboard() {
   const [deleteDialog, setDeleteDialog] = useState<{
     agentId: string;
     agentName: string;
+    worktreePath?: string;
+    worktreeBranch?: string;
+    hasUnintegratedChanges: boolean;
+    discardWorkspaceChanges: boolean;
     canPurge: boolean;
     purgeSessionFiles: boolean;
     dontAskAgain: boolean;
+    error?: string;
   } | null>(null);
   const [showExternal, setShowExternal] = useState(() => localStorage.getItem('agentmonitor-show-external') !== 'false');
   const [labelFilter, setLabelFilter] = useState('');
@@ -150,24 +155,37 @@ export function Dashboard() {
     fetchAgents();
   };
 
-  const executeDelete = async (id: string, purgeSessionFiles: boolean) => {
-    await api.deleteAgent(id, { purgeSessionFiles });
+  const executeDelete = async (
+    id: string,
+    purgeSessionFiles: boolean,
+    discardWorkspaceChanges = false,
+  ) => {
+    await api.deleteAgent(id, { purgeSessionFiles, discardWorkspaceChanges });
     fetchAgents();
   };
 
   const handleDelete = async (e: React.MouseEvent, agent: Agent) => {
     e.stopPropagation();
-    if (deleteSessionFilesPolicy !== 'purge') {
+    const isWorktree = agent.workspaceMode === 'worktree' && !!agent.worktreePath;
+    if (deleteSessionFilesPolicy !== 'purge' || isWorktree) {
       setDeleteDialog({
         agentId: agent.id,
         agentName: agent.name,
+        worktreePath: isWorktree ? agent.worktreePath : undefined,
+        worktreeBranch: isWorktree ? agent.worktreeBranch : undefined,
+        hasUnintegratedChanges: isWorktree && agent.hasUnintegratedChanges === true,
+        discardWorkspaceChanges: false,
         canPurge: !!agent.sessionId,
-        purgeSessionFiles: false,
+        purgeSessionFiles: deleteSessionFilesPolicy === 'purge' && !!agent.sessionId,
         dontAskAgain: false,
       });
       return;
     }
-    await executeDelete(agent.id, !!agent.sessionId);
+    try {
+      await executeDelete(agent.id, !!agent.sessionId);
+    } catch (err) {
+      window.alert(err instanceof Error ? err.message : String(err));
+    }
   };
 
   const handleDeleteConfirm = async () => {
@@ -178,8 +196,21 @@ export function Dashboard() {
       await api.updateSettings({ deleteSessionFilesPolicy: nextPolicy });
       setDeleteSessionFilesPolicy(nextPolicy);
     }
-    await executeDelete(deleteDialog.agentId, shouldPurge);
-    setDeleteDialog(null);
+    try {
+      await executeDelete(
+        deleteDialog.agentId,
+        shouldPurge,
+        deleteDialog.discardWorkspaceChanges,
+      );
+      setDeleteDialog(null);
+    } catch (err) {
+      setDeleteDialog((current) => current ? {
+        ...current,
+        hasUnintegratedChanges: current.hasUnintegratedChanges || !!current.worktreePath,
+        error: err instanceof Error ? err.message : String(err),
+      } : current);
+      await fetchAgents(true);
+    }
   };
 
   const handleStop = async (e: React.MouseEvent, id: string) => {
@@ -1006,6 +1037,41 @@ export function Dashboard() {
             <p style={{ color: 'var(--text-secondary)', marginTop: 6, marginBottom: 12 }}>
               {t('dashboard.deleteConfirmMessage', { name: deleteDialog.agentName })}
             </p>
+            {deleteDialog.worktreePath && (
+              <div style={{
+                background: 'var(--bg-secondary)',
+                border: '1px solid var(--border)',
+                borderRadius: 6,
+                padding: 10,
+                marginBottom: 12,
+                fontSize: 13,
+              }}>
+                <div>{t('dashboard.deleteConfirmWorktree')}</div>
+                <code style={{ overflowWrap: 'anywhere' }}>{deleteDialog.worktreePath}</code>
+                {deleteDialog.worktreeBranch && (
+                  <div style={{ marginTop: 6 }}>
+                    {t('dashboard.deleteConfirmBranch')} <code>{deleteDialog.worktreeBranch}</code>
+                  </div>
+                )}
+                <div style={{ color: 'var(--danger)', marginTop: 8 }}>
+                  {t('dashboard.deleteConfirmWorkspaceWarning')}
+                </div>
+              </div>
+            )}
+            {deleteDialog.hasUnintegratedChanges && (
+              <label className="checkbox-label" style={{ marginBottom: 12, color: 'var(--danger)' }}>
+                <input
+                  type="checkbox"
+                  checked={deleteDialog.discardWorkspaceChanges}
+                  onChange={(e) => setDeleteDialog((prev) => prev ? {
+                    ...prev,
+                    discardWorkspaceChanges: e.target.checked,
+                    error: undefined,
+                  } : prev)}
+                />
+                {t('dashboard.deleteConfirmDiscardChanges')}
+              </label>
+            )}
             <label className="checkbox-label" style={{ marginBottom: 10 }}>
               <input
                 type="checkbox"
@@ -1033,11 +1099,20 @@ export function Dashboard() {
               />
               {t('dashboard.deleteConfirmDontAsk')}
             </label>
+            {deleteDialog.error && (
+              <div style={{ color: 'var(--danger)', marginTop: 12 }}>
+                {deleteDialog.error}
+              </div>
+            )}
             <div style={{ display: 'flex', gap: 8, justifyContent: 'flex-end', marginTop: 16 }}>
               <button className="btn btn-outline" onClick={() => setDeleteDialog(null)}>
                 {t('common.cancel')}
               </button>
-              <button className="btn btn-danger" onClick={handleDeleteConfirm}>
+              <button
+                className="btn btn-danger"
+                disabled={deleteDialog.hasUnintegratedChanges && !deleteDialog.discardWorkspaceChanges}
+                onClick={handleDeleteConfirm}
+              >
                 {t('dashboard.deleteConfirmAction')}
               </button>
             </div>

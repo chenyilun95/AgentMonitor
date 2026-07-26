@@ -195,10 +195,13 @@ export function agentRoutes(manager: AgentManager, store: AgentStore): Router {
         : undefined;
       const deletePolicy = store.getSettings().deleteSessionFilesPolicy;
       const purgeSessionFiles = requestedPurge ?? (deletePolicy === 'purge');
-      await manager.deleteAgent(req.params.id, { purgeSessionFiles });
+      const discardWorkspaceChanges = req.body?.discardWorkspaceChanges === true;
+      await manager.deleteAgent(req.params.id, { purgeSessionFiles, discardWorkspaceChanges });
       res.json({ ok: true, purgeSessionFiles });
     } catch (err) {
-      res.status(500).json({ error: String(err) });
+      res.status(err instanceof AgentWorkspaceError ? 409 : 500).json({
+        error: err instanceof Error ? err.message : String(err),
+      });
     }
   });
 

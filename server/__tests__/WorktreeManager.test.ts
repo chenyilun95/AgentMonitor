@@ -58,6 +58,18 @@ describe('WorktreeManager', () => {
     manager.removeWorktree(tmpDir, result.worktreePath, 'to-remove');
     // Worktree should be removed
     expect(fs.existsSync(result.worktreePath)).toBe(false);
+    expect(execSync('git branch --list to-remove', {
+      cwd: tmpDir,
+      encoding: 'utf8',
+    }).trim()).toBe('');
+  });
+
+  it('reports cleanup failures instead of silently ignoring them', () => {
+    expect(() => manager.removeWorktree(
+      path.join(tmpDir, 'missing-repository'),
+      path.join(tmpDir, 'missing-worktree'),
+      'missing-branch',
+    )).toThrow();
   });
 
   it('does not create an untracked AGENTS.md for Codex worktrees', () => {

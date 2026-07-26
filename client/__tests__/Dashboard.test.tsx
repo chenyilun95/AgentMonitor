@@ -20,6 +20,8 @@ vi.mock('../src/api/client', async () => {
       pullDirectory: vi.fn(),
       pushDirectory: vi.fn(),
       sendMessage: vi.fn(),
+      deleteAgent: vi.fn(),
+      updateSettings: vi.fn(),
     },
   };
 });
@@ -374,5 +376,53 @@ describe('Dashboard', () => {
       'agent-1',
       expect.stringContaining('Merge the current Worktree branch "agent-1" back into its original branch "main"'),
     ));
+  });
+
+  it('requires explicit confirmation before discarding Worktree changes', async () => {
+    const agent = {
+      ...makeAgent('agent-delete', 'Unsafe worktree', 1000, 'stopped'),
+      workspaceMode: 'worktree' as const,
+      worktreePath: '/tmp/project/.agent-worktrees/agent-delete',
+      worktreeBranch: 'agent-delete',
+      baseBranch: 'main',
+      hasUnintegratedChanges: true,
+    };
+    vi.mocked(api.getAgents).mockResolvedValue([agent]);
+    vi.mocked(api.getSettings).mockResolvedValue({
+      agentRetentionMs: 86_400_000,
+      promptSuggestions: [],
+      pathHistory: {},
+      deleteSessionFilesPolicy: 'purge',
+    });
+    vi.mocked(api.getSavedDirectories).mockResolvedValue({ paths: [] });
+    vi.mocked(api.deleteAgent).mockResolvedValue({ ok: true });
+
+    render(
+      <MemoryRouter>
+        <LanguageProvider>
+          <Dashboard />
+        </LanguageProvider>
+      </MemoryRouter>,
+    );
+
+    await screen.findByText('Unsafe worktree');
+    fireEvent.click(screen.getByRole('button', { name: /^Delete$|^删除$/ }));
+
+    expect(screen.getByText(agent.worktreePath)).toBeInTheDocument();
+    expect(screen.getByText(agent.worktreeBranch)).toBeInTheDocument();
+    const deleteButtons = screen.getAllByRole('button', { name: /^Delete$|^删除$/ });
+    const confirm = deleteButtons[deleteButtons.length - 1];
+    expect(confirm).toBeDisabled();
+
+    fireEvent.click(screen.getByLabelText(
+      /Discard all uncommitted files|放弃所有未提交文件/,
+    ));
+    expect(confirm).toBeEnabled();
+    fireEvent.click(confirm);
+
+    await waitFor(() => expect(api.deleteAgent).toHaveBeenCalledWith(agent.id, {
+      purgeSessionFiles: false,
+      discardWorkspaceChanges: true,
+    }));
   });
 });
