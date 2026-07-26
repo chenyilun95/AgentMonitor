@@ -374,16 +374,6 @@ export class AgentManager extends EventEmitter {
       ? (getGitDirectoryInfo(agentConfig.directory).repositoryRoot || gitRoot)
       : undefined;
     const projectKey = repositoryRoot ? `git:${repositoryRoot}` : `dir:${portableUserPath(agentConfig.directory)}`;
-    if (workspaceMode === 'direct') {
-      const activeDirect = this.store.getAllAgents().find(existing =>
-        existing.workspaceMode === 'direct'
-        && existing.projectKey === projectKey
-        && (existing.status === 'running' || existing.status === 'waiting_input')
-      );
-      if (activeDirect) {
-        throw new AgentWorkspaceError(`Direct Edit is already active for this project in agent "${activeDirect.name}".`);
-      }
-    }
 
     let initialBranch: string | undefined;
     if (isGitRepo && gitRoot) {

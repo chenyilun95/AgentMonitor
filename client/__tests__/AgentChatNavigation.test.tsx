@@ -27,6 +27,7 @@ vi.mock('../src/api/client', async () => {
     ...actual,
     api: {
       getAgent: vi.fn(),
+      getAgents: vi.fn(),
       getRuntimeCapabilities: vi.fn(),
     },
   };
@@ -112,5 +113,53 @@ describe('AgentChat connection handling', () => {
     });
     expect(screen.getByText('Existing response')).toBeInTheDocument();
     expect(navigate).not.toHaveBeenCalled();
+  });
+
+  it('warns when another active Direct Edit agent shares the project', async () => {
+    const currentAgent = {
+      id: 'agent-1',
+      name: 'Current Direct',
+      status: 'running',
+      workspaceMode: 'direct',
+      repositoryRoot: '/tmp/project',
+      projectKey: 'git:/tmp/project',
+      config: {
+        provider: 'codex',
+        directory: '/tmp/project',
+        prompt: 'Current task',
+        flags: {},
+      },
+      messages: [],
+      lastActivity: 2,
+      createdAt: 1,
+    } as Agent;
+    const peerAgent = {
+      ...currentAgent,
+      id: 'agent-2',
+      name: 'Peer Direct',
+      status: 'waiting_input',
+      config: {
+        ...currentAgent.config,
+        directory: '/tmp/project/packages/app',
+      },
+    } as Agent;
+    vi.mocked(api.getAgent).mockResolvedValue(currentAgent);
+    vi.mocked(api.getAgents).mockResolvedValue([currentAgent, peerAgent]);
+    vi.mocked(api.getRuntimeCapabilities).mockRejectedValue(new Error('not needed'));
+
+    render(
+      <MemoryRouter initialEntries={['/agent/agent-1']}>
+        <LanguageProvider>
+          <Routes>
+            <Route path="/agent/:id" element={<AgentChat />} />
+          </Routes>
+        </LanguageProvider>
+      </MemoryRouter>,
+    );
+
+    expect(await screen.findByRole('alert')).toHaveTextContent('Peer Direct');
+    expect(screen.getByRole('alert')).toHaveTextContent(
+      /same files and branch|共享相同的文件和分支/,
+    );
   });
 });

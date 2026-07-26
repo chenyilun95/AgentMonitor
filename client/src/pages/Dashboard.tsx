@@ -841,16 +841,18 @@ export function Dashboard() {
                           <span aria-hidden>+</span>
                           <span>Direct</span>
                         </button>
-                        <button
-                          type="button"
-                          className="directory-group-icon-button directory-group-create-button directory-group-add directory-group-add-worktree"
-                          aria-label={t('dashboard.newWorktreeAgent')}
-                          title={t('dashboard.newWorktreeAgent')}
-                          onClick={() => navigate(`/create?directory=${encodeURIComponent(launchPath)}&mode=worktree`)}
-                        >
-                          <span aria-hidden>+</span>
-                          <span>Worktree</span>
-                        </button>
+                        {project.isGit && (
+                          <button
+                            type="button"
+                            className="directory-group-icon-button directory-group-create-button directory-group-add directory-group-add-worktree"
+                            aria-label={t('dashboard.newWorktreeAgent')}
+                            title={t('dashboard.newWorktreeAgent')}
+                            onClick={() => navigate(`/create?directory=${encodeURIComponent(launchPath)}&mode=worktree`)}
+                          >
+                            <span aria-hidden>+</span>
+                            <span>Worktree</span>
+                          </button>
+                        )}
                         {project.savedPaths.length > 0 && groupAgents.length === 0 && (
                           <button
                             type="button"

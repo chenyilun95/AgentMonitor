@@ -140,7 +140,6 @@ export const zh: Record<string, string> = {
 
     // Agent Chat
     'chat.editProviderInstructions': '编辑 CLAUDE.md',
-    'chat.escHint': 'Esc = 中断 · Esc×2 = 历史对话',
     'chat.interrupted': '[已中断]',
     'chat.historyPickerTitle': '历史对话',
     'chat.historyPickerHint': '↑↓ 导航 · Enter 选择 · Esc 关闭',
@@ -161,6 +160,7 @@ export const zh: Record<string, string> = {
     'chat.sessionPickerHint': '↑↓ 导航 · Enter 选择 · Esc 关闭',
     'chat.loadFailed': '暂时无法加载此对话，可能是连接中断。',
     'chat.connectionInterrupted': '连接已中断，当前对话会保持打开并自动重连…',
+    'chat.directConcurrencyWarning': '同一项目还有其他活跃的 Direct Edit Agent：{{agents}}。它们共享相同的文件和分支，修改可能互相覆盖或产生冲突。',
     'chat.noSessions': '未找到历史会话。',
     'chat.waitingInput': '代理正在等待您的输入',
     'chat.inputRequiredPlaceholder': '输入您对代理的回复（Enter 发送 · Shift+Enter 换行）',

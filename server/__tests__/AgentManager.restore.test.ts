@@ -242,24 +242,30 @@ describe('AgentManager restoreConversation', () => {
     expect(store.getAgent('expired-direct')).toBeUndefined();
   });
 
-  it('allows only one active Direct Edit agent across subdirectories of the same repository', async () => {
+  it('allows multiple active Direct Edit agents across subdirectories of the same repository', async () => {
     initGitRepository();
     const subdirectory = path.join(tmpDir, 'packages', 'app');
     fs.mkdirSync(subdirectory, { recursive: true });
 
-    await manager.createAgent('First Direct', {
+    const first = await manager.createAgent('First Direct', {
       provider: 'codex',
       directory: tmpDir,
       prompt: '',
       flags: {},
     }, undefined, { workspaceMode: 'direct' });
 
-    await expect(manager.createAgent('Second Direct', {
+    const second = await manager.createAgent('Second Direct', {
       provider: 'codex',
       directory: subdirectory,
       prompt: '',
       flags: {},
-    }, undefined, { workspaceMode: 'direct' })).rejects.toThrow('Direct Edit is already active for this project');
+    }, undefined, { workspaceMode: 'direct' });
+
+    expect(first.workspaceMode).toBe('direct');
+    expect(second.workspaceMode).toBe('direct');
+    expect(first.projectKey).toBe(second.projectKey);
+    expect(first.status).toBe('waiting_input');
+    expect(second.status).toBe('waiting_input');
   });
 
   it('reuses the saved session id when resuming a stopped codex agent', () => {

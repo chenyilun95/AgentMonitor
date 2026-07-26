@@ -140,7 +140,6 @@ export const en: Record<string, string> = {
 
     // Agent Chat
     'chat.editProviderInstructions': 'Edit CLAUDE.md',
-    'chat.escHint': 'Esc = interrupt · Esc×2 = history',
     'chat.interrupted': '[Interrupted]',
     'chat.historyPickerTitle': 'Conversation History',
     'chat.historyPickerHint': '↑↓ navigate · Enter select · Esc close',
@@ -161,6 +160,7 @@ export const en: Record<string, string> = {
     'chat.sessionPickerHint': '↑↓ navigate · Enter select · Esc close',
     'chat.loadFailed': 'Unable to load this conversation. It may be a temporary connection problem.',
     'chat.connectionInterrupted': 'Connection interrupted. Keeping this conversation open and reconnecting…',
+    'chat.directConcurrencyWarning': 'Other active Direct Edit agents share this project: {{agents}}. They edit the same files and branch, so changes can overwrite or conflict with each other.',
     'chat.noSessions': 'No previous sessions found.',
     'chat.waitingInput': 'Agent is waiting for your input',
     'chat.inputRequiredPlaceholder': 'Type your response... (Enter send · Shift+Enter newline)',

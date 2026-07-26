@@ -1,4 +1,4 @@
-import { fireEvent, render, screen, waitFor } from '@testing-library/react';
+import { fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import { MemoryRouter } from 'react-router-dom';
 import { describe, expect, it, vi, afterEach } from 'vitest';
 import { Dashboard } from '../src/pages/Dashboard';
@@ -203,6 +203,64 @@ describe('Dashboard', () => {
       .not.toBeInTheDocument();
   });
 
+  it('only offers Direct mode for a non-Git directory', async () => {
+    vi.mocked(api.getAgents).mockResolvedValue([]);
+    vi.mocked(api.getSettings).mockResolvedValue({
+      agentRetentionMs: 86_400_000,
+      promptSuggestions: [],
+      pathHistory: {},
+      deleteSessionFilesPolicy: 'keep',
+    });
+    vi.mocked(api.getSavedDirectories).mockResolvedValue({ paths: ['/tmp/plain-directory'] });
+    vi.mocked(api.getDirectoryGitInfo).mockResolvedValue({ isGit: false });
+
+    render(
+      <MemoryRouter>
+        <LanguageProvider>
+          <Dashboard />
+        </LanguageProvider>
+      </MemoryRouter>,
+    );
+
+    await waitFor(() => {
+      expect(api.getDirectoryGitInfo).toHaveBeenCalledWith('/tmp/plain-directory');
+    });
+    const directoryGroup = screen.getByText('/tmp/plain-directory').closest('.directory-group');
+    expect(directoryGroup).not.toBeNull();
+    expect(within(directoryGroup as HTMLElement).getByRole('button', { name: /New Agent|新建代理/ }))
+      .toBeInTheDocument();
+    expect(within(directoryGroup as HTMLElement).queryByRole('button', { name: /New Worktree Agent|新建Worktree代理/ }))
+      .not.toBeInTheDocument();
+  });
+
+  it('offers Worktree mode after confirming a Git directory', async () => {
+    vi.mocked(api.getAgents).mockResolvedValue([]);
+    vi.mocked(api.getSettings).mockResolvedValue({
+      agentRetentionMs: 86_400_000,
+      promptSuggestions: [],
+      pathHistory: {},
+      deleteSessionFilesPolicy: 'keep',
+    });
+    vi.mocked(api.getSavedDirectories).mockResolvedValue({ paths: ['/tmp/repository'] });
+    vi.mocked(api.getDirectoryGitInfo).mockResolvedValue({
+      isGit: true,
+      root: '/tmp/repository',
+      repositoryRoot: '/tmp/repository',
+      branch: 'main',
+    });
+
+    render(
+      <MemoryRouter>
+        <LanguageProvider>
+          <Dashboard />
+        </LanguageProvider>
+      </MemoryRouter>,
+    );
+
+    expect(await screen.findByRole('button', { name: /New Worktree Agent|新建Worktree代理/ }))
+      .toBeInTheDocument();
+  });
+
   it('adds and removes a saved directory from the dashboard', async () => {
     vi.mocked(api.getAgents).mockResolvedValue([]);
     vi.mocked(api.getSettings).mockResolvedValue({
@@ -214,6 +272,7 @@ describe('Dashboard', () => {
     vi.mocked(api.getSavedDirectories).mockResolvedValue({ paths: [] });
     vi.mocked(api.saveDirectory).mockResolvedValue({ path: '/tmp/new-project' });
     vi.mocked(api.deleteSavedDirectory).mockResolvedValue({ ok: true });
+    vi.mocked(api.getDirectoryGitInfo).mockResolvedValue({ isGit: false });
 
     render(
       <MemoryRouter>
@@ -223,6 +282,7 @@ describe('Dashboard', () => {
       </MemoryRouter>,
     );
 
+    await waitFor(() => expect(api.getSavedDirectories).toHaveBeenCalled());
     fireEvent.click(await screen.findByRole('button', { name: /New Path|Add Project Directory|新建路径|新建项目目录/ }));
     fireEvent.change(screen.getByPlaceholderText('/path/to/project'), { target: { value: '/tmp/new-project' } });
     fireEvent.click(screen.getByRole('button', { name: /Select|选择/ }));

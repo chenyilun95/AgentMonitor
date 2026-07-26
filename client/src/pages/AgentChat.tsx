@@ -40,6 +40,7 @@ export function AgentChat() {
   const { t } = useTranslation();
   const [agent, setAgent] = useState<Agent | null>(null);
   const [loadError, setLoadError] = useState(false);
+  const [directPeers, setDirectPeers] = useState<Agent[]>([]);
   const [input, setInput] = useState('');
   const [showSlash, setShowSlash] = useState(false);
   const [slashFilter, setSlashFilter] = useState('');
@@ -99,11 +100,38 @@ export function AgentChat() {
 
   const slashCommands = getSlashCommandDefinitions(t);
 
+  const refreshDirectPeers = useCallback(async (currentAgent: Agent) => {
+    if (currentAgent.workspaceMode !== 'direct') {
+      setDirectPeers([]);
+      return;
+    }
+    const currentProjectKey = currentAgent.projectKey
+      || (currentAgent.repositoryRoot
+        ? `git:${currentAgent.repositoryRoot}`
+        : `dir:${currentAgent.config.directory}`);
+    try {
+      const allAgents = await api.getAgents();
+      setDirectPeers(allAgents.filter(candidate => {
+        const candidateProjectKey = candidate.projectKey
+          || (candidate.repositoryRoot
+            ? `git:${candidate.repositoryRoot}`
+            : `dir:${candidate.config.directory}`);
+        return candidate.id !== currentAgent.id
+          && candidate.workspaceMode === 'direct'
+          && candidateProjectKey === currentProjectKey
+          && (candidate.status === 'running' || candidate.status === 'waiting_input');
+      }));
+    } catch {
+      // Keep the current warning during transient list refresh failures.
+    }
+  }, []);
+
   const fetchAgent = useCallback(async (forceOverwrite = false) => {
     if (!id) return;
     try {
       const data = await api.getAgent(id, { messageLimit: CHAT_MESSAGE_PAGE_SIZE });
       setLoadError(false);
+      void refreshDirectPeers(data);
       setAgent(prev => {
         if (!prev || forceOverwrite) return data;
         // Polling returns only the latest page. Merge it with any older pages
@@ -136,7 +164,7 @@ export function AgentChat() {
       // socket reconnect/fallback polling paths.
       setLoadError(true);
     }
-  }, [id]);
+  }, [id, refreshDirectPeers]);
 
   const loadEarlierMessages = useCallback(async () => {
     const current = agentRef.current;
@@ -180,6 +208,7 @@ export function AgentChat() {
 
   useEffect(() => {
     didInitialScrollRef.current = false;
+    setDirectPeers([]);
     fetchAgent();
     api.getRuntimeCapabilities().then(setRuntimeCapabilities).catch(() => {});
     if (!id) return;
@@ -889,23 +918,35 @@ export function AgentChat() {
       )}
       <div className="chat-header">
         <div className="chat-header-main">
-          <h2 className="chat-agent-title">
-            <button
-              type="button"
-              className="btn btn-sm btn-outline chat-back-button"
-              aria-label={t('nav.dashboard')}
-              title={t('nav.dashboard')}
-              onClick={() => navigate('/')}
-            >
-              &larr;
-            </button>
-            <span className={`provider-badge provider-${agent.config.provider || 'claude'}`}>
-              {(agent.config.provider || 'claude').toUpperCase()}
+          <div className="chat-agent-title">
+            <div className="chat-title-line">
+              <span className={`provider-badge provider-${agent.config.provider || 'claude'}`}>
+                {(agent.config.provider || 'claude').toUpperCase()}
+              </span>
+              {agent.source === 'external' && (
+                <span className="provider-badge" style={{ background: 'var(--primary)', color: '#fff' }}>EXT</span>
+              )}
+              <h2 className="agent-title-text">{agent.name}</h2>
+              <button
+                type="button"
+                className="agent-rename-btn"
+                aria-label={`${t('chat.slashRename')}: ${agent.name}`}
+                title={t('chat.slashRename')}
+                onClick={renameCurrentAgent}
+              >
+                &#9998;
+              </button>
+              <span className={`status status-${getAgentStatusClass(agent.status)} chat-desktop-status`}>
+                <span className="status-dot" />
+                {getAgentStatusLabel(agent.status)}
+              </span>
+            </div>
+          </div>
+          <div className="chat-agent-meta">
+            <span className="chat-directory-meta" title={agent.config.directory}>
+              <span aria-hidden>📁</span>
+              <span className="chat-directory-path">{agent.config.directory}</span>
             </span>
-            {agent.source === 'external' && (
-              <span className="provider-badge" style={{ background: 'var(--primary)', color: '#fff', marginLeft: 4 }}>EXT</span>
-            )}
-            <span className="agent-title-text">{agent.name}</span>
             {agent.workspaceMode === 'direct' ? (
               <>
                 <span className="card-direct" title={t('workspaceMode.directTooltip')}>
@@ -931,35 +972,42 @@ export function AgentChat() {
                   : t('workspaceMode.worktreeChip', { branch: agent.worktreeBranch.replace(/^agent-/, '') })}
               </span>
             ) : null}
-            <button
-              type="button"
-              className="agent-rename-btn"
-              aria-label={`${t('chat.slashRename')}: ${agent.name}`}
-              title={t('chat.slashRename')}
-              onClick={renameCurrentAgent}
-            >
-              &#9998;
-            </button>
-          </h2>
-          <div className="chat-agent-meta" title={agent.config.directory}>
-            {agent.config.directory}
-            {agent.costUsd !== undefined && ` | $${agent.costUsd.toFixed(4)}`}
-            {agent.tokenUsage && ` | ${agent.tokenUsage.input + agent.tokenUsage.output} ${t('common.tokens')}`}
-            {` | ${t('chat.currentReasoningEffort')}: ${formatReasoningEffort(agent.config.flags.reasoningEffort)}`}
+            <label className="chat-reasoning-control">
+              <span>{t('chat.currentReasoningEffort')}</span>
+              <select
+                value={selectedReasoningEffort}
+                disabled={updatingReasoningEffort}
+                onChange={(e) => handleReasoningEffortChange(e.target.value as ReasoningEffortSelection)}
+                title={t(`chat.reasoningEffortHint.${agent.config.provider}`)}
+              >
+                {reasoningEffortOptions.map((option) => (
+                  <option key={option.value} value={option.value}>
+                    {option.value === 'default' ? t('chat.defaultReasoningEffort') : option.label}
+                  </option>
+                ))}
+              </select>
+            </label>
+            {(agent.costUsd !== undefined || agent.tokenUsage) && (
+              <span className="chat-usage-meta">
+                {agent.costUsd !== undefined && `$${agent.costUsd.toFixed(4)}`}
+                {agent.costUsd !== undefined && agent.tokenUsage && ' · '}
+                {agent.tokenUsage && `${agent.tokenUsage.input + agent.tokenUsage.output} ${t('common.tokens')}`}
+              </span>
+            )}
           </div>
         </div>
         <div className="chat-mobile-header-controls">
-          <span className={`status status-${getAgentStatusClass(agent.status)}`}>
-            <span className="status-dot" />
-            {getAgentStatusLabel(agent.status)}
-          </span>
           <button
             type="button"
-            className="btn btn-sm btn-outline chat-mobile-actions-toggle"
+            className={`btn btn-sm btn-outline chat-mobile-actions-toggle status-${getAgentStatusClass(agent.status)}`}
             aria-expanded={showMobileActions}
             aria-label={t('common.actions')}
+            title={getAgentStatusLabel(agent.status)}
             onClick={() => setShowMobileActions(open => !open)}
           >
+            <span className="chat-mobile-status-dot" aria-hidden>
+              <span className="status-dot" />
+            </span>
             {t('common.actions')} {showMobileActions ? '\u25B2' : '\u25BC'}
           </button>
         </div>
@@ -971,124 +1019,111 @@ export function AgentChat() {
             if ((event.target as HTMLElement).closest('button')) setShowMobileActions(false);
           }}
         >
-          <div className="chat-reasoning-control">
-            <span style={{ fontSize: 12, color: 'var(--text-muted)', whiteSpace: 'nowrap' }}>
-              {t('chat.currentReasoningEffort')}
-            </span>
-            <select
-              value={selectedReasoningEffort}
-              disabled={updatingReasoningEffort}
-              onChange={(e) => handleReasoningEffortChange(e.target.value as ReasoningEffortSelection)}
-              style={{
-                width: 'auto',
-                minWidth: 110,
-                padding: '8px 10px',
-                background: 'var(--bg-input)',
-                border: '1px solid var(--border)',
-                borderRadius: 'var(--radius)',
-                color: 'var(--text)',
-                fontSize: 13,
+          <div className="chat-view-actions">
+            <button
+              className={`btn btn-sm ${renderMarkdown ? 'btn-primary' : 'btn-outline'}`}
+              aria-pressed={renderMarkdown}
+              onClick={() => {
+                setRenderMarkdown(prev => {
+                  const next = !prev;
+                  localStorage.setItem('agentmonitor-markdown', String(next));
+                  return next;
+                });
               }}
-              title={t(`chat.reasoningEffortHint.${agent.config.provider}`)}
+              title="Toggle Markdown / Raw"
             >
-              {reasoningEffortOptions.map((option) => (
-                <option key={option.value} value={option.value}>
-                  {option.value === 'default' ? t('chat.defaultReasoningEffort') : option.label}
-                </option>
-              ))}
-            </select>
-          </div>
-          <span className={`status status-${getAgentStatusClass(agent.status)}`}>
-            <span className="status-dot" />
-            {getAgentStatusLabel(agent.status)}
-          </span>
-          <button
-            className={`btn btn-sm ${renderMarkdown ? 'btn-primary' : 'btn-outline'}`}
-            onClick={() => {
-              setRenderMarkdown(prev => {
-                const next = !prev;
-                localStorage.setItem('agentmonitor-markdown', String(next));
-                return next;
-              });
-            }}
-            title="Toggle Markdown / Raw"
-          >
-            {renderMarkdown ? 'MD' : 'Raw'}
-          </button>
-          <button
-            className={`btn btn-sm ${showTerminal ? 'btn-primary' : 'btn-outline'}`}
-            onClick={() => {
-              const next = !showTerminal;
-              if (next) {
-                setHasOpenedTerminal(true);
-                setShowFiles(false);
-              } else {
-                // Pick up messages that arrived while the terminal was visible.
-                fetchAgent();
-              }
-              setShowTerminal(next);
-            }}
-            title="Toggle live terminal"
-          >
-            <svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" style={{ verticalAlign: 'middle', marginRight: 4 }}>
-              <rect x="1" y="2" width="14" height="11" rx="1.5" />
-              <polyline points="4,7 6,5 4,3" transform="translate(0,2)" />
-              <line x1="7" y1="10" x2="11" y2="10" />
-            </svg>
-            Terminal
-          </button>
-          <button
-            className={`btn btn-sm ${showFiles ? 'btn-primary' : 'btn-outline'}`}
-            onClick={() => {
-              setShowFiles(prev => {
-                const next = !prev;
-                if (next) {
-                  setTargetFilePath(null);
-                  setShowTerminal(false);
-                }
-                return next;
-              });
-            }}
-            title="Browse workspace files"
-          >
-            Files
-          </button>
-          <button
-            className="btn btn-sm btn-outline"
-            onClick={handleCommit}
-            title={t(agent.workspaceMode !== 'direct' && agent.worktreeBranch
-              ? 'dashboard.commitWorktreeTooltip'
-              : 'dashboard.commitTooltip')}
-          >
-            {t(agent.workspaceMode !== 'direct' && agent.worktreeBranch
-              ? 'dashboard.commitWorktree'
-              : 'dashboard.commit')}
-          </button>
-          {agent.workspaceMode !== 'direct' && agent.worktreeBranch && agent.baseBranch && (
-            <>
-              <button
-                className="btn btn-sm btn-outline"
-                disabled={agent.status === 'running' || agent.status === 'waiting_input' || gitAction !== null}
-                onClick={() => void handleWorktreeAction('update')}
-              >
-                {t('dashboard.updateFromBase', { branch: agent.baseBranch })}
-              </button>
-              <button
-                className="btn btn-sm btn-outline"
-                disabled={agent.status === 'running' || agent.status === 'waiting_input' || gitAction !== null}
-                onClick={() => void handleWorktreeAction('merge')}
-              >
-                {t('dashboard.mergeToBase', { branch: agent.baseBranch })}
-              </button>
-            </>
-          )}
-          {(agent.status === 'running' || agent.status === 'waiting_input') && (
-            <button className="btn btn-sm btn-danger" onClick={() => id && api.stopAgent(id)}>
-              {t('common.stop')}
+              {renderMarkdown ? 'MD' : 'Raw'}
             </button>
-          )}
+            <button
+              className={`btn btn-sm ${showTerminal ? 'btn-primary' : 'btn-outline'}`}
+              aria-pressed={showTerminal}
+              onClick={() => {
+                const next = !showTerminal;
+                if (next) {
+                  setHasOpenedTerminal(true);
+                  setShowFiles(false);
+                } else {
+                  // Pick up messages that arrived while the terminal was visible.
+                  fetchAgent();
+                }
+                setShowTerminal(next);
+              }}
+              title="Toggle live terminal"
+            >
+              <svg width="15" height="15" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round">
+                <rect x="1" y="2" width="14" height="11" rx="1.5" />
+                <polyline points="4,7 6,5 4,3" transform="translate(0,2)" />
+                <line x1="7" y1="10" x2="11" y2="10" />
+              </svg>
+              Terminal
+            </button>
+            <button
+              className={`btn btn-sm ${showFiles ? 'btn-primary' : 'btn-outline'}`}
+              aria-pressed={showFiles}
+              onClick={() => {
+                setShowFiles(prev => {
+                  const next = !prev;
+                  if (next) {
+                    setTargetFilePath(null);
+                    setShowTerminal(false);
+                  }
+                  return next;
+                });
+              }}
+              title="Browse workspace files"
+            >
+              Files
+            </button>
+          </div>
+          <div className="chat-task-actions">
+            <button
+              className="btn btn-sm btn-outline"
+              onClick={handleCommit}
+              title={t(agent.workspaceMode !== 'direct' && agent.worktreeBranch
+                ? 'dashboard.commitWorktreeTooltip'
+                : 'dashboard.commitTooltip')}
+            >
+              {t(agent.workspaceMode !== 'direct' && agent.worktreeBranch
+                ? 'dashboard.commitWorktree'
+                : 'dashboard.commit')}
+            </button>
+            {agent.workspaceMode !== 'direct' && agent.worktreeBranch && agent.baseBranch && (
+              <>
+                <button
+                  className="btn btn-sm btn-outline"
+                  disabled={agent.status === 'running' || agent.status === 'waiting_input' || gitAction !== null}
+                  onClick={() => void handleWorktreeAction('update')}
+                >
+                  {t('dashboard.updateFromBase', { branch: agent.baseBranch })}
+                </button>
+                <button
+                  className="btn btn-sm btn-outline"
+                  disabled={agent.status === 'running' || agent.status === 'waiting_input' || gitAction !== null}
+                  onClick={() => void handleWorktreeAction('merge')}
+                >
+                  {t('dashboard.mergeToBase', { branch: agent.baseBranch })}
+                </button>
+              </>
+            )}
+            {(agent.status === 'running' || agent.status === 'waiting_input') && (
+              <button
+                className="btn btn-sm btn-danger"
+                onClick={() => id && api.stopAgent(id)}
+              >
+                {t('common.stop')}
+              </button>
+            )}
+          </div>
         </div>
       </div>
+
+      {directPeers.length > 0 && (
+        <div className="chat-direct-concurrency-warning" role="alert">
+          {t('chat.directConcurrencyWarning', {
+            agents: directPeers.map(peer => peer.name).join(', '),
+          })}
+        </div>
+      )}
 
       {id && hasOpenedTerminal && (
         <Suspense fallback={<div className="terminal-view terminal-loading">{t('common.loading')}</div>}>
@@ -1212,8 +1247,6 @@ export function AgentChat() {
         )}
         <div ref={messagesEndRef} />
       </div>
-
-      {!showTerminal && !showFiles && <div className="esc-hint">{t('chat.escHint')}</div>}
 
       {!showTerminal && !showFiles && agent.pendingQuestion && !agent.pendingQuestion.answeredAt && (
         <PendingQuestionBanner pending={agent.pendingQuestion} onSubmit={handleAnswerQuestion} />
