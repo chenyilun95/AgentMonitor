@@ -1,4 +1,4 @@
-import type { Agent } from '../models/Agent.js';
+import type { Agent, AgentClientView } from '../models/Agent.js';
 
 const DASHBOARD_MESSAGE_PREVIEW_LIMIT = 500;
 
@@ -68,5 +68,29 @@ export function sanitizeAgentListSnapshot(agent: Agent): Agent {
     structuredOutput: undefined,
     restoredConversationSeed: undefined,
     codeSnapshots: undefined,
+  };
+}
+
+export function sanitizeAgentSnapshotPage(
+  agent: Agent,
+  options: { messageLimit: number; beforeMessageId?: string },
+): AgentClientView {
+  const safeAgent = sanitizeAgentSnapshot(agent) as AgentClientView;
+  const limit = Math.max(1, Math.min(Math.floor(options.messageLimit), 200));
+  const beforeIndex = options.beforeMessageId
+    ? safeAgent.messages.findIndex(message => message.id === options.beforeMessageId)
+    : safeAgent.messages.length;
+  const end = beforeIndex >= 0 ? beforeIndex : 0;
+  const start = Math.max(0, end - limit);
+  const messages = safeAgent.messages.slice(start, end);
+
+  return {
+    ...safeAgent,
+    messages,
+    messagePage: {
+      hasMore: start > 0,
+      total: safeAgent.messages.length,
+      oldestMessageId: messages[0]?.id,
+    },
   };
 }

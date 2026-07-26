@@ -2,6 +2,7 @@ node_modules/
 dist/
 **/.agent-worktrees/
 server/data/agents.json
+server/data/agents.sqlite*
 server/data/tasks.json
 server/data/meta-agent.json
 server/data/settings.json

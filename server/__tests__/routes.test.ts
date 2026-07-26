@@ -229,4 +229,47 @@ describe('Agent operator routes', () => {
     expect(context.actions.sendMessage).toContain('/api/agents/agent-1/message');
     expect(context.interventionHints.needsQuestionAnswer).toBe(true);
   });
+
+  it('paginates agent messages while keeping the unpaged response compatible', async () => {
+    const agent: Agent = {
+      id: 'agent-paged',
+      name: 'Paged agent',
+      status: 'stopped',
+      config: {
+        provider: 'codex',
+        directory: tmpDir,
+        prompt: 'test',
+        flags: {},
+      },
+      messages: Array.from({ length: 5 }, (_, index) => ({
+        id: `message-${index + 1}`,
+        role: 'assistant' as const,
+        content: `message ${index + 1}`,
+        timestamp: index + 1,
+      })),
+      lastActivity: 5,
+      createdAt: 1,
+    };
+    store.saveAgent(agent);
+
+    const latestRes = await request(app, 'GET', '/api/agents/agent-paged?messageLimit=2');
+    expect(latestRes.status).toBe(200);
+    const latest = latestRes.body as {
+      messages: Array<{ id: string }>;
+      messagePage: { hasMore: boolean; total: number };
+    };
+    expect(latest.messages.map(message => message.id)).toEqual(['message-4', 'message-5']);
+    expect(latest.messagePage).toMatchObject({ hasMore: true, total: 5 });
+
+    const earlierRes = await request(
+      app,
+      'GET',
+      '/api/agents/agent-paged?messageLimit=2&beforeMessageId=message-4',
+    );
+    expect((earlierRes.body as { messages: Array<{ id: string }> }).messages.map(message => message.id))
+      .toEqual(['message-2', 'message-3']);
+
+    const compatibleRes = await request(app, 'GET', '/api/agents/agent-paged');
+    expect((compatibleRes.body as { messages: unknown[] }).messages).toHaveLength(5);
+  });
 });

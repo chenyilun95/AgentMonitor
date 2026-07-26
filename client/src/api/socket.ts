@@ -8,7 +8,8 @@ let socket: TypedSocket | null = null;
 export function getSocket(): TypedSocket {
   if (!socket) {
     socket = io('/', {
-      transports: ['polling', 'websocket'],
+      transports: ['websocket', 'polling'],
+      tryAllTransports: true,
       withCredentials: true,
     }) as TypedSocket;
 

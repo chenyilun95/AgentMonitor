@@ -7,6 +7,7 @@ import type { Template } from '../models/Template.js';
 import type { PipelineTask, AgentManagerConfig, MetaAgentConfig } from '../models/Task.js';
 import type { ServerSettings } from '@agent-monitor/shared';
 import { normalizeUserPath } from '../utils/pathUtils.js';
+import { SqliteAgentRepository } from './SqliteAgentRepository.js';
 
 export type { ServerSettings };
 
@@ -146,15 +147,24 @@ export class AgentStore {
   private metaConfig: AgentManagerConfig | null = null;
   private settings: ServerSettings = { ...DEFAULT_SETTINGS };
   private agentsFile: string;
+  private sqliteAgents: SqliteAgentRepository;
+  private legacyAgentIds = new Set<string>();
+  private sqliteAgentIds = new Set<string>();
+  private dirtySqliteAgentIds = new Set<string>();
+  private legacyAgentsDirty = false;
   private templatesFile: string;
   private tasksFile: string;
   private metaConfigFile: string;
   private settingsFile: string;
+  private agentsSaveTimer: ReturnType<typeof setTimeout> | null = null;
+  private deferAgentSaveDepth = 0;
+  private agentsSavePending = false;
 
   constructor(dataDir?: string) {
     const dir = dataDir || config.dataDir;
     fs.mkdirSync(dir, { recursive: true });
     this.agentsFile = path.join(dir, 'agents.json');
+    this.sqliteAgents = new SqliteAgentRepository(path.join(dir, 'agents.sqlite'));
     this.templatesFile = path.join(dir, 'templates.json');
     this.tasksFile = path.join(dir, 'tasks.json');
     this.metaConfigFile = path.join(dir, 'meta-agent.json');
@@ -172,10 +182,20 @@ export class AgentStore {
           }
           delete a.config.claudeMd;
           this.agents.set(a.id, a);
+          this.legacyAgentIds.add(a.id);
         }
       } catch {
         // ignore corrupt file
       }
+    }
+    for (const agent of this.sqliteAgents.loadAll()) {
+      if (!agent.config.providerInstructions && (agent.config as Agent['config'] & { claudeMd?: string }).claudeMd) {
+        agent.config.providerInstructions = (agent.config as Agent['config'] & { claudeMd?: string }).claudeMd;
+      }
+      delete (agent.config as Agent['config'] & { claudeMd?: string }).claudeMd;
+      this.agents.set(agent.id, agent);
+      this.sqliteAgentIds.add(agent.id);
+      this.legacyAgentIds.delete(agent.id);
     }
     if (fs.existsSync(this.templatesFile)) {
       try {
@@ -252,10 +272,44 @@ export class AgentStore {
   }
 
   private saveAgents(): void {
-    fs.writeFileSync(
-      this.agentsFile,
-      JSON.stringify([...this.agents.values()], null, 2),
-    );
+    if (this.agentsSaveTimer) {
+      clearTimeout(this.agentsSaveTimer);
+      this.agentsSaveTimer = null;
+    }
+    this.agentsSavePending = false;
+    if (this.legacyAgentsDirty) {
+      fs.writeFileSync(
+        this.agentsFile,
+        JSON.stringify(
+          [...this.legacyAgentIds]
+            .map(id => this.agents.get(id))
+            .filter((agent): agent is Agent => !!agent),
+          null,
+          2,
+        ),
+      );
+      this.legacyAgentsDirty = false;
+    }
+    for (const id of this.dirtySqliteAgentIds) {
+      const agent = this.agents.get(id);
+      if (agent) this.sqliteAgents.save(agent);
+    }
+    this.dirtySqliteAgentIds.clear();
+  }
+
+  private scheduleAgentsSave(): void {
+    this.agentsSavePending = true;
+    if (this.agentsSaveTimer) return;
+    this.agentsSaveTimer = setTimeout(() => {
+      this.agentsSaveTimer = null;
+      if (!this.agentsSavePending) return;
+      try {
+        this.saveAgents();
+      } catch (err) {
+        console.error('[AgentStore] Failed to persist deferred agent updates:', err);
+      }
+    }, 150);
+    this.agentsSaveTimer.unref?.();
   }
 
   private saveTemplates(): void {
@@ -292,12 +346,52 @@ export class AgentStore {
 
   saveAgent(agent: Agent): void {
     this.agents.set(agent.id, agent);
+    if (this.legacyAgentIds.has(agent.id)) {
+      this.legacyAgentsDirty = true;
+    } else {
+      this.sqliteAgentIds.add(agent.id);
+      this.dirtySqliteAgentIds.add(agent.id);
+    }
+    if (this.deferAgentSaveDepth > 0) {
+      this.scheduleAgentsSave();
+      return;
+    }
     this.saveAgents();
+  }
+
+  saveAgentDeferred(agent: Agent): void {
+    this.agents.set(agent.id, agent);
+    if (this.legacyAgentIds.has(agent.id)) {
+      this.legacyAgentsDirty = true;
+    } else {
+      this.sqliteAgentIds.add(agent.id);
+      this.dirtySqliteAgentIds.add(agent.id);
+    }
+    this.scheduleAgentsSave();
+  }
+
+  deferAgentWrites<T>(operation: () => T): T {
+    this.deferAgentSaveDepth++;
+    try {
+      return operation();
+    } finally {
+      this.deferAgentSaveDepth--;
+      if (this.deferAgentSaveDepth === 0 && this.agentsSavePending) {
+        this.scheduleAgentsSave();
+      }
+    }
   }
 
   deleteAgent(id: string): boolean {
     const deleted = this.agents.delete(id);
-    if (deleted) this.saveAgents();
+    if (deleted) {
+      if (this.sqliteAgentIds.delete(id)) {
+        this.dirtySqliteAgentIds.delete(id);
+        this.sqliteAgents.delete(id);
+      }
+      if (this.legacyAgentIds.delete(id)) this.legacyAgentsDirty = true;
+      this.saveAgents();
+    }
     return deleted;
   }
 

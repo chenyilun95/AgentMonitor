@@ -7,7 +7,7 @@ import type { ExternalAgentScanner } from '../services/ExternalAgentScanner.js';
 import type { AgentProvider } from '../models/Agent.js';
 import type { CreateAgentRequest, UpdateReasoningEffortRequest } from '@agent-monitor/shared';
 import { runtimeCapabilities } from '../services/RuntimeCapabilities.js';
-import { sanitizeAgentListSnapshot, sanitizeAgentSnapshot } from '../utils/agentSnapshot.js';
+import { sanitizeAgentListSnapshot, sanitizeAgentSnapshot, sanitizeAgentSnapshotPage } from '../utils/agentSnapshot.js';
 import { normalizeUserPath } from '../utils/pathUtils.js';
 import { config } from '../config.js';
 
@@ -83,9 +83,21 @@ export function agentRoutes(manager: AgentManager, store: AgentStore): Router {
 
   // Get single agent
   router.get('/:id', (req, res) => {
-    const agent = manager.getAgent(req.params.id);
+    const agent = manager.getAgent(req.params.id, false);
     if (!agent) {
       res.status(404).json({ error: 'Agent not found' });
+      return;
+    }
+    const requestedLimit = typeof req.query.messageLimit === 'string'
+      ? Number(req.query.messageLimit)
+      : undefined;
+    if (Number.isFinite(requestedLimit) && requestedLimit! > 0) {
+      res.json(sanitizeAgentSnapshotPage(agent, {
+        messageLimit: requestedLimit!,
+        beforeMessageId: typeof req.query.beforeMessageId === 'string'
+          ? req.query.beforeMessageId
+          : undefined,
+      }));
       return;
     }
     res.json(sanitizeAgentSnapshot(agent));

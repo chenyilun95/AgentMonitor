@@ -104,6 +104,130 @@ describe('AgentStore', () => {
     const retrieved = store2.getAgent('persist-1');
     expect(retrieved).toBeDefined();
     expect(retrieved!.name).toBe('Persistent');
+    expect(fs.existsSync(path.join(tmpDir, 'agents.sqlite'))).toBe(true);
+    expect(fs.existsSync(path.join(tmpDir, 'agents.json'))).toBe(false);
+  });
+
+  it('coalesces deferred agent updates before persisting', async () => {
+    const agent: Agent = {
+      id: 'deferred-1',
+      name: 'Deferred',
+      status: 'running',
+      config: { provider: 'claude', directory: '/tmp', prompt: 'p', flags: {} },
+      messages: [],
+      lastActivity: Date.now(),
+      createdAt: Date.now(),
+    };
+
+    store.saveAgentDeferred(agent);
+    agent.messages.push({
+      id: 'm1',
+      role: 'assistant',
+      content: 'streamed update',
+      timestamp: Date.now(),
+    });
+    store.saveAgentDeferred(agent);
+
+    expect(fs.existsSync(path.join(tmpDir, 'agents.json'))).toBe(false);
+    await new Promise(resolve => setTimeout(resolve, 200));
+
+    const persisted = new AgentStore(tmpDir).getAgent(agent.id);
+    expect(persisted?.messages.map(message => message.content)).toEqual(['streamed update']);
+  });
+
+  it('keeps legacy agents in JSON while storing new agents in SQLite', () => {
+    const legacy: Agent = {
+      id: 'legacy-json',
+      name: 'Legacy JSON',
+      status: 'stopped',
+      config: { provider: 'claude', directory: '/tmp', prompt: 'old', flags: {} },
+      messages: [],
+      lastActivity: 1,
+      createdAt: 1,
+    };
+    fs.writeFileSync(path.join(tmpDir, 'agents.json'), JSON.stringify([legacy]));
+
+    const mixedStore = new AgentStore(tmpDir);
+    legacy.name = 'Updated legacy';
+    mixedStore.saveAgent(legacy);
+    mixedStore.saveAgent({
+      ...legacy,
+      id: 'new-sqlite',
+      name: 'New SQLite',
+      messages: [{
+        id: 'message-1',
+        role: 'assistant',
+        content: 'persisted separately',
+        timestamp: 2,
+      }],
+      logs: [{
+        id: 'log-1',
+        timestamp: 2,
+        level: 'info',
+        source: 'manager',
+        message: 'stored in logs table',
+      }],
+    });
+
+    const jsonAgents = JSON.parse(fs.readFileSync(path.join(tmpDir, 'agents.json'), 'utf8')) as Agent[];
+    expect(jsonAgents.map(agent => agent.id)).toEqual(['legacy-json']);
+    expect(jsonAgents[0].name).toBe('Updated legacy');
+
+    const reloaded = new AgentStore(tmpDir);
+    expect(reloaded.getAllAgents().map(agent => agent.id).sort()).toEqual(['legacy-json', 'new-sqlite']);
+    expect(reloaded.getAgent('new-sqlite')?.messages[0].content).toBe('persisted separately');
+    expect(reloaded.getAgent('new-sqlite')?.logs?.[0].message).toBe('stored in logs table');
+  });
+
+  it('does not rewrite legacy JSON when only a SQLite agent changes', () => {
+    const agentsFile = path.join(tmpDir, 'agents.json');
+    fs.writeFileSync(agentsFile, JSON.stringify([{
+      id: 'legacy-json',
+      name: 'Legacy JSON',
+      status: 'stopped',
+      config: { provider: 'claude', directory: '/tmp', prompt: '', flags: {} },
+      messages: [],
+      lastActivity: 1,
+      createdAt: 1,
+    }]));
+    const mixedStore = new AgentStore(tmpDir);
+    mixedStore.saveAgent({
+      id: 'sqlite-agent',
+      name: 'SQLite',
+      status: 'running',
+      config: { provider: 'codex', directory: '/tmp', prompt: '', flags: {} },
+      messages: [],
+      lastActivity: 2,
+      createdAt: 2,
+    });
+    const before = fs.statSync(agentsFile).mtimeMs;
+
+    const sqliteAgent = mixedStore.getAgent('sqlite-agent')!;
+    sqliteAgent.status = 'stopped';
+    mixedStore.saveAgent(sqliteAgent);
+
+    expect(fs.statSync(agentsFile).mtimeMs).toBe(before);
+  });
+
+  it('deletes SQLite agents without affecting legacy JSON agents', () => {
+    const legacy: Agent = {
+      id: 'legacy-json',
+      name: 'Legacy JSON',
+      status: 'stopped',
+      config: { provider: 'claude', directory: '/tmp', prompt: '', flags: {} },
+      messages: [],
+      lastActivity: 1,
+      createdAt: 1,
+    };
+    fs.writeFileSync(path.join(tmpDir, 'agents.json'), JSON.stringify([legacy]));
+    const mixedStore = new AgentStore(tmpDir);
+    mixedStore.saveAgent({ ...legacy, id: 'sqlite-agent', name: 'SQLite' });
+
+    expect(mixedStore.deleteAgent('sqlite-agent')).toBe(true);
+
+    const reloaded = new AgentStore(tmpDir);
+    expect(reloaded.getAgent('sqlite-agent')).toBeUndefined();
+    expect(reloaded.getAgent('legacy-json')).toBeDefined();
   });
 
   it('migrates legacy claudeMd data to providerInstructions', () => {

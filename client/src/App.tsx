@@ -1,15 +1,16 @@
-import { useEffect, useState } from 'react';
+import { lazy, Suspense, useEffect, useState } from 'react';
 import { Routes, Route, Link, useLocation } from 'react-router-dom';
-import { Dashboard } from './pages/Dashboard';
-import { CreateAgent } from './pages/CreateAgent';
-import { AgentChat } from './pages/AgentChat';
-import { Templates } from './pages/Templates';
-import { Skills } from './pages/Skills';
-import { Pipeline } from './pages/Pipeline';
-import { GpuMonitor } from './pages/GpuMonitor';
 import { Login } from './pages/Login';
 import { useAuth } from './hooks/useAuth';
 import { LanguageProvider, useTranslation } from './i18n';
+
+const Dashboard = lazy(() => import('./pages/Dashboard').then(module => ({ default: module.Dashboard })));
+const CreateAgent = lazy(() => import('./pages/CreateAgent').then(module => ({ default: module.CreateAgent })));
+const AgentChat = lazy(() => import('./pages/AgentChat').then(module => ({ default: module.AgentChat })));
+const Templates = lazy(() => import('./pages/Templates').then(module => ({ default: module.Templates })));
+const Skills = lazy(() => import('./pages/Skills').then(module => ({ default: module.Skills })));
+const Pipeline = lazy(() => import('./pages/Pipeline').then(module => ({ default: module.Pipeline })));
+const GpuMonitor = lazy(() => import('./pages/GpuMonitor').then(module => ({ default: module.GpuMonitor })));
 
 function NavBar({ onLogout }: { onLogout?: () => void }) {
   const location = useLocation();
@@ -76,15 +77,17 @@ function AuthenticatedApp() {
     <div className="app">
       <NavBar onLogout={logout} />
       <main className="main">
-        <Routes>
-          <Route path="/" element={<Dashboard />} />
-          <Route path="/servers" element={<GpuMonitor />} />
-          <Route path="/pipeline" element={<Pipeline />} />
-          <Route path="/create" element={<CreateAgent />} />
-          <Route path="/agent/:id" element={<AgentChat />} />
-          <Route path="/templates" element={<Templates />} />
-          <Route path="/skills" element={<Skills />} />
-        </Routes>
+        <Suspense fallback={<div style={{ padding: '2rem', textAlign: 'center' }}>Loading...</div>}>
+          <Routes>
+            <Route path="/" element={<Dashboard />} />
+            <Route path="/servers" element={<GpuMonitor />} />
+            <Route path="/pipeline" element={<Pipeline />} />
+            <Route path="/create" element={<CreateAgent />} />
+            <Route path="/agent/:id" element={<AgentChat />} />
+            <Route path="/templates" element={<Templates />} />
+            <Route path="/skills" element={<Skills />} />
+          </Routes>
+        </Suspense>
       </main>
     </div>
   );

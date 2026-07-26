@@ -12,6 +12,7 @@ export function Pipeline() {
   const [loading, setLoading] = useState(true);
   const [toast, setToast] = useState<string | null>(null);
   const toastTimer = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
+  const refreshTimer = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
   const navigate = useNavigate();
   const { t } = useTranslation();
 
@@ -82,20 +83,25 @@ export function Pipeline() {
     fetchData();
 
     const socket = getSocket();
-    socket.on('task:update', () => fetchData());
-    socket.on('pipeline:complete', () => fetchData());
-    socket.on('meta:status', () => fetchData());
-    socket.on('agent:status', () => fetchData());
-    socket.on('harness:complete', () => fetchData());
-    socket.on('harness:failed', () => fetchData());
+    const scheduleRefresh = () => {
+      clearTimeout(refreshTimer.current);
+      refreshTimer.current = setTimeout(fetchData, 200);
+    };
+    socket.on('task:update', scheduleRefresh);
+    socket.on('pipeline:complete', scheduleRefresh);
+    socket.on('meta:status', scheduleRefresh);
+    socket.on('agent:status', scheduleRefresh);
+    socket.on('harness:complete', scheduleRefresh);
+    socket.on('harness:failed', scheduleRefresh);
 
     return () => {
-      socket.off('task:update');
-      socket.off('pipeline:complete');
-      socket.off('meta:status');
-      socket.off('agent:status');
-      socket.off('harness:complete');
-      socket.off('harness:failed');
+      clearTimeout(refreshTimer.current);
+      socket.off('task:update', scheduleRefresh);
+      socket.off('pipeline:complete', scheduleRefresh);
+      socket.off('meta:status', scheduleRefresh);
+      socket.off('agent:status', scheduleRefresh);
+      socket.off('harness:complete', scheduleRefresh);
+      socket.off('harness:failed', scheduleRefresh);
     };
   }, [fetchData]);
 

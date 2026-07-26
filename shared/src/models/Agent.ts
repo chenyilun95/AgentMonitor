@@ -156,4 +156,9 @@ export interface Agent {
 
 export interface AgentClientView extends Omit<Agent, 'preRestoreSnapshot' | 'logs'> {
   preRestoreUserTurns?: Array<{ id: string; content: string; timestamp: number }>;
+  messagePage?: {
+    hasMore: boolean;
+    total: number;
+    oldestMessageId?: string;
+  };
 }

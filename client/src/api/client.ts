@@ -117,7 +117,13 @@ export const api = {
   getAgents: (refreshBranches = false) => request<AgentClientView[]>(
     `/agents?summary=1${refreshBranches ? '&refreshBranches=1' : ''}`,
   ),
-  getAgent: (id: string) => request<AgentClientView>(`/agents/${id}`),
+  getAgent: (id: string, options?: { messageLimit?: number; beforeMessageId?: string }) => {
+    const params = new URLSearchParams();
+    if (options?.messageLimit) params.set('messageLimit', String(options.messageLimit));
+    if (options?.beforeMessageId) params.set('beforeMessageId', options.beforeMessageId);
+    const query = params.size > 0 ? `?${params}` : '';
+    return request<AgentClientView>(`/agents/${id}${query}`);
+  },
   createAgent: (data: CreateAgentRequest) =>
     request<AgentClientView>('/agents', { method: 'POST', body: JSON.stringify(data) }),
   stopAgent: (id: string) =>

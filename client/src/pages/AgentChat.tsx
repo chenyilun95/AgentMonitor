@@ -1,9 +1,8 @@
-import { useState, useEffect, useLayoutEffect, useRef, useCallback } from 'react';
+import { lazy, Suspense, useState, useEffect, useLayoutEffect, useRef, useCallback } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import { api, type Agent, type RuntimeCapabilities } from '../api/client';
 import { getSocket, joinAgent, leaveAgent } from '../api/socket';
 import { useTranslation } from '../i18n';
-import { TerminalView } from '../components/TerminalView';
 import { FileBrowserView } from '../components/FileBrowserView';
 import { PendingQuestionBanner } from '../components/PendingQuestionBanner';
 import { HistoryPicker } from '../components/HistoryPicker';
@@ -30,6 +29,11 @@ type ChatMessageGroup = { id: string; messages: DisplayMessage[] };
 
 type PendingQuestion = NonNullable<Agent['pendingQuestion']>;
 
+const CHAT_MESSAGE_PAGE_SIZE = 50;
+const TerminalView = lazy(() => import('../components/TerminalView').then(module => ({
+  default: module.TerminalView,
+})));
+
 export function AgentChat() {
   const { id } = useParams<{ id: string }>();
   const navigate = useNavigate();
@@ -43,6 +47,7 @@ export function AgentChat() {
   const [inputRequired, setInputRequired] = useState<{ prompt: string; choices?: string[] } | null>(null);
   const [expandedTools, setExpandedTools] = useState<Set<string>>(new Set());
   const [showTerminal, setShowTerminal] = useState(false);
+  const [hasOpenedTerminal, setHasOpenedTerminal] = useState(false);
   const [showFiles, setShowFiles] = useState(false);
   const [targetFilePath, setTargetFilePath] = useState<string | null>(null);
   const [renderMarkdown, setRenderMarkdown] = useState(() => localStorage.getItem('agentmonitor-markdown') !== 'false');
@@ -71,6 +76,10 @@ export function AgentChat() {
   const [updatingReasoningEffort, setUpdatingReasoningEffort] = useState(false);
   const [gitAction, setGitAction] = useState<'update' | 'merge' | null>(null);
   const [runtimeCapabilities, setRuntimeCapabilities] = useState<RuntimeCapabilities | null>(null);
+  const [showMobileActions, setShowMobileActions] = useState(false);
+  const [loadingEarlierMessages, setLoadingEarlierMessages] = useState(false);
+  const prependScrollRef = useRef<{ height: number; top: number } | null>(null);
+  const skipNextAutoScrollRef = useRef(false);
 
   const addLocalMessage = (content: string, role = 'system') => {
     const timestamp = Date.now();
@@ -92,28 +101,18 @@ export function AgentChat() {
   const fetchAgent = useCallback(async (forceOverwrite = false) => {
     if (!id) return;
     try {
-      const data = await api.getAgent(id);
+      const data = await api.getAgent(id, { messageLimit: CHAT_MESSAGE_PAGE_SIZE });
       setAgent(prev => {
-        // Don't overwrite optimistic messages (pending-* ids) if server hasn't caught up
-        // But allow overwrite when explicitly forced (e.g. after restore)
-        if (!forceOverwrite && prev && data.messages.length < prev.messages.length) {
-          return {
-            ...prev,
-            status: data.status as Agent['status'],
-            costUsd: data.costUsd,
-            tokenUsage: data.tokenUsage,
-            contextWindow: data.contextWindow,
-            interactionMode: data.interactionMode,
-            pendingPlan: data.pendingPlan,
-            pendingQuestion: data.pendingQuestion,
-            queuedMessages: data.queuedMessages,
-            queuePaused: data.queuePaused,
-            hasUnintegratedChanges: data.hasUnintegratedChanges,
-            currentBranch: data.currentBranch,
-            lastActivity: data.lastActivity,
-          };
-        }
-        return data;
+        if (!prev || forceOverwrite) return data;
+        // Polling returns only the latest page. Merge it with any older pages
+        // already loaded locally and retain optimistic messages.
+        const byId = new Map(prev.messages.map(message => [message.id, message]));
+        for (const message of data.messages) byId.set(message.id, message);
+        const messages = [...byId.values()];
+        const messagePage = prev.messagePage?.hasMore === false
+          ? { ...data.messagePage, ...prev.messagePage, total: data.messagePage?.total ?? prev.messagePage.total }
+          : data.messagePage;
+        return { ...data, messages, messagePage };
       });
       // Initialize input history from existing user messages (most recent first)
       if (inputHistoryRef.current.length === 0 && data.messages) {
@@ -134,6 +133,46 @@ export function AgentChat() {
     }
   }, [id, navigate]);
 
+  const loadEarlierMessages = useCallback(async () => {
+    const current = agentRef.current;
+    const beforeMessageId = current?.messages[0]?.id;
+    if (!id || !current?.messagePage?.hasMore || !beforeMessageId || loadingEarlierMessages) return;
+
+    const container = messagesContainerRef.current;
+    if (container) {
+      prependScrollRef.current = {
+        height: container.scrollHeight,
+        top: container.scrollTop,
+      };
+      skipNextAutoScrollRef.current = true;
+    }
+    setLoadingEarlierMessages(true);
+    try {
+      const page = await api.getAgent(id, {
+        messageLimit: CHAT_MESSAGE_PAGE_SIZE,
+        beforeMessageId,
+      });
+      setAgent(prev => {
+        if (!prev) return page;
+        const existingIds = new Set(prev.messages.map(message => message.id));
+        return {
+          ...prev,
+          messages: [
+            ...page.messages.filter(message => !existingIds.has(message.id)),
+            ...prev.messages,
+          ],
+          messagePage: page.messagePage,
+        };
+      });
+    } catch (err) {
+      prependScrollRef.current = null;
+      skipNextAutoScrollRef.current = false;
+      addLocalMessage(`[Error] ${String(err)}`);
+    } finally {
+      setLoadingEarlierMessages(false);
+    }
+  }, [id, loadingEarlierMessages]);
+
   useEffect(() => {
     didInitialScrollRef.current = false;
     fetchAgent();
@@ -142,19 +181,27 @@ export function AgentChat() {
 
     joinAgent(id);
     const socket = getSocket();
-    let socketWorking = false;
+    let lastSocketActivityAt = Date.now();
+    const markSocketActivity = () => {
+      lastSocketActivityAt = Date.now();
+    };
 
     // Primary: incremental delta (lightweight, only new messages + metadata)
     const onDelta = (data: { agentId: string; delta: { messages: Agent['messages']; status: string; costUsd?: number; tokenUsage?: Agent['tokenUsage']; contextWindow?: Agent['contextWindow']; lastActivity: number; interactionMode?: Agent['interactionMode']; pendingPlan?: Agent['pendingPlan']; pendingQuestion?: Agent['pendingQuestion']; currentBranch?: string } }) => {
       if (data.agentId !== id) return;
-      socketWorking = true;
+      markSocketActivity();
       setAgent(prev => {
         if (!prev) return prev;
         const existingIds = new Set(prev.messages.map(m => m.id));
         const newMsgs = data.delta.messages.filter(m => !existingIds.has(m.id));
+        const messages = [...prev.messages, ...newMsgs];
         return {
           ...prev,
-          messages: [...prev.messages, ...newMsgs],
+          messages,
+          messagePage: prev.messagePage ? {
+            ...prev.messagePage,
+            total: Math.max(prev.messagePage.total + newMsgs.length, messages.length),
+          } : undefined,
           status: data.delta.status as Agent['status'],
           costUsd: data.delta.costUsd ?? prev.costUsd,
           tokenUsage: data.delta.tokenUsage ?? prev.tokenUsage,
@@ -171,7 +218,7 @@ export function AgentChat() {
     // Full snapshot (for status changes, initial load, dashboard sync)
     const onUpdate = (data: { agentId: string; agent: Agent }) => {
       if (data.agentId === id && data.agent) {
-        socketWorking = true;
+        markSocketActivity();
         // Only apply if server has at least as many messages (avoid overwriting optimistic messages)
         setAgent(prev => {
           if (!prev) return data.agent;
@@ -199,7 +246,7 @@ export function AgentChat() {
     // Status change
     const onStatus = (data: { agentId: string; status: string }) => {
       if (data.agentId === id) {
-        socketWorking = true;
+        markSocketActivity();
         setAgent(prev => prev ? { ...prev, status: data.status as Agent['status'] } : prev);
         // Clear input prompt when agent resumes running
         if (data.status === 'running') {
@@ -211,7 +258,7 @@ export function AgentChat() {
     // Input required (permission prompts, choices)
     const onInputRequired = (data: { agentId: string; inputInfo: { prompt: string; choices?: string[] } }) => {
       if (data.agentId === id) {
-        socketWorking = true;
+        markSocketActivity();
         setInputRequired(data.inputInfo);
         // Focus the input field
         setTimeout(() => inputRef.current?.focus(), 100);
@@ -222,6 +269,20 @@ export function AgentChat() {
     socket.on('agent:update', onUpdate);
     socket.on('agent:status', onStatus);
     socket.on('agent:input_required', onInputRequired);
+    const onSnapshot = (data: { agentId: string; agent: Agent }) => {
+      if (data.agentId !== id || !data.agent) return;
+      markSocketActivity();
+      setAgent(prev => prev ? {
+        ...prev,
+        ...data.agent,
+        // Dashboard snapshots intentionally contain only the latest message.
+        // Chat history is maintained by the initial fetch and agent:delta.
+        messages: prev.messages,
+        structuredOutput: data.agent.structuredOutput ?? prev.structuredOutput,
+        codeSnapshots: data.agent.codeSnapshots ?? prev.codeSnapshots,
+      } : prev);
+    };
+    socket.on('agent:snapshot', onSnapshot);
 
     // Re-join room on reconnect (socket.io assigns new socket id after reconnect)
     const onReconnect = () => {
@@ -231,14 +292,15 @@ export function AgentChat() {
     };
     socket.on('connect', onReconnect);
 
-    // Polling fallback: if socket events aren't arriving, poll every 3s while agent is running
+    // Poll only as a fallback for an active conversation with a stale socket.
+    // Stopped chats can have large histories and should stay completely idle.
     const pollInterval = setInterval(() => {
-      if (!socketWorking) {
-        fetchAgent();
-      }
-      // Reset flag each interval — if no socket events arrive in the next interval, we'll poll again
-      socketWorking = false;
-    }, 3000);
+      const status = agentRef.current?.status;
+      const active = status === 'running' || status === 'waiting_input';
+      const visible = document.visibilityState === 'visible';
+      const socketStale = !socket.connected || Date.now() - lastSocketActivityAt > 15_000;
+      if (active && visible && socketStale) fetchAgent();
+    }, 10_000);
 
     return () => {
       leaveAgent(id);
@@ -247,6 +309,7 @@ export function AgentChat() {
       socket.off('agent:update', onUpdate);
       socket.off('agent:status', onStatus);
       socket.off('agent:input_required', onInputRequired);
+      socket.off('agent:snapshot', onSnapshot);
       socket.off('connect', onReconnect);
     };
   }, [id, fetchAgent]);
@@ -265,8 +328,20 @@ export function AgentChat() {
     didInitialScrollRef.current = true;
   }, [agent]);
 
+  useLayoutEffect(() => {
+    const previous = prependScrollRef.current;
+    const container = messagesContainerRef.current;
+    if (!previous || !container) return;
+    container.scrollTop = previous.top + (container.scrollHeight - previous.height);
+    prependScrollRef.current = null;
+  }, [agent?.messages?.length]);
+
   useEffect(() => {
     if (!didInitialScrollRef.current) return;
+    if (skipNextAutoScrollRef.current) {
+      skipNextAutoScrollRef.current = false;
+      return;
+    }
     const container = messagesContainerRef.current;
     if (!container) return;
     const target = Math.max(0, container.scrollHeight - container.clientHeight);
@@ -793,8 +868,17 @@ export function AgentChat() {
   return (
     <div className="chat-container">
       <div className="chat-header">
-        <div>
-          <h2 style={{ fontSize: 18, fontWeight: 600, display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
+        <div className="chat-header-main">
+          <h2 className="chat-agent-title">
+            <button
+              type="button"
+              className="btn btn-sm btn-outline chat-back-button"
+              aria-label={t('nav.dashboard')}
+              title={t('nav.dashboard')}
+              onClick={() => navigate('/')}
+            >
+              &larr;
+            </button>
             <span className={`provider-badge provider-${agent.config.provider || 'claude'}`}>
               {(agent.config.provider || 'claude').toUpperCase()}
             </span>
@@ -837,15 +921,37 @@ export function AgentChat() {
               &#9998;
             </button>
           </h2>
-          <div style={{ fontSize: 12, color: 'var(--text-muted)' }}>
+          <div className="chat-agent-meta" title={agent.config.directory}>
             {agent.config.directory}
             {agent.costUsd !== undefined && ` | $${agent.costUsd.toFixed(4)}`}
             {agent.tokenUsage && ` | ${agent.tokenUsage.input + agent.tokenUsage.output} ${t('common.tokens')}`}
             {` | ${t('chat.currentReasoningEffort')}: ${formatReasoningEffort(agent.config.flags.reasoningEffort)}`}
           </div>
         </div>
-        <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
-          <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+        <div className="chat-mobile-header-controls">
+          <span className={`status status-${getAgentStatusClass(agent.status)}`}>
+            <span className="status-dot" />
+            {getAgentStatusLabel(agent.status)}
+          </span>
+          <button
+            type="button"
+            className="btn btn-sm btn-outline chat-mobile-actions-toggle"
+            aria-expanded={showMobileActions}
+            aria-label={t('common.actions')}
+            onClick={() => setShowMobileActions(open => !open)}
+          >
+            {t('common.actions')} {showMobileActions ? '\u25B2' : '\u25BC'}
+          </button>
+        </div>
+        <div
+          className={`chat-header-actions${showMobileActions ? ' is-open' : ''}`}
+          role="toolbar"
+          aria-label={t('common.actions')}
+          onClick={(event) => {
+            if ((event.target as HTMLElement).closest('button')) setShowMobileActions(false);
+          }}
+        >
+          <div className="chat-reasoning-control">
             <span style={{ fontSize: 12, color: 'var(--text-muted)', whiteSpace: 'nowrap' }}>
               {t('chat.currentReasoningEffort')}
             </span>
@@ -892,14 +998,15 @@ export function AgentChat() {
           <button
             className={`btn btn-sm ${showTerminal ? 'btn-primary' : 'btn-outline'}`}
             onClick={() => {
-              setShowTerminal(prev => {
-                const next = !prev;
-                if (next) setShowFiles(false);
-                // When switching back to chat view, re-fetch agent data to pick up
-                // any messages that arrived while in terminal view
-                if (!next) fetchAgent(true);
-                return next;
-              });
+              const next = !showTerminal;
+              if (next) {
+                setHasOpenedTerminal(true);
+                setShowFiles(false);
+              } else {
+                // Pick up messages that arrived while the terminal was visible.
+                fetchAgent();
+              }
+              setShowTerminal(next);
             }}
             title="Toggle live terminal"
           >
@@ -963,13 +1070,33 @@ export function AgentChat() {
         </div>
       </div>
 
-      {id && <TerminalView agentId={id} visible={showTerminal} resumeCommand={buildResumeCommand(agent, runtimeCapabilities)} />}
+      {id && hasOpenedTerminal && (
+        <Suspense fallback={<div className="terminal-view terminal-loading">{t('common.loading')}</div>}>
+          <TerminalView agentId={id} visible={showTerminal} resumeCommand={buildResumeCommand(agent, runtimeCapabilities)} />
+        </Suspense>
+      )}
       <FileBrowserView
         rootPath={workspacePath}
         visible={showFiles}
         targetFilePath={targetFilePath}
       />
       <div ref={messagesContainerRef} className="chat-messages" style={{ display: showTerminal || showFiles ? 'none' : undefined }}>
+        {agent.messagePage?.hasMore && (
+          <div className="chat-load-earlier">
+            <button
+              type="button"
+              className="btn btn-sm btn-outline"
+              disabled={loadingEarlierMessages}
+              onClick={() => void loadEarlierMessages()}
+            >
+              {loadingEarlierMessages ? t('common.loading') : t('chat.loadEarlier')}
+            </button>
+            <span>{t('chat.messageCount', {
+              loaded: agent.messages.length,
+              total: agent.messagePage.total,
+            })}</span>
+          </div>
+        )}
         {chatMessageGroups.map((group) => (
           <div key={group.id} className="chat-turn">
             {group.messages.map((msg) => {
@@ -1237,7 +1364,7 @@ export function AgentChat() {
         )}
         <div className="chat-input-area">
           <button
-            className={`btn btn-sm ${isPlanMode ? '' : 'btn-outline'}`}
+            className={`btn btn-sm chat-mode-btn ${isPlanMode ? '' : 'btn-outline'}`}
             onClick={toggleInteractionMode}
             title={t('chat.planModeShortcut')}
             style={{
@@ -1274,7 +1401,7 @@ export function AgentChat() {
               (agent.status === 'stopped' || agent.status === 'error') ? t('chat.resumePlaceholder') :
               t('chat.inputPlaceholder')
             }
-            autoFocus
+            autoFocus={!window.matchMedia?.('(max-width: 768px)').matches}
             rows={1}
             style={{ resize: 'none', overflowY: 'auto' }}
             onInput={(e) => {
@@ -1284,14 +1411,14 @@ export function AgentChat() {
             }}
           />
           <button
-            className="btn btn-outline btn-sm"
+            className="btn btn-outline btn-sm chat-attach-btn"
             onClick={() => fileInputRef.current?.click()}
             title="Attach image"
             style={{ padding: '6px 8px', fontSize: 16, lineHeight: 1 }}
           >
             {'\uD83D\uDCCE'}
           </button>
-          <button className="btn" onClick={handleSend}>
+          <button className="btn chat-send-btn" onClick={handleSend}>
             {t('common.send')}
           </button>
         </div>

@@ -63,6 +63,7 @@ function main() {
     path.resolve(__dirname, '..', 'client-dist'),
     path.resolve(__dirname, '..', '..', 'client', 'dist'),
   );
+  app.use('/assets', express.static(path.join(clientDist, 'assets'), { maxAge: '1y', immutable: true }));
   app.use(express.static(clientDist));
 
   // Serve built docs if available

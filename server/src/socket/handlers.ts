@@ -4,7 +4,7 @@ import type { AgentManager } from '../services/AgentManager.js';
 import type { TerminalService } from '../services/TerminalService.js';
 import type { TelegramService } from '../services/TelegramService.js';
 import type { GpuMonitorService } from '../services/GpuMonitorService.js';
-import { sanitizeAgentListSnapshot, sanitizeAgentSnapshot } from '../utils/agentSnapshot.js';
+import { sanitizeAgentListSnapshot } from '../utils/agentSnapshot.js';
 
 type TypedServer = Server<ClientToServerEvents, ServerToClientEvents>;
 type TypedSocket = Socket<ClientToServerEvents, ServerToClientEvents>;
@@ -31,8 +31,6 @@ export function setupSocketHandlers(io: TypedServer, manager: AgentManager, term
   });
 
   manager.on('agent:update', (agentId, agent) => {
-    const safeAgent = sanitizeAgentSnapshot(agent);
-    io.to(`agent:${agentId}`).emit('agent:update', { agentId, agent: safeAgent });
     io.emit('agent:snapshot', { agentId, agent: sanitizeAgentListSnapshot(agent) });
   });
 

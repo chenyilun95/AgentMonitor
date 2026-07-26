@@ -695,7 +695,7 @@ export class AgentManager extends EventEmitter {
       payload: this.sanitizeLogPayload(entry.payload),
     };
     agent.logs = [...(agent.logs || []), nextEntry].slice(-MAX_AGENT_LOG_ENTRIES);
-    this.store.saveAgent(agent);
+    this.store.saveAgentDeferred(agent);
   }
 
   private sanitizeLogPayload(payload: unknown): unknown {
@@ -840,18 +840,22 @@ export class AgentManager extends EventEmitter {
 
     const prevMsgCount = agent.messages.length;
 
-    if (provider === 'codex') {
-      this.handleCodexMessage(agent, msg);
-    } else {
-      this.handleClaudeMessage(agent, msg);
-    }
+    this.store.deferAgentWrites(() => {
+      if (provider === 'codex') {
+        this.handleCodexMessage(agent, msg);
+      } else {
+        this.handleClaudeMessage(agent, msg);
+      }
+
+      const newMessages = agent.messages.slice(prevMsgCount);
+      this.capturePendingPlan(agent, newMessages);
+    });
 
     // Emit raw message (kept for backward compat)
     this.emit('agent:message', agentId, msg);
 
     // Emit lightweight delta with only new messages + metadata (efficient for tunnel)
     const newMessages = agent.messages.slice(prevMsgCount);
-    this.capturePendingPlan(agent, newMessages);
     if (newMessages.length > 0) {
       this.emit('agent:delta', agentId, {
         messages: newMessages,
@@ -1396,7 +1400,7 @@ export class AgentManager extends EventEmitter {
       timestamp: Date.now(),
     });
     agent.lastActivity = Date.now();
-    this.store.saveAgent(agent);
+    this.store.saveAgentDeferred(agent);
   }
 
   private isCompactCommand(text: string): boolean {
@@ -2207,9 +2211,9 @@ export class AgentManager extends EventEmitter {
     this.store.saveAgent(agent);
   }
 
-  getAgent(agentId: string): Agent | undefined {
+  getAgent(agentId: string, refreshGit = true): Agent | undefined {
     const agent = this.store.getAgent(agentId);
-    if (agent) {
+    if (agent && refreshGit) {
       try {
         if (this.refreshAgentGitState(agent)) this.store.saveAgent(agent);
       } catch { /* non-Git or missing workspace */ }

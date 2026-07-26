@@ -315,6 +315,27 @@
   color: var(--text-muted);
 }
 
+.card-actions {
+  display: flex;
+  gap: 6px;
+  margin-top: 8px;
+  flex-wrap: wrap;
+}
+
+.dashboard-toolbar {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.dashboard-settings-button {
+  width: 38px;
+  min-width: 38px;
+  padding: 4px;
+  font-size: 24px;
+  line-height: 1;
+}
+
 .dashboard-attention {
   display: flex;
   align-items: center;

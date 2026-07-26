@@ -32,9 +32,9 @@ export function Dashboard() {
   const navigate = useNavigate();
   const { t, lang, setLang } = useTranslation();
 
-  const fetchAgents = async () => {
+  const fetchAgents = async (refreshBranches = false) => {
     try {
-      const data = await api.getAgents(true);
+      const data = await api.getAgents(refreshBranches);
       setAgents(data);
     } catch (err) {
       console.error('Failed to fetch agents:', err);
@@ -68,7 +68,13 @@ export function Dashboard() {
   };
 
   useEffect(() => {
-    fetchAgents();
+    let gitRefreshTimer: ReturnType<typeof setTimeout> | null = null;
+    let cancelled = false;
+    void fetchAgents().then(() => {
+      // Render cached Agent metadata first. Git commands are synchronous on the
+      // server and can be noticeably slower for remote or sleeping volumes.
+      if (!cancelled) gitRefreshTimer = setTimeout(() => void fetchAgents(true), 300);
+    });
     fetchSettings();
 
     const socket = getSocket();
@@ -89,9 +95,16 @@ export function Dashboard() {
       }
     };
 
-    // Fallback for status changes (e.g., stop/delete which don't emit snapshot)
-    const onStatus = () => {
-      fetchAgents();
+    const onStatus = (data: { agentId: string | null; status: Agent['status'] | 'deleted' }) => {
+      if (!data.agentId) {
+        fetchAgents();
+        return;
+      }
+      setAgents(prev => data.status === 'deleted'
+        ? prev.filter(agent => agent.id !== data.agentId)
+        : prev.map(agent => agent.id === data.agentId
+          ? { ...agent, status: data.status as Agent['status'] }
+          : agent));
     };
     const onVisibilityChange = () => {
       if (document.visibilityState === 'visible') fetchAgents();
@@ -102,25 +115,35 @@ export function Dashboard() {
     document.addEventListener('visibilitychange', onVisibilityChange);
 
     return () => {
+      cancelled = true;
+      if (gitRefreshTimer) clearTimeout(gitRefreshTimer);
       socket.off('agent:snapshot', onSnapshot);
       socket.off('agent:status', onStatus);
       document.removeEventListener('visibilitychange', onVisibilityChange);
     };
   }, []);
 
+  const directoryKey = Array.from(new Set([
+    ...savedDirectories,
+    ...agents.map(agent => agent.config.directory),
+  ])).sort().join('\0');
+
   useEffect(() => {
-    const directories = Array.from(new Set([
-      ...savedDirectories,
-      ...agents.map(agent => agent.config.directory),
-    ]));
+    const directories = directoryKey ? directoryKey.split('\0') : [];
+    let cancelled = false;
     void Promise.all(directories.map(async directory => {
       try {
         return [directory, await api.getDirectoryGitInfo(directory)] as const;
       } catch {
         return [directory, { isGit: false }] as const;
       }
-    })).then(entries => setGitInfo(Object.fromEntries(entries)));
-  }, [savedDirectories, agents]);
+    })).then(entries => {
+      if (!cancelled) setGitInfo(Object.fromEntries(entries));
+    });
+    return () => {
+      cancelled = true;
+    };
+  }, [directoryKey]);
 
   const handleStopAll = async () => {
     await api.stopAllAgents();
@@ -488,7 +511,7 @@ export function Dashboard() {
             </span>
           )}
         </div>
-        <div style={{ display: 'flex', gap: 6, marginTop: 8, flexWrap: 'wrap' }}>
+        <div className="card-actions">
           <button
             className="btn btn-sm btn-outline"
             onClick={(e) => { e.stopPropagation(); navigate(`/create?from=${agent.id}`); }}
@@ -597,7 +620,7 @@ export function Dashboard() {
     <div>
       <div className="page-header">
         <h1 className="page-title">{t('dashboard.title')}</h1>
-        <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
+        <div className="dashboard-toolbar">
           <div className="dashboard-view-toggle">
             <button
               className={`view-toggle-btn ${groupBy === 'time' ? 'active' : ''}`}
@@ -659,7 +682,7 @@ export function Dashboard() {
               </button>
             );
           })()}
-          <button className="btn btn-outline" onClick={() => setShowSettings(true)} title={t('dashboard.settings')} style={{ fontSize: 30, lineHeight: 1 }}>
+          <button className="btn btn-outline dashboard-settings-button" onClick={() => setShowSettings(true)} title={t('dashboard.settings')}>
             &#9881;
           </button>
         </div>

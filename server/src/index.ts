@@ -37,7 +37,7 @@ import { TelegramService } from './services/TelegramService.js';
 import { GpuMonitorService } from './services/GpuMonitorService.js';
 import { gpuMonitorRoutes } from './routes/gpu-monitor.js';
 import type { Agent } from './models/Agent.js';
-import { sanitizeAgentListSnapshot, sanitizeAgentSnapshot } from './utils/agentSnapshot.js';
+import { sanitizeAgentListSnapshot } from './utils/agentSnapshot.js';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 
@@ -271,8 +271,6 @@ export function createApp() {
 
   // External agent scanner — forward events to socket.io for live dashboard updates
   externalScanner.on('agent:update', (agentId: string, agent: unknown) => {
-    const safeAgent = sanitizeAgentSnapshot(agent as Agent);
-    io.to(`agent:${agentId}`).emit('agent:update', { agentId, agent: safeAgent });
     io.emit('agent:snapshot', { agentId, agent: sanitizeAgentListSnapshot(agent as Agent) });
   });
   externalScanner.on('agent:status', (agentId: string, status: string) => {

@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import type { Agent } from '../src/models/Agent.js';
-import { sanitizeAgentListSnapshot } from '../src/utils/agentSnapshot.js';
+import { sanitizeAgentListSnapshot, sanitizeAgentSnapshotPage } from '../src/utils/agentSnapshot.js';
 
 describe('agent snapshot utilities', () => {
   it('keeps only a bounded last-message preview for list snapshots', () => {
@@ -38,5 +38,42 @@ describe('agent snapshot utilities', () => {
     expect(snapshot.restoredConversationSeed).toBeUndefined();
     expect(snapshot.codeSnapshots).toBeUndefined();
     expect(snapshot.logs).toBeUndefined();
+  });
+
+  it('returns the latest message page and pages backward by message id', () => {
+    const agent: Agent = {
+      id: 'agent-paged',
+      name: 'Paged Agent',
+      status: 'stopped',
+      config: {
+        provider: 'codex',
+        directory: '/tmp',
+        prompt: 'prompt',
+        flags: {},
+      },
+      messages: Array.from({ length: 6 }, (_, index) => ({
+        id: `m${index + 1}`,
+        role: index % 2 === 0 ? 'user' as const : 'assistant' as const,
+        content: `message ${index + 1}`,
+        timestamp: index + 1,
+      })),
+      lastActivity: 6,
+      createdAt: 1,
+    };
+
+    const latest = sanitizeAgentSnapshotPage(agent, { messageLimit: 2 });
+    expect(latest.messages.map(message => message.id)).toEqual(['m5', 'm6']);
+    expect(latest.messagePage).toEqual({
+      hasMore: true,
+      total: 6,
+      oldestMessageId: 'm5',
+    });
+
+    const earlier = sanitizeAgentSnapshotPage(agent, {
+      messageLimit: 2,
+      beforeMessageId: 'm5',
+    });
+    expect(earlier.messages.map(message => message.id)).toEqual(['m3', 'm4']);
+    expect(earlier.messagePage?.hasMore).toBe(true);
   });
 });
