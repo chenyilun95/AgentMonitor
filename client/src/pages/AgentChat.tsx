@@ -39,6 +39,7 @@ export function AgentChat() {
   const navigate = useNavigate();
   const { t } = useTranslation();
   const [agent, setAgent] = useState<Agent | null>(null);
+  const [loadError, setLoadError] = useState(false);
   const [input, setInput] = useState('');
   const [showSlash, setShowSlash] = useState(false);
   const [slashFilter, setSlashFilter] = useState('');
@@ -102,6 +103,7 @@ export function AgentChat() {
     if (!id) return;
     try {
       const data = await api.getAgent(id, { messageLimit: CHAT_MESSAGE_PAGE_SIZE });
+      setLoadError(false);
       setAgent(prev => {
         if (!prev || forceOverwrite) return data;
         // Polling returns only the latest page. Merge it with any older pages
@@ -129,9 +131,12 @@ export function AgentChat() {
         }).slice(0, 50);
       }
     } catch {
-      navigate('/');
+      // A temporary network/server interruption must not eject the user from
+      // the conversation. Keep the current snapshot and retry through the
+      // socket reconnect/fallback polling paths.
+      setLoadError(true);
     }
-  }, [id, navigate]);
+  }, [id]);
 
   const loadEarlierMessages = useCallback(async () => {
     const current = agentRef.current;
@@ -844,7 +849,17 @@ export function AgentChat() {
     c.cmd.startsWith(slashFilter || '/'),
   );
 
-  if (!agent) return <div>{t('common.loading')}</div>;
+  if (!agent) {
+    if (!loadError) return <div>{t('common.loading')}</div>;
+    return (
+      <div className="chat-load-error" role="alert">
+        <span>{t('chat.loadFailed')}</span>
+        <button type="button" className="btn btn-outline" onClick={() => void fetchAgent()}>
+          {t('common.retry')}
+        </button>
+      </div>
+    );
+  }
 
   const reasoningEffortOptions = getReasoningEffortOptions(agent.config.provider, runtimeCapabilities);
   const interactionMode = agent.interactionMode || 'default';
@@ -867,6 +882,11 @@ export function AgentChat() {
 
   return (
     <div className="chat-container">
+      {loadError && (
+        <div className="chat-connection-warning" role="status">
+          {t('chat.connectionInterrupted')}
+        </div>
+      )}
       <div className="chat-header">
         <div className="chat-header-main">
           <h2 className="chat-agent-title">

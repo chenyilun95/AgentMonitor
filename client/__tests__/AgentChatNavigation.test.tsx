@@ -1,0 +1,116 @@
+import { render, screen, waitFor } from '@testing-library/react';
+import { MemoryRouter, Route, Routes } from 'react-router-dom';
+import { afterEach, describe, expect, it, vi } from 'vitest';
+import { AgentChat } from '../src/pages/AgentChat';
+import { api, type Agent } from '../src/api/client';
+import { LanguageProvider } from '../src/i18n';
+
+const navigate = vi.fn();
+const socket = {
+  connected: false,
+  on: vi.fn(),
+  off: vi.fn(),
+  emit: vi.fn(),
+};
+
+vi.mock('react-router-dom', async () => {
+  const actual = await vi.importActual<typeof import('react-router-dom')>('react-router-dom');
+  return {
+    ...actual,
+    useNavigate: () => navigate,
+  };
+});
+
+vi.mock('../src/api/client', async () => {
+  const actual = await vi.importActual<typeof import('../src/api/client')>('../src/api/client');
+  return {
+    ...actual,
+    api: {
+      getAgent: vi.fn(),
+      getRuntimeCapabilities: vi.fn(),
+    },
+  };
+});
+
+vi.mock('../src/api/socket', () => ({
+  getSocket: () => socket,
+  joinAgent: vi.fn(),
+  leaveAgent: vi.fn(),
+}));
+
+describe('AgentChat connection handling', () => {
+  afterEach(() => {
+    vi.clearAllMocks();
+  });
+
+  it('stays on the conversation route when loading fails', async () => {
+    vi.mocked(api.getAgent).mockRejectedValue(new Error('network unavailable'));
+    vi.mocked(api.getRuntimeCapabilities).mockRejectedValue(new Error('network unavailable'));
+
+    render(
+      <MemoryRouter initialEntries={['/agent/agent-1']}>
+        <LanguageProvider>
+          <Routes>
+            <Route path="/agent/:id" element={<AgentChat />} />
+          </Routes>
+        </LanguageProvider>
+      </MemoryRouter>,
+    );
+
+    await waitFor(() => {
+      expect(screen.getByRole('alert')).toHaveTextContent(
+        /Unable to load this conversation|暂时无法加载此对话/,
+      );
+    });
+    expect(navigate).not.toHaveBeenCalled();
+  });
+
+  it('keeps the loaded conversation visible when a reconnect refresh fails', async () => {
+    const existingAgent = {
+      id: 'agent-1',
+      name: 'Persistent conversation',
+      status: 'running',
+      config: {
+        provider: 'claude',
+        directory: '/tmp/project',
+        prompt: 'Keep working',
+        flags: {},
+      },
+      messages: [{
+        id: 'message-1',
+        role: 'assistant',
+        content: 'Existing response',
+        timestamp: 1,
+      }],
+      lastActivity: 1,
+      createdAt: 1,
+    } as Agent;
+    vi.mocked(api.getAgent)
+      .mockResolvedValueOnce(existingAgent)
+      .mockRejectedValueOnce(new Error('server restarting'));
+    vi.mocked(api.getRuntimeCapabilities).mockRejectedValue(new Error('not needed'));
+
+    render(
+      <MemoryRouter initialEntries={['/agent/agent-1']}>
+        <LanguageProvider>
+          <Routes>
+            <Route path="/agent/:id" element={<AgentChat />} />
+          </Routes>
+        </LanguageProvider>
+      </MemoryRouter>,
+    );
+
+    expect(await screen.findByText('Persistent conversation')).toBeInTheDocument();
+    const reconnectHandler = socket.on.mock.calls.find(([event]) => event === 'connect')?.[1];
+    expect(reconnectHandler).toBeTypeOf('function');
+    reconnectHandler();
+
+    await waitFor(() => {
+      expect(screen.getByRole('status')).toHaveTextContent(
+        /Connection interrupted|连接已中断/,
+      );
+    });
+    expect(screen.getByText('Existing response')).toBeInTheDocument();
+    expect(navigate).not.toHaveBeenCalled();
+  });
+});

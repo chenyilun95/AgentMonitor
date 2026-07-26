@@ -5,6 +5,27 @@
   height: calc(100vh - 100px);
 }
 
+.chat-load-error {
+  display: flex;
+  min-height: 180px;
+  align-items: center;
+  justify-content: center;
+  gap: 12px;
+  flex-wrap: wrap;
+  color: var(--text-muted);
+  text-align: center;
+}
+
+.chat-connection-warning {
+  margin-bottom: 12px;
+  padding: 8px 12px;
+  border: 1px solid color-mix(in srgb, var(--yellow) 50%, var(--border-subtle));
+  border-radius: var(--radius);
+  background: color-mix(in srgb, var(--yellow) 10%, transparent);
+  color: var(--text);
+  font-size: 13px;
+}
+
 .chat-header {
   display: flex;
   justify-content: space-between;
