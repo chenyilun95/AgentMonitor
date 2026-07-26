@@ -155,10 +155,11 @@
     font-size: 24px;
   }
 
-  .directory-group-add-kind {
-    right: 4px;
-    bottom: 4px;
-    font-size: 9px;
+  .directory-group-create-button {
+    width: auto;
+    flex-basis: auto;
+    padding: 0 12px;
+    font-size: 13px;
   }
 
   .modal-overlay {

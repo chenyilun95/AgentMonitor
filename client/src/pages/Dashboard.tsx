@@ -833,23 +833,23 @@ export function Dashboard() {
                       <div className="directory-group-icon-actions">
                         <button
                           type="button"
-                          className="directory-group-icon-button directory-group-add directory-group-add-direct"
+                          className="directory-group-icon-button directory-group-create-button directory-group-add directory-group-add-direct"
                           aria-label={t('dashboard.newAgent')}
                           title={t('dashboard.newAgent')}
                           onClick={() => navigate(`/create?directory=${encodeURIComponent(launchPath)}&mode=direct`)}
                         >
-                          <span className="directory-group-plus" aria-hidden>+</span>
-                          <span className="directory-group-add-kind" aria-hidden>D</span>
+                          <span aria-hidden>+</span>
+                          <span>Direct</span>
                         </button>
                         <button
                           type="button"
-                          className="directory-group-icon-button directory-group-add directory-group-add-worktree"
+                          className="directory-group-icon-button directory-group-create-button directory-group-add directory-group-add-worktree"
                           aria-label={t('dashboard.newWorktreeAgent')}
                           title={t('dashboard.newWorktreeAgent')}
                           onClick={() => navigate(`/create?directory=${encodeURIComponent(launchPath)}&mode=worktree`)}
                         >
-                          <span className="directory-group-plus" aria-hidden>+</span>
-                          <span className="directory-group-add-kind" aria-hidden>W</span>
+                          <span aria-hidden>+</span>
+                          <span>Worktree</span>
                         </button>
                         {project.savedPaths.length > 0 && (
                           <button
