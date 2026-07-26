@@ -21,8 +21,9 @@ describe('toggleTheme', () => {
     expect(localStorage.getItem('agentmonitor-theme')).toBe('dark');
   });
 
-  it('defaults to dark when no theme is set', () => {
+  it('defaults to light when no theme is set', () => {
     toggleTheme();
     expect(document.documentElement.getAttribute('data-theme')).toBe('light');
+    expect(localStorage.getItem('agentmonitor-theme')).toBe('light');
   });
 });
