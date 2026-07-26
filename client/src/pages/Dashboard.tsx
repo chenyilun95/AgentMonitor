@@ -851,7 +851,7 @@ export function Dashboard() {
                           <span aria-hidden>+</span>
                           <span>Worktree</span>
                         </button>
-                        {project.savedPaths.length > 0 && (
+                        {project.savedPaths.length > 0 && groupAgents.length === 0 && (
                           <button
                             type="button"
                             className="directory-group-icon-button directory-group-remove"

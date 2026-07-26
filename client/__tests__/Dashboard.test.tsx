@@ -168,6 +168,39 @@ describe('Dashboard', () => {
 
     expect(await screen.findByText('/tmp/saved-project')).toBeInTheDocument();
     expect(screen.getByText(/0 agents|0 个代理/)).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: /Remove path: \/tmp\/saved-project|删除路径: \/tmp\/saved-project/ }))
+      .toBeInTheDocument();
+  });
+
+  it('hides the saved-directory remove action while the group has agents', async () => {
+    localStorage.setItem('agentmonitor-group-by', 'project');
+    const agent = {
+      ...makeAgent('agent-1', 'Project agent', 1000, 'stopped'),
+      config: {
+        ...makeAgent('agent-1', 'Project agent', 1000, 'stopped').config,
+        directory: '/tmp/saved-project',
+      },
+    };
+    vi.mocked(api.getAgents).mockResolvedValue([agent]);
+    vi.mocked(api.getSettings).mockResolvedValue({
+      agentRetentionMs: 86_400_000,
+      promptSuggestions: [],
+      pathHistory: {},
+      deleteSessionFilesPolicy: 'keep',
+    });
+    vi.mocked(api.getSavedDirectories).mockResolvedValue({ paths: ['/tmp/saved-project'] });
+
+    render(
+      <MemoryRouter>
+        <LanguageProvider>
+          <Dashboard />
+        </LanguageProvider>
+      </MemoryRouter>,
+    );
+
+    expect(await screen.findByText('Project agent')).toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: /Remove path: \/tmp\/saved-project|删除路径: \/tmp\/saved-project/ }))
+      .not.toBeInTheDocument();
   });
 
   it('adds and removes a saved directory from the dashboard', async () => {
