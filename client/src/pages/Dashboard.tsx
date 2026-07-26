@@ -23,7 +23,6 @@ export function Dashboard() {
     worktreePath?: string;
     worktreeBranch?: string;
     hasUnintegratedChanges: boolean;
-    discardWorkspaceChanges: boolean;
     canPurge: boolean;
     purgeSessionFiles: boolean;
     dontAskAgain: boolean;
@@ -158,9 +157,8 @@ export function Dashboard() {
   const executeDelete = async (
     id: string,
     purgeSessionFiles: boolean,
-    discardWorkspaceChanges = false,
   ) => {
-    await api.deleteAgent(id, { purgeSessionFiles, discardWorkspaceChanges });
+    await api.deleteAgent(id, { purgeSessionFiles });
     fetchAgents();
   };
 
@@ -174,7 +172,6 @@ export function Dashboard() {
         worktreePath: isWorktree ? agent.worktreePath : undefined,
         worktreeBranch: isWorktree ? agent.worktreeBranch : undefined,
         hasUnintegratedChanges: isWorktree && agent.hasUnintegratedChanges === true,
-        discardWorkspaceChanges: false,
         canPurge: !!agent.sessionId,
         purgeSessionFiles: deleteSessionFilesPolicy === 'purge' && !!agent.sessionId,
         dontAskAgain: false,
@@ -200,7 +197,6 @@ export function Dashboard() {
       await executeDelete(
         deleteDialog.agentId,
         shouldPurge,
-        deleteDialog.discardWorkspaceChanges,
       );
       setDeleteDialog(null);
     } catch (err) {
@@ -565,30 +561,6 @@ export function Dashboard() {
             <>
               <button
                 className="btn btn-sm btn-outline"
-                disabled={
-                  agent.status === 'running'
-                  || agent.status === 'waiting_input'
-                  || agent.pendingIntegrationCleanup
-                  || gitBusy === `integrate-delete:${agent.id}`
-                }
-                onClick={(e) => void handleIntegrateAndDelete(e, agent)}
-                title={t('dashboard.integrateAndDeleteTooltip', { branch: agent.baseBranch })}
-              >
-                {agent.pendingIntegrationCleanup
-                  ? t('dashboard.integratingAndDeleting')
-                  : t('dashboard.integrateAndDelete')}
-              </button>
-              {gitErrors[`integrate-delete:${agent.id}`] && (
-                <span
-                  className="directory-git-error"
-                  role="alert"
-                  title={gitErrors[`integrate-delete:${agent.id}`]}
-                >
-                  {gitErrors[`integrate-delete:${agent.id}`]}
-                </span>
-              )}
-              <button
-                className="btn btn-sm btn-outline"
                 disabled={agent.status === 'running' || agent.status === 'waiting_input' || gitBusy === `update:${agent.id}`}
                 onClick={(e) => {
                   e.stopPropagation();
@@ -619,6 +591,25 @@ export function Dashboard() {
               {t('common.stop')}
             </button>
           )}
+          {agent.workspaceMode !== 'direct' && agent.worktreeBranch && agent.baseBranch && (
+            <>
+              <button
+                className="btn btn-sm"
+                disabled={
+                  agent.status === 'running'
+                  || agent.status === 'waiting_input'
+                  || agent.pendingIntegrationCleanup
+                  || gitBusy === `integrate-delete:${agent.id}`
+                }
+                onClick={(e) => void handleIntegrateAndDelete(e, agent)}
+                title={t('dashboard.integrateAndDeleteTooltip', { branch: agent.baseBranch })}
+              >
+                {agent.pendingIntegrationCleanup
+                  ? t('dashboard.integratingAndDeleting')
+                  : t('dashboard.integrateAndDelete')}
+              </button>
+            </>
+          )}
           {agent.source === 'external' ? (
             <span
               className="quick-tooltip"
@@ -637,10 +628,27 @@ export function Dashboard() {
           ) : (
             <button
               className="btn btn-sm btn-danger"
+              disabled={agent.workspaceMode === 'worktree' && (
+                agent.status === 'running'
+                || agent.status === 'waiting_input'
+                || agent.pendingIntegrationCleanup
+              )}
               onClick={(e) => handleDelete(e, agent)}
+              title={agent.workspaceMode === 'worktree'
+                ? t('dashboard.deleteWorktreeTooltip', { branch: agent.baseBranch || 'base' })
+                : undefined}
             >
               {t('common.delete')}
             </button>
+          )}
+          {gitErrors[`integrate-delete:${agent.id}`] && (
+            <span
+              className="directory-git-error"
+              role="alert"
+              title={gitErrors[`integrate-delete:${agent.id}`]}
+            >
+              {gitErrors[`integrate-delete:${agent.id}`]}
+            </span>
           )}
         </div>
       </div>
@@ -1061,18 +1069,9 @@ export function Dashboard() {
               </div>
             )}
             {deleteDialog.hasUnintegratedChanges && (
-              <label className="checkbox-label" style={{ marginBottom: 12, color: 'var(--danger)' }}>
-                <input
-                  type="checkbox"
-                  checked={deleteDialog.discardWorkspaceChanges}
-                  onChange={(e) => setDeleteDialog((prev) => prev ? {
-                    ...prev,
-                    discardWorkspaceChanges: e.target.checked,
-                    error: undefined,
-                  } : prev)}
-                />
-                {t('dashboard.deleteConfirmDiscardChanges')}
-              </label>
+              <div style={{ marginBottom: 12, color: 'var(--danger)' }}>
+                {t('dashboard.deleteBlockedUnintegrated')}
+              </div>
             )}
             <label className="checkbox-label" style={{ marginBottom: 10 }}>
               <input
@@ -1112,7 +1111,7 @@ export function Dashboard() {
               </button>
               <button
                 className="btn btn-danger"
-                disabled={deleteDialog.hasUnintegratedChanges && !deleteDialog.discardWorkspaceChanges}
+                disabled={deleteDialog.hasUnintegratedChanges}
                 onClick={handleDeleteConfirm}
               >
                 {t('dashboard.deleteConfirmAction')}

@@ -130,7 +130,7 @@ export const api = {
     request('/agents/' + id + '/stop', { method: 'POST' }),
   stopAllAgents: () =>
     request('/agents/actions/stop-all', { method: 'POST' }),
-  deleteAgent: (id: string, opts?: { purgeSessionFiles?: boolean; discardWorkspaceChanges?: boolean }) =>
+  deleteAgent: (id: string, opts?: { purgeSessionFiles?: boolean }) =>
     request('/agents/' + id, {
       method: 'DELETE',
       body: opts ? JSON.stringify(opts) : undefined,

@@ -49,7 +49,6 @@ export class AgentWorkspaceError extends Error {}
 
 interface DeleteAgentOptions {
   purgeSessionFiles?: boolean;
-  discardWorkspaceChanges?: boolean;
 }
 
 export interface RestoreConversationResult {
@@ -2185,13 +2184,33 @@ export class AgentManager extends EventEmitter {
       }
     };
 
-    if (agent.workspaceMode === 'worktree' && agent.worktreeBranch && agent.baseBranch) {
+    if (agent.workspaceMode === 'worktree') {
+      if (agent.status === 'running' || agent.status === 'waiting_input' || this.processes.has(agentId)) {
+        throw new AgentWorkspaceError(
+          'Stop this Worktree Agent before deleting it. The Agent, directory, and branch were kept.',
+        );
+      }
+      if (agent.pendingIntegrationCleanup) {
+        throw new AgentWorkspaceError(
+          'Integration is still in progress. Wait for its Git verification to finish before deleting this Worktree.',
+        );
+      }
+      if (!agent.worktreePath || !agent.worktreeBranch || !agent.baseBranch) {
+        throw new AgentWorkspaceError(
+          'Could not verify this Worktree is safe to delete because its path or branch information is incomplete.',
+        );
+      }
+      if (!existsSync(agent.worktreePath)) {
+        throw new AgentWorkspaceError(
+          `Could not verify this Worktree is safe to delete because its directory does not exist: "${agent.worktreePath}".`,
+        );
+      }
       const hasUnsafeChanges = inspectWorktreeChanges(agent.worktreeBranch, agent.baseBranch);
       agent.hasUnintegratedChanges = hasUnsafeChanges || undefined;
       this.store.saveAgent(agent);
-      if (hasUnsafeChanges && !opts.discardWorkspaceChanges) {
+      if (hasUnsafeChanges) {
         throw new AgentWorkspaceError(
-          'This worktree has uncommitted files or commits that are not merged into the base branch. Integrate the changes first, or explicitly choose to discard them.',
+          'This Worktree has uncommitted files or commits that are not merged into the base branch. Integrate the changes first; the Agent, directory, and branch were kept.',
         );
       }
     }
@@ -2201,7 +2220,6 @@ export class AgentManager extends EventEmitter {
       agent.workspaceMode === 'worktree'
       && agent.worktreeBranch
       && agent.baseBranch
-      && !opts.discardWorkspaceChanges
       && inspectWorktreeChanges(agent.worktreeBranch, agent.baseBranch)
     ) {
       agent.hasUnintegratedChanges = true;

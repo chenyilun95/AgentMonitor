@@ -131,7 +131,7 @@ describe('AgentManager deleteAgent purgeSessionFiles', () => {
     expect(fs.existsSync(decoyPath)).toBe(true);
   });
 
-  it('keeps the agent and worktree when unintegrated changes were not explicitly discarded', async () => {
+  it('keeps the agent and worktree when there are unintegrated changes', async () => {
     const agent = createWorktreeAgent('unsafe-delete');
     fs.writeFileSync(path.join(agent.worktreePath!, 'uncommitted.txt'), 'keep me');
 
@@ -142,11 +142,32 @@ describe('AgentManager deleteAgent purgeSessionFiles', () => {
     expect(fs.existsSync(path.join(agent.worktreePath!, 'uncommitted.txt'))).toBe(true);
   });
 
-  it('deletes an unsafe worktree only when discard is explicit', async () => {
-    const agent = createWorktreeAgent('forced-delete');
-    fs.writeFileSync(path.join(agent.worktreePath!, 'uncommitted.txt'), 'discard me');
+  it('keeps a Worktree when its safety metadata is incomplete', async () => {
+    const agent = createWorktreeAgent('incomplete-delete');
+    agent.baseBranch = undefined;
+    store.saveAgent(agent);
 
-    await manager.deleteAgent(agent.id, { discardWorkspaceChanges: true });
+    await expect(manager.deleteAgent(agent.id)).rejects.toBeInstanceOf(AgentWorkspaceError);
+
+    expect(store.getAgent(agent.id)).toBeDefined();
+    expect(fs.existsSync(agent.worktreePath!)).toBe(true);
+  });
+
+  it('keeps a Worktree while its Agent is running', async () => {
+    const agent = createWorktreeAgent('running-delete');
+    agent.status = 'running';
+    store.saveAgent(agent);
+
+    await expect(manager.deleteAgent(agent.id)).rejects.toBeInstanceOf(AgentWorkspaceError);
+
+    expect(store.getAgent(agent.id)).toBeDefined();
+    expect(fs.existsSync(agent.worktreePath!)).toBe(true);
+  });
+
+  it('deletes a clean Worktree only after its branch is merged', async () => {
+    const agent = createWorktreeAgent('safe-delete');
+
+    await manager.deleteAgent(agent.id);
 
     expect(store.getAgent(agent.id)).toBeUndefined();
     expect(fs.existsSync(agent.worktreePath!)).toBe(false);

@@ -380,7 +380,7 @@ describe('Dashboard', () => {
     ));
   });
 
-  it('requires explicit confirmation before discarding Worktree changes', async () => {
+  it('blocks deletion when a Worktree has unintegrated changes', async () => {
     const agent = {
       ...makeAgent('agent-delete', 'Unsafe worktree', 1000, 'stopped'),
       workspaceMode: 'worktree' as const,
@@ -415,16 +415,9 @@ describe('Dashboard', () => {
     const deleteButtons = screen.getAllByRole('button', { name: /^Delete$|^删除$/ });
     const confirm = deleteButtons[deleteButtons.length - 1];
     expect(confirm).toBeDisabled();
-
-    fireEvent.click(screen.getByLabelText(
+    expect(screen.queryByLabelText(
       /Discard all uncommitted files|放弃所有未提交文件/,
-    ));
-    expect(confirm).toBeEnabled();
-    fireEvent.click(confirm);
-
-    await waitFor(() => expect(api.deleteAgent).toHaveBeenCalledWith(agent.id, {
-      purgeSessionFiles: false,
-      discardWorkspaceChanges: true,
-    }));
+    )).not.toBeInTheDocument();
+    expect(api.deleteAgent).not.toHaveBeenCalled();
   });
 });
