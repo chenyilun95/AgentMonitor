@@ -190,7 +190,7 @@ describe('Dashboard', () => {
       </MemoryRouter>,
     );
 
-    fireEvent.click(await screen.findByRole('button', { name: /New Path|新建路径/ }));
+    fireEvent.click(await screen.findByRole('button', { name: /New Path|Add Project Directory|新建路径|新建项目目录/ }));
     fireEvent.change(screen.getByPlaceholderText('/path/to/project'), { target: { value: '/tmp/new-project' } });
     fireEvent.click(screen.getByRole('button', { name: /Select|选择/ }));
     expect(await screen.findByText('/tmp/new-project')).toBeInTheDocument();
@@ -228,13 +228,29 @@ describe('Dashboard', () => {
     expect(alert).not.toHaveBeenCalled();
   });
 
+  it('groups different subdirectories of the same repository as one project', async () => {
+    localStorage.setItem('agentmonitor-group-by', 'directory');
+    const frontend = { ...makeAgent('front', 'Frontend', 2), config: { ...makeAgent('front', 'Frontend', 2).config, directory: '/repo/frontend' }, repositoryRoot: '/repo', projectKey: 'git:/repo' };
+    const backend = { ...makeAgent('back', 'Backend', 1), config: { ...makeAgent('back', 'Backend', 1).config, directory: '/repo/backend' }, repositoryRoot: '/repo', projectKey: 'git:/repo' };
+    vi.mocked(api.getAgents).mockResolvedValue([frontend, backend]);
+    vi.mocked(api.getSettings).mockResolvedValue({ agentRetentionMs: 86_400_000, promptSuggestions: [], pathHistory: {}, deleteSessionFilesPolicy: 'keep' });
+    vi.mocked(api.getSavedDirectories).mockResolvedValue({ paths: [] });
+    vi.mocked(api.getDirectoryGitInfo).mockResolvedValue({ isGit: true, root: '/repo' });
+
+    render(<MemoryRouter><LanguageProvider><Dashboard /></LanguageProvider></MemoryRouter>);
+
+    await screen.findByText('Frontend');
+    expect(document.querySelectorAll('.directory-group')).toHaveLength(1);
+    expect(screen.getByTitle('/repo')).toBeInTheDocument();
+  });
+
   it('sends Worktree update and merge actions to the agent as prompts', async () => {
     const agent = {
       ...makeAgent('agent-1', 'Worktree agent', 1000, 'stopped'),
       workspaceMode: 'worktree' as const,
       worktreePath: '/tmp/project/.agent-worktrees/agent-1',
       worktreeBranch: 'agent-1',
-      gitBranch: 'main',
+      baseBranch: 'main',
     };
     vi.mocked(api.getAgents).mockResolvedValue([agent]);
     vi.mocked(api.getSettings).mockResolvedValue({

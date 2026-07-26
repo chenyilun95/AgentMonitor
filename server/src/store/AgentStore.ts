@@ -167,6 +167,10 @@ export class AgentStore {
       try {
         const data = JSON.parse(fs.readFileSync(this.agentsFile, 'utf-8'));
         for (const a of data) {
+          if (!a.config.providerInstructions && a.config.claudeMd) {
+            a.config.providerInstructions = a.config.claudeMd;
+          }
+          delete a.config.claudeMd;
           this.agents.set(a.id, a);
         }
       } catch {
@@ -187,6 +191,8 @@ export class AgentStore {
       try {
         const data = JSON.parse(fs.readFileSync(this.tasksFile, 'utf-8'));
         for (const t of data) {
+          if (!t.providerInstructions && t.claudeMd) t.providerInstructions = t.claudeMd;
+          delete t.claudeMd;
           this.tasks.set(t.id, t);
         }
       } catch {
@@ -196,6 +202,9 @@ export class AgentStore {
     if (fs.existsSync(this.metaConfigFile)) {
       try {
         this.metaConfig = JSON.parse(fs.readFileSync(this.metaConfigFile, 'utf-8'));
+        const legacy = this.metaConfig as AgentManagerConfig & { claudeMd?: string };
+        if (!legacy.providerInstructions && legacy.claudeMd) legacy.providerInstructions = legacy.claudeMd;
+        delete legacy.claudeMd;
       } catch {
         // ignore corrupt file
       }
@@ -334,7 +343,7 @@ export class AgentStore {
 
   clearCompletedTasks(): void {
     for (const [id, task] of this.tasks) {
-      if (task.status === 'completed' || task.status === 'failed') {
+      if (['completed', 'failed', 'canceled', 'interrupted'].includes(task.status)) {
         this.tasks.delete(id);
       }
     }

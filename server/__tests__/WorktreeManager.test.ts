@@ -34,14 +34,20 @@ describe('WorktreeManager', () => {
     expect(result.worktreePath).toContain('test-branch');
     expect(result.branch).toBe('test-branch');
     expect(fs.existsSync(result.worktreePath)).toBe(true);
+    const exclude = execSync('git rev-parse --git-path info/exclude', {
+      cwd: tmpDir,
+      encoding: 'utf8',
+    }).trim();
+    expect(fs.readFileSync(path.resolve(tmpDir, exclude), 'utf8')).toContain('/.agent-worktrees/');
+    expect(execSync('git status --porcelain', { cwd: tmpDir, encoding: 'utf8' })).toBe('');
   });
 
   it('does not modify a tracked CLAUDE.md in the worktree', () => {
     fs.writeFileSync(path.join(tmpDir, 'CLAUDE.md'), '# Repository Config');
     execSync('git add CLAUDE.md && git commit -m "add instructions"', { cwd: tmpDir, stdio: 'pipe' });
     const result = manager.createWorktree(tmpDir, 'test-branch-md');
-    const claudeMd = fs.readFileSync(path.join(result.worktreePath, 'CLAUDE.md'), 'utf-8');
-    expect(claudeMd).toBe('# Repository Config');
+    const providerInstructions = fs.readFileSync(path.join(result.worktreePath, 'CLAUDE.md'), 'utf-8');
+    expect(providerInstructions).toBe('# Repository Config');
     expect(execSync('git status --porcelain', { cwd: result.worktreePath, encoding: 'utf8' })).toBe('');
   });
 

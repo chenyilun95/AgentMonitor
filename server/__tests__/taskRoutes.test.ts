@@ -46,21 +46,24 @@ describe('Task Routes', () => {
   let tmpDir: string;
   let app: express.Express;
   let store: AgentStore;
+  let agentManager: AgentManager;
   let pipeline: MetaAgentManager;
 
   beforeEach(() => {
     tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), 'taskroutes-test-'));
     store = new AgentStore(tmpDir);
-    const agentManager = new AgentManager(store);
+    agentManager = new AgentManager(store);
     pipeline = new MetaAgentManager(store, agentManager);
+    pipeline.updateConfig({ defaultDirectory: tmpDir, workspaceMode: 'direct' });
 
     app = express();
     app.use(express.json());
     app.use('/api/tasks', taskRoutes(store, pipeline));
   });
 
-  afterEach(() => {
+  afterEach(async () => {
     pipeline.stop();
+    await agentManager.stopAllAgents();
     fs.rmSync(tmpDir, { recursive: true, force: true });
   });
 
@@ -98,8 +101,8 @@ describe('Task Routes', () => {
   it('gets agent manager config', async () => {
     const res = await request(app, 'GET', '/api/tasks/meta/config');
     expect(res.status).toBe(200);
-    const body = res.body as { claudeMd: string; running: boolean };
-    expect(body.claudeMd).toBeDefined();
+    const body = res.body as { providerInstructions: string; running: boolean };
+    expect(body.providerInstructions).toBeDefined();
     expect(body.running).toBe(false);
   });
 

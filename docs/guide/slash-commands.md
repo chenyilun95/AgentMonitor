@@ -17,7 +17,7 @@ The Agent Chat interface supports 25 slash commands, matching Claude Code CLI in
 | `/exit` | Return to the dashboard |
 | `/export` | Export conversation to a text file |
 | `/help` | Show all available commands |
-| `/memory` | Open CLAUDE.md editor modal |
+| `/memory` | Show the current provider instructions (`CLAUDE.md` or `AGENTS.md` semantics) |
 | `/model` | Show current model |
 | `/permissions` | Show agent permission flags |
 | `/plan` | Send plan mode command to the agent |

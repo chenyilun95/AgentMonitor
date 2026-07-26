@@ -53,8 +53,8 @@ export class HarnessOrchestrator extends EventEmitter {
       status = 'generating';
     } else if (evaluators.some(t => t.status === 'running')) {
       status = 'evaluating';
-    } else if (generators.length > 0 && generators.every(t => t.status === 'completed' || t.status === 'failed')) {
-      status = generators.some(t => t.status === 'failed') ? 'failed' : 'complete';
+    } else if (generators.length > 0 && generators.every(t => ['completed', 'failed', 'canceled', 'interrupted'].includes(t.status))) {
+      status = generators.some(t => t.status !== 'completed') ? 'failed' : 'complete';
     }
 
     return {
@@ -64,7 +64,7 @@ export class HarnessOrchestrator extends EventEmitter {
       plannerTaskId: this.plannerTaskId,
       totalGenerators: generators.length,
       completedGenerators: generators.filter(t => t.status === 'completed').length,
-      failedGenerators: generators.filter(t => t.status === 'failed').length,
+      failedGenerators: generators.filter(t => ['failed', 'canceled', 'interrupted'].includes(t.status)).length,
     };
   }
 
@@ -84,7 +84,7 @@ export class HarnessOrchestrator extends EventEmitter {
       directory: config.defaultDirectory,
       provider: config.defaultProvider,
       model: undefined,
-      claudeMd: config.claudeMd,
+      providerInstructions: config.providerInstructions,
       flags: { dangerouslySkipPermissions: true },
       status: 'pending',
       order: 0,
@@ -160,7 +160,7 @@ export class HarnessOrchestrator extends EventEmitter {
         prompt: dt.prompt,
         directory: workingDir,
         provider: cfg?.defaultProvider,
-        claudeMd: cfg?.claudeMd,
+        providerInstructions: cfg?.providerInstructions,
         flags: { dangerouslySkipPermissions: true },
         status: 'pending',
         order: dt.order,
@@ -196,12 +196,13 @@ export class HarnessOrchestrator extends EventEmitter {
       prompt: evalPrompt,
       directory: evalDir,
       provider: cfg?.defaultProvider,
-      claudeMd: cfg?.claudeMd,
+      providerInstructions: cfg?.providerInstructions,
       flags: { dangerouslySkipPermissions: true },
       status: 'pending',
       order: task.order, // same order so it runs next in the pipeline tick
       createdAt: Date.now(),
       role: 'evaluator',
+      workspaceMode: 'direct',
       harnessId: this.harnessId!,
       parentTaskId: task.id,
     };
@@ -232,8 +233,28 @@ export class HarnessOrchestrator extends EventEmitter {
       }
     }
 
-    const result = handoff?.evaluationResult || 'pass'; // default to pass if can't parse
+    const result = handoff?.evaluationResult;
     const feedback = handoff?.feedback || '';
+
+    if (!result) {
+      evalTask.status = 'failed';
+      evalTask.error = 'Evaluator did not produce a valid pass/fail result';
+      evalTask.completedAt = Date.now();
+      this.store.saveTask(evalTask);
+      this.emit('task:update', evalTask);
+
+      const parent = evalTask.parentTaskId ? this.store.getTask(evalTask.parentTaskId) : undefined;
+      if (parent) {
+        parent.status = 'failed';
+        parent.error = evalTask.error;
+        parent.completedAt = Date.now();
+        this.store.saveTask(parent);
+        this.emit('task:update', parent);
+        this.checkHarnessComplete();
+      }
+      this.emit('harness:failed', { reason: evalTask.error, evaluatorTaskId: evalTask.id });
+      return;
+    }
 
     evalTask.evaluationResult = result;
     evalTask.evaluationFeedback = feedback;
@@ -302,7 +323,7 @@ export class HarnessOrchestrator extends EventEmitter {
     if (!this.harnessId) return;
     const tasks = this.store.getAllTasks().filter(t => t.harnessId === this.harnessId && t.role === 'generator');
     if (tasks.length === 0) return;
-    if (tasks.every(t => t.status === 'completed' || t.status === 'failed')) {
+    if (tasks.every(t => ['completed', 'failed', 'canceled', 'interrupted'].includes(t.status))) {
       const allPassed = tasks.every(t => t.status === 'completed');
       this.emit('harness:complete', { harnessId: this.harnessId, allPassed });
       console.log(`[Harness] Complete. All passed: ${allPassed}`);

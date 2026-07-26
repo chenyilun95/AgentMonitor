@@ -19,7 +19,7 @@ export function taskRoutes(store: AgentStore, agentManagerPipeline: MetaAgentMan
 
   // Create task
   router.post('/', (req, res) => {
-    const { name, prompt, directory, provider, model, claudeMd, flags, order } = req.body as CreateTaskRequest;
+    const { name, prompt, directory, provider, model, providerInstructions, claudeMd, flags, order } = req.body as CreateTaskRequest;
 
     if (!name || !prompt) {
       res.status(400).json({ error: 'name and prompt are required' });
@@ -42,7 +42,7 @@ export function taskRoutes(store: AgentStore, agentManagerPipeline: MetaAgentMan
       directory: normalizeOptionalUserPath(directory),
       provider,
       model,
-      claudeMd,
+      providerInstructions: providerInstructions ?? claudeMd,
       flags,
       status: 'pending',
       order: taskOrder,
@@ -154,13 +154,13 @@ export function taskRoutes(store: AgentStore, agentManagerPipeline: MetaAgentMan
       return;
     }
 
-    const { name, prompt, directory, provider, model, claudeMd, flags, order } = req.body as CreateTaskRequest;
+    const { name, prompt, directory, provider, model, providerInstructions, claudeMd, flags, order } = req.body as CreateTaskRequest;
     if (name !== undefined) task.name = name;
     if (prompt !== undefined) task.prompt = prompt;
     if (directory !== undefined) task.directory = normalizeOptionalUserPath(directory);
     if (provider !== undefined) task.provider = provider;
     if (model !== undefined) task.model = model;
-    if (claudeMd !== undefined) task.claudeMd = claudeMd;
+    if (providerInstructions !== undefined || claudeMd !== undefined) task.providerInstructions = providerInstructions ?? claudeMd;
     if (flags !== undefined) task.flags = flags;
     if (order !== undefined) task.order = order;
 
@@ -194,7 +194,7 @@ export function taskRoutes(store: AgentStore, agentManagerPipeline: MetaAgentMan
       res.status(404).json({ error: 'Task not found' });
       return;
     }
-    if (task.status !== 'failed' && task.status !== 'completed') {
+    if (!['failed', 'completed', 'canceled', 'interrupted'].includes(task.status)) {
       res.status(400).json({ error: 'Can only reset completed or failed tasks' });
       return;
     }

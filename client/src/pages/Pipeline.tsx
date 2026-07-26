@@ -28,7 +28,7 @@ export function Pipeline() {
   const [newProvider, setNewProvider] = useState<AgentProvider>('claude');
   const [newModel, setNewModel] = useState('');
   const [newOrder, setNewOrder] = useState<number | ''>('');
-  const [newClaudeMd, setNewClaudeMd] = useState('');
+  const [newProviderInstructions, setNewProviderInstructions] = useState('');
   const [newSkipPerms, setNewSkipPerms] = useState(true);
   const [newChrome, setNewChrome] = useState(false);
   const [newFullAuto, setNewFullAuto] = useState(false);
@@ -38,7 +38,7 @@ export function Pipeline() {
   const [newDependsOn, setNewDependsOn] = useState<'new' | 'parallel' | number>('new');
 
   // Config form
-  const [cfgClaudeMd, setCfgClaudeMd] = useState('');
+  const [cfgProviderInstructions, setCfgProviderInstructions] = useState('');
   const [cfgDir, setCfgDir] = useState('');
   const [cfgProvider, setCfgProvider] = useState<AgentProvider>('claude');
   const [cfgPollInterval, setCfgPollInterval] = useState(5000);
@@ -107,7 +107,7 @@ export function Pipeline() {
       directory: newDir.trim() || undefined,
       provider: newProvider,
       model: newModel.trim() || undefined,
-      claudeMd: newClaudeMd.trim() || undefined,
+      providerInstructions: newProviderInstructions.trim() || undefined,
       flags: {
         dangerouslySkipPermissions: newSkipPerms,
         chrome: (newProvider === 'claude' && newChrome) || undefined,
@@ -133,7 +133,7 @@ export function Pipeline() {
     setNewDir('');
     setNewModel('');
     setNewOrder('');
-    setNewClaudeMd('');
+    setNewProviderInstructions('');
     setNewSkipPerms(true);
     setNewChrome(false);
     setNewFullAuto(false);
@@ -187,7 +187,7 @@ export function Pipeline() {
 
   const handleSaveConfig = async () => {
     await api.updateMetaConfig({
-      claudeMd: cfgClaudeMd,
+      providerInstructions: cfgProviderInstructions,
       defaultDirectory: cfgDir,
       defaultProvider: cfgProvider,
       pollIntervalMs: cfgPollInterval,
@@ -202,7 +202,7 @@ export function Pipeline() {
 
   const openConfig = () => {
     if (metaConfig) {
-      setCfgClaudeMd(metaConfig.claudeMd);
+      setCfgProviderInstructions(metaConfig.providerInstructions);
       setCfgDir(metaConfig.defaultDirectory);
       setCfgProvider(metaConfig.defaultProvider);
       setCfgPollInterval(metaConfig.pollIntervalMs);
@@ -220,6 +220,8 @@ export function Pipeline() {
       case 'running': return 'var(--green)';
       case 'completed': return 'var(--primary)';
       case 'failed': return 'var(--red)';
+      case 'canceled': return 'var(--orange, #f97316)';
+      case 'interrupted': return 'var(--yellow, #f59e0b)';
       case 'evaluating': return 'var(--yellow, #f59e0b)';
       case 'revision': return 'var(--orange, #f97316)';
       default: return 'var(--text-muted)';
@@ -472,7 +474,7 @@ export function Pipeline() {
                               {t('common.delete')}
                             </button>
                           )}
-                          {(task.status === 'failed' || task.status === 'completed') && (
+                          {['failed', 'completed', 'canceled', 'interrupted'].includes(task.status) && (
                             <button className="btn btn-sm btn-outline" onClick={() => handleResetTask(task.id)}>
                               {t('common.reset')}
                             </button>
@@ -581,13 +583,13 @@ export function Pipeline() {
             </div>
             <div className="form-group">
               <label>
-                {t('pipeline.claudeMdOptional')}{' '}
+                {t('pipeline.providerInstructionsOptional')}{' '}
                 {templates.length > 0 && (
                   <select
                     style={{ marginLeft: 8, padding: '2px 4px', background: 'var(--bg-input)', border: '1px solid var(--border)', borderRadius: 4, color: 'var(--text)', fontSize: 12 }}
                     onChange={(e) => {
                       const tmpl = templates.find(t => t.id === e.target.value);
-                      if (tmpl) setNewClaudeMd(tmpl.content);
+                      if (tmpl) setNewProviderInstructions(tmpl.content);
                     }}
                     defaultValue=""
                   >
@@ -599,9 +601,9 @@ export function Pipeline() {
                 )}
               </label>
               <textarea
-                value={newClaudeMd}
-                onChange={(e) => setNewClaudeMd(e.target.value)}
-                placeholder={t('pipeline.claudeMdPlaceholder')}
+                value={newProviderInstructions}
+                onChange={(e) => setNewProviderInstructions(e.target.value)}
+                placeholder={t('pipeline.providerInstructionsPlaceholder')}
                 style={{ minHeight: 60 }}
               />
             </div>
@@ -716,10 +718,10 @@ export function Pipeline() {
               />
             </div>
             <div className="form-group">
-              <label>{t('pipeline.defaultClaudeMd')}</label>
+              <label>{t('pipeline.defaultProviderInstructions')}</label>
               <textarea
-                value={cfgClaudeMd}
-                onChange={(e) => setCfgClaudeMd(e.target.value)}
+                value={cfgProviderInstructions}
+                onChange={(e) => setCfgProviderInstructions(e.target.value)}
                 style={{ minHeight: 200 }}
               />
             </div>

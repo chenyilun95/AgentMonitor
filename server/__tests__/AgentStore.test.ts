@@ -106,6 +106,18 @@ describe('AgentStore', () => {
     expect(retrieved!.name).toBe('Persistent');
   });
 
+  it('migrates legacy claudeMd data to providerInstructions', () => {
+    fs.writeFileSync(path.join(tmpDir, 'agents.json'), JSON.stringify([{
+      id: 'legacy', name: 'Legacy', status: 'stopped',
+      config: { provider: 'codex', directory: '/tmp', prompt: '', flags: {}, claudeMd: 'legacy instructions' },
+      messages: [], lastActivity: 1, createdAt: 1,
+    }]));
+
+    const migrated = new AgentStore(tmpDir).getAgent('legacy');
+    expect(migrated?.config.providerInstructions).toBe('legacy instructions');
+    expect(migrated?.config.claudeMd).toBeUndefined();
+  });
+
   it('saves and retrieves templates', () => {
     const template: Template = {
       id: 't1',

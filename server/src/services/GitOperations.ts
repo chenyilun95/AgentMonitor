@@ -9,6 +9,7 @@ const repositoryLocks = new Set<string>();
 export interface GitDirectoryInfo {
   isGit: boolean;
   root?: string;
+  repositoryRoot?: string;
   branch?: string;
   upstream?: string;
 }
@@ -80,12 +81,14 @@ export function getGitDirectoryInfo(directory: string): GitDirectoryInfo {
   const cwd = normalizeUserPath(directory);
   try {
     const root = gitLocal(cwd, ['rev-parse', '--show-toplevel']);
+    const worktrees = gitLocal(cwd, ['worktree', 'list', '--porcelain']);
+    const repositoryRoot = worktrees.match(/^worktree (.+)$/m)?.[1] || root;
     const branch = gitLocal(cwd, ['branch', '--show-current']);
     let upstream: string | undefined;
     try {
       upstream = gitLocal(cwd, ['rev-parse', '--abbrev-ref', '--symbolic-full-name', '@{upstream}']);
     } catch { /* branch has no upstream */ }
-    return { isGit: true, root, branch: branch || undefined, upstream };
+    return { isGit: true, root, repositoryRoot, branch: branch || undefined, upstream };
   } catch {
     return { isGit: false };
   }
@@ -116,33 +119,5 @@ export async function pushDirectory(directory: string): Promise<GitDirectoryInfo
     await requireClean(info.root!, 'Original repository');
     await git(info.root!, ['push']);
     return getGitDirectoryInfo(info.root!);
-  });
-}
-
-export async function updateWorktree(worktreePath: string, baseBranch: string): Promise<void> {
-  const cwd = normalizeUserPath(worktreePath);
-  await withRepositoryLock(cwd, async () => {
-    await requireClean(cwd, 'Worktree');
-    await git(cwd, ['show-ref', '--verify', '--quiet', `refs/heads/${baseBranch}`]);
-    await git(cwd, ['merge', '--no-edit', baseBranch]);
-  });
-}
-
-export async function mergeWorktree(
-  originalDirectory: string,
-  worktreePath: string,
-  worktreeBranch: string,
-  baseBranch: string,
-): Promise<void> {
-  const originalInfo = getGitDirectoryInfo(originalDirectory);
-  if (!originalInfo.isGit || !originalInfo.root) throw new GitOperationError('Original directory is not a Git repository.', 400);
-  await withRepositoryLock(originalInfo.root, async () => {
-    const current = getGitDirectoryInfo(originalInfo.root!);
-    if (current.branch !== baseBranch) {
-      throw new GitOperationError(`Original repository is on ${current.branch || 'detached HEAD'}, but this worktree must merge into ${baseBranch}.`);
-    }
-    await requireClean(originalInfo.root!, 'Original repository');
-    await requireClean(normalizeUserPath(worktreePath), 'Worktree');
-    await git(originalInfo.root!, ['merge', '--no-ff', '--no-edit', worktreeBranch]);
   });
 }

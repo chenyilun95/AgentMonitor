@@ -6,8 +6,8 @@ import path from 'path';
 import {
   getGitDirectoryInfo,
   GitOperationError,
-  mergeWorktree,
-  updateWorktree,
+  pullDirectory,
+  pushDirectory,
 } from '../src/services/GitOperations.js';
 
 function git(cwd: string, ...args: string[]): string {
@@ -17,62 +17,67 @@ function git(cwd: string, ...args: string[]): string {
 describe('GitOperations', () => {
   let tempDir: string;
   let repoDir: string;
-  let worktreeDir: string;
+  let remoteDir: string;
 
   beforeEach(() => {
     tempDir = fs.mkdtempSync(path.join(os.tmpdir(), 'git-operations-'));
     repoDir = path.join(tempDir, 'repo');
-    worktreeDir = path.join(tempDir, 'agent-worktree');
+    remoteDir = path.join(tempDir, 'remote.git');
     fs.mkdirSync(repoDir);
+    fs.mkdirSync(remoteDir);
+    git(remoteDir, 'init', '--bare');
     git(repoDir, 'init', '-b', 'main');
     git(repoDir, 'config', 'user.name', 'Agent Monitor Test');
     git(repoDir, 'config', 'user.email', 'agent-monitor@example.test');
     fs.writeFileSync(path.join(repoDir, 'base.txt'), 'base\n');
     git(repoDir, 'add', 'base.txt');
     git(repoDir, 'commit', '-m', 'initial');
-    git(repoDir, 'worktree', 'add', '-b', 'agent-test', worktreeDir);
+    git(repoDir, 'remote', 'add', 'origin', remoteDir);
+    git(repoDir, 'push', '-u', 'origin', 'main');
   });
 
   afterEach(() => {
     fs.rmSync(tempDir, { recursive: true, force: true });
   });
 
-  it('detects a repository and merges a clean worktree into its base branch', async () => {
-    const info = getGitDirectoryInfo(repoDir);
-    expect(info).toMatchObject({ isGit: true, branch: 'main' });
-    expect(fs.realpathSync(info.root!)).toBe(fs.realpathSync(repoDir));
-
-    fs.writeFileSync(path.join(worktreeDir, 'agent.txt'), 'agent\n');
-    git(worktreeDir, 'add', 'agent.txt');
-    git(worktreeDir, 'commit', '-m', 'agent change');
-
-    await mergeWorktree(repoDir, worktreeDir, 'agent-test', 'main');
-
-    expect(fs.readFileSync(path.join(repoDir, 'agent.txt'), 'utf8')).toBe('agent\n');
-    expect(git(repoDir, 'log', '-1', '--pretty=%P').split(' ')).toHaveLength(2);
+  it('detects a repository and its upstream', () => {
+    expect(getGitDirectoryInfo(repoDir)).toMatchObject({
+      isGit: true,
+      branch: 'main',
+      upstream: 'origin/main',
+    });
   });
 
-  it('updates a clean worktree from the local base branch', async () => {
-    fs.writeFileSync(path.join(repoDir, 'main.txt'), 'main\n');
-    git(repoDir, 'add', 'main.txt');
-    git(repoDir, 'commit', '-m', 'main change');
+  it('pulls a fast-forward update from the configured upstream', async () => {
+    const other = path.join(tempDir, 'other');
+    git(tempDir, 'clone', remoteDir, other);
+    git(other, 'switch', 'main');
+    git(other, 'config', 'user.name', 'Other');
+    git(other, 'config', 'user.email', 'other@example.test');
+    fs.writeFileSync(path.join(other, 'remote.txt'), 'remote\n');
+    git(other, 'add', 'remote.txt');
+    git(other, 'commit', '-m', 'remote update');
+    git(other, 'push');
 
-    await updateWorktree(worktreeDir, 'main');
-
-    expect(fs.readFileSync(path.join(worktreeDir, 'main.txt'), 'utf8')).toBe('main\n');
+    await pullDirectory(repoDir);
+    expect(fs.readFileSync(path.join(repoDir, 'remote.txt'), 'utf8')).toBe('remote\n');
   });
 
-  it('refuses to merge when either working tree is dirty', async () => {
-    fs.writeFileSync(path.join(worktreeDir, 'base.txt'), 'dirty\n');
-    await expect(mergeWorktree(repoDir, worktreeDir, 'agent-test', 'main'))
-      .rejects.toThrow(GitOperationError);
+  it('pushes the current original branch', async () => {
+    fs.writeFileSync(path.join(repoDir, 'local.txt'), 'local\n');
+    git(repoDir, 'add', 'local.txt');
+    git(repoDir, 'commit', '-m', 'local update');
+    await pushDirectory(repoDir);
+    expect(git(remoteDir, 'show', 'main:local.txt')).toBe('local');
+  });
+
+  it('refuses remote operations when the original checkout is dirty', async () => {
+    fs.writeFileSync(path.join(repoDir, 'base.txt'), 'dirty\n');
+    await expect(pullDirectory(repoDir)).rejects.toThrow(GitOperationError);
   });
 
   it('prevents concurrent mutating operations for the same repository', async () => {
-    const results = await Promise.allSettled([
-      updateWorktree(worktreeDir, 'main'),
-      updateWorktree(worktreeDir, 'main'),
-    ]);
+    const results = await Promise.allSettled([pullDirectory(repoDir), pullDirectory(repoDir)]);
     expect(results.filter(result => result.status === 'fulfilled')).toHaveLength(1);
     const rejection = results.find(result => result.status === 'rejected') as PromiseRejectedResult;
     expect(String(rejection.reason)).toContain('already running');

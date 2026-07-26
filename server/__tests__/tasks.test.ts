@@ -92,7 +92,7 @@ describe('AgentStore - Tasks', () => {
   it('saves and retrieves meta agent config', () => {
     const cfg: MetaAgentConfig = {
       running: false,
-      claudeMd: '# Test',
+      providerInstructions: '# Test',
       defaultDirectory: '/tmp',
       defaultProvider: 'claude',
       pollIntervalMs: 3000,
@@ -101,14 +101,14 @@ describe('AgentStore - Tasks', () => {
     store.saveMetaAgentConfig(cfg);
     const retrieved = store.getMetaConfig();
     expect(retrieved).toBeDefined();
-    expect(retrieved!.claudeMd).toBe('# Test');
+    expect(retrieved!.providerInstructions).toBe('# Test');
     expect(retrieved!.pollIntervalMs).toBe(3000);
   });
 
   it('persists meta config to disk and reloads', () => {
     store.saveMetaAgentConfig({
       running: false,
-      claudeMd: '# Persisted',
+      providerInstructions: '# Persisted',
       defaultDirectory: '/home',
       defaultProvider: 'codex',
       pollIntervalMs: 10000,

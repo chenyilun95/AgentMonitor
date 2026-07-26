@@ -30,7 +30,7 @@ Agent Monitor 是一个本地优先的 **Claude Code** 与 **Codex** 工作台�
 
 ### Agent Panel：围绕项目，而不只是进程
 
-仪表盘可以按时间或工作目录排列 Agent。按目录分组时，代码仓库成为工作流中心：每个目录分区展示其所有 Agent，并提供创建 Direct Edit / Worktree Agent 的快捷入口。
+仪表盘可以按时间或项目排列 Agent。用户选择的目录只是 Agent 启动路径；属于同一 Git 仓库根目录的不同子目录会归入同一个 Repo 项目，非 Git 目录则各自作为独立项目。
 
 每张卡片都展示无需进入会话即可判断下一步的信息：Provider、来源、状态、项目、Git 分支/工作区模式、任务摘要、活动时间，以及费用或 Token 用量。你可以直接打开、克隆、停止、删除 Agent，或让已完成的 Agent 提交当前修改。
 
@@ -62,7 +62,7 @@ Agent Monitor 是一个本地优先的 **Claude Code** 与 **Codex** 工作台�
 | **Direct Edit** | Agent 直接在所选目录工作；Agent Monitor 仅在 `.agent-worktrees` 下创建链接，以统一运行路径。 | 单 Agent、非 Git 目录，或希望修改立即出现在当前 checkout 中。 |
 | **Worktree** | 在 `<repo>/.agent-worktrees/` 下创建隔离分支与 Git worktree。 | 多 Agent 并行、独立审查修改，以及安全的对话/代码恢复点。 |
 
-Agent Monitor 会向 `CLAUDE.md` 或 `AGENTS.md` 注入工作区说明，在仪表盘跟踪实际分支，并把合并回基础分支保留为显式 Git 操作。
+Agent Monitor 会在运行时向 Agent 注入工作区与 Provider 指令，不会修改 `CLAUDE.md` 或 `AGENTS.md`；仪表盘分别跟踪基础分支和当前分支，并把合并回基础分支保留为显式操作。
 
 ### Agent Team 与 Harness 模式
 

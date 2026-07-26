@@ -141,7 +141,7 @@ export function directoryRoutes(store?: AgentStore): Router {
     }
   });
 
-  router.get('/claude-md', (req, res) => {
+  router.get(['/instructions', '/claude-md'], (req, res) => {
     try {
       const rawPath = req.query.path as string;
       const provider = ((req.query.provider as string) || 'claude') as AgentProvider;

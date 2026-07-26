@@ -1,6 +1,6 @@
 import type { AgentProvider } from './Agent.js';
 
-export type TaskStatus = 'pending' | 'running' | 'completed' | 'failed' | 'evaluating' | 'revision';
+export type TaskStatus = 'pending' | 'running' | 'completed' | 'failed' | 'canceled' | 'interrupted' | 'evaluating' | 'revision';
 
 export type TaskRole = 'planner' | 'generator' | 'evaluator';
 
@@ -11,7 +11,7 @@ export interface PipelineTask {
   directory?: string;
   provider?: AgentProvider;
   model?: string;
-  claudeMd?: string;
+  providerInstructions?: string;
   flags?: {
     dangerouslySkipPermissions?: boolean;
     fullAuto?: boolean;
@@ -33,12 +33,13 @@ export interface PipelineTask {
   revisionCount?: number;
   maxRevisions?: number;
   handoffFile?: string;
+  workspaceMode?: 'worktree' | 'direct';
 }
 
 export interface AgentManagerConfig {
   running: boolean;
   agentId?: string;
-  claudeMd: string;
+  providerInstructions: string;
   defaultDirectory: string;
   defaultProvider: AgentProvider;
   pollIntervalMs: number;
@@ -50,6 +51,7 @@ export interface AgentManagerConfig {
   harnessMode?: boolean;
   evaluationCriteria?: string;
   maxRevisionsPerTask?: number;
+  workspaceMode?: 'auto' | 'worktree' | 'direct';
 }
 
 /** @deprecated Use AgentManagerConfig instead */

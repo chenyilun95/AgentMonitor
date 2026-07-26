@@ -103,18 +103,18 @@ API:
 
 The Create Agent page uses this endpoint to render provider-specific dropdowns instead of requiring manual model input.
 
-## CLAUDE.md
+## Provider instructions
 
-Each agent can have custom instructions via CLAUDE.md content. You can:
+Each agent can have custom provider instructions. Claude projects conventionally use `CLAUDE.md`; Codex projects use `AGENTS.md`. You can:
 1. Write inline content when creating the agent
 2. Load from saved templates
-3. Edit at any time via the chat interface (`/memory` command or Edit CLAUDE.md button)
+3. Edit the injected instruction content from the chat interface
 
 ## Git Worktree Isolation
 
-When the working directory is a **git repository**, each agent runs in an isolated git worktree (under `.agent-worktrees/`) to prevent conflicts when multiple agents work in the same repo. The worktree is created automatically on a dedicated branch.
+For manually created agents, choose **Direct Edit** or **Worktree** explicitly. Worktree mode creates an isolated checkout under `.agent-worktrees/`; Direct Edit uses the selected checkout directly.
 
-If the working directory is **not a git repo**, the agent works directly in the target directory with no worktree created. This avoids unnecessary git initialization and ensures agent changes land in the correct location.
+Worktree mode requires Git. Pipeline tasks use Worktree automatically for Git projects and Direct Edit for non-Git directories. Parallel Direct Edit tasks targeting the same project are rejected.
 
 ## Notifications
 

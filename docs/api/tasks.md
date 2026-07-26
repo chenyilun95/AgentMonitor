@@ -26,7 +26,7 @@ POST /api/tasks
   "directory": "/path/to/project",
   "provider": "claude",
   "model": "claude-sonnet-4-20250514",
-  "claudeMd": "Custom instructions...",
+  "providerInstructions": "Custom instructions...",
   "flags": {},
   "order": 0
 }
@@ -78,7 +78,7 @@ PUT /api/tasks/meta/config
   "defaultDirectory": "/path/to/project",
   "defaultProvider": "claude",
   "pollIntervalMs": 5000,
-  "claudeMd": "Default CLAUDE.md for managed agents"
+  "providerInstructions": "Default CLAUDE.md for managed agents"
 }
 ```
 

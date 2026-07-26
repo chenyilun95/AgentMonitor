@@ -108,8 +108,8 @@ export function AgentChat() {
             pendingQuestion: data.pendingQuestion,
             queuedMessages: data.queuedMessages,
             queuePaused: data.queuePaused,
-            worktreeMerged: data.worktreeMerged,
-            currentGitBranch: data.currentGitBranch,
+            hasUnintegratedChanges: data.hasUnintegratedChanges,
+            currentBranch: data.currentBranch,
             lastActivity: data.lastActivity,
           };
         }
@@ -145,7 +145,7 @@ export function AgentChat() {
     let socketWorking = false;
 
     // Primary: incremental delta (lightweight, only new messages + metadata)
-    const onDelta = (data: { agentId: string; delta: { messages: Agent['messages']; status: string; costUsd?: number; tokenUsage?: Agent['tokenUsage']; contextWindow?: Agent['contextWindow']; lastActivity: number; interactionMode?: Agent['interactionMode']; pendingPlan?: Agent['pendingPlan']; pendingQuestion?: Agent['pendingQuestion']; currentGitBranch?: string } }) => {
+    const onDelta = (data: { agentId: string; delta: { messages: Agent['messages']; status: string; costUsd?: number; tokenUsage?: Agent['tokenUsage']; contextWindow?: Agent['contextWindow']; lastActivity: number; interactionMode?: Agent['interactionMode']; pendingPlan?: Agent['pendingPlan']; pendingQuestion?: Agent['pendingQuestion']; currentBranch?: string } }) => {
       if (data.agentId !== id) return;
       socketWorking = true;
       setAgent(prev => {
@@ -163,7 +163,7 @@ export function AgentChat() {
           interactionMode: data.delta.interactionMode ?? prev.interactionMode,
           pendingPlan: data.delta.pendingPlan === undefined ? prev.pendingPlan : (data.delta.pendingPlan || undefined),
           pendingQuestion: data.delta.pendingQuestion === undefined ? prev.pendingQuestion : (data.delta.pendingQuestion || undefined),
-          currentGitBranch: data.delta.currentGitBranch ?? prev.currentGitBranch,
+          currentBranch: data.delta.currentBranch ?? prev.currentBranch,
         };
       });
     };
@@ -188,8 +188,8 @@ export function AgentChat() {
             pendingQuestion: data.agent.pendingQuestion,
             queuedMessages: data.agent.queuedMessages,
             queuePaused: data.agent.queuePaused,
-            worktreeMerged: data.agent.worktreeMerged,
-            currentGitBranch: data.agent.currentGitBranch,
+            hasUnintegratedChanges: data.agent.hasUnintegratedChanges,
+            currentBranch: data.agent.currentBranch,
             lastActivity: data.agent.lastActivity,
           };
         });
@@ -806,14 +806,14 @@ export function AgentChat() {
               <>
                 <span className="card-direct" title={t('workspaceMode.directTooltip')}>
                   <span className="direct-icon" aria-hidden>🔗</span>
-                  {agent.gitBranch ? `${agent.gitBranch} (Direct Edit)` : t('workspaceMode.direct')}
+                  {agent.baseBranch ? `${agent.baseBranch} (Direct Edit)` : t('workspaceMode.direct')}
                 </span>
-                {agent.currentGitBranch && agent.gitBranch && agent.currentGitBranch !== agent.gitBranch && (
+                {agent.currentBranch && agent.baseBranch && agent.currentBranch !== agent.baseBranch && (
                   <span
                     className="branch-drift-badge"
-                    title={t('workspaceMode.branchDriftWarning', { initial: agent.gitBranch, current: agent.currentGitBranch })}
+                    title={t('workspaceMode.branchDriftWarning', { initial: agent.baseBranch, current: agent.currentBranch })}
                   >
-                    {agent.currentGitBranch}
+                    {agent.currentBranch}
                   </span>
                 )}
               </>
@@ -822,8 +822,8 @@ export function AgentChat() {
                 <svg className="branch-icon" viewBox="0 0 16 16" width="12" height="12" fill="currentColor">
                   <path d="M9.5 3.25a2.25 2.25 0 1 1 3 2.122V6A2.5 2.5 0 0 1 10 8.5H6a1 1 0 0 0-1 1v1.128a2.251 2.251 0 1 1-1.5 0V5.372a2.25 2.25 0 1 1 1.5 0v1.836A2.492 2.492 0 0 1 6 7h4a1 1 0 0 0 1-1v-.628A2.25 2.25 0 0 1 9.5 3.25Zm-6 0a.75.75 0 1 0 1.5 0 .75.75 0 0 0-1.5 0Zm8.25-.75a.75.75 0 1 0 0 1.5.75.75 0 0 0 0-1.5ZM4.25 12a.75.75 0 1 0 0 1.5.75.75 0 0 0 0-1.5Z" />
                 </svg>
-                {agent.gitBranch
-                  ? `${agent.gitBranch} (Worktree-${agent.worktreeBranch.replace(/^agent-/, '')})`
+                {agent.baseBranch
+                  ? `${agent.baseBranch} (Worktree-${agent.worktreeBranch.replace(/^agent-/, '')})`
                   : t('workspaceMode.worktreeChip', { branch: agent.worktreeBranch.replace(/^agent-/, '') })}
               </span>
             ) : null}
@@ -937,21 +937,21 @@ export function AgentChat() {
               ? 'dashboard.commitWorktree'
               : 'dashboard.commit')}
           </button>
-          {agent.workspaceMode !== 'direct' && agent.worktreeBranch && agent.gitBranch && (
+          {agent.workspaceMode !== 'direct' && agent.worktreeBranch && agent.baseBranch && (
             <>
               <button
                 className="btn btn-sm btn-outline"
                 disabled={agent.status === 'running' || agent.status === 'waiting_input' || gitAction !== null}
                 onClick={() => void handleWorktreeAction('update')}
               >
-                {t('dashboard.updateFromBase', { branch: agent.gitBranch })}
+                {t('dashboard.updateFromBase', { branch: agent.baseBranch })}
               </button>
               <button
                 className="btn btn-sm btn-outline"
                 disabled={agent.status === 'running' || agent.status === 'waiting_input' || gitAction !== null}
                 onClick={() => void handleWorktreeAction('merge')}
               >
-                {t('dashboard.mergeToBase', { branch: agent.gitBranch })}
+                {t('dashboard.mergeToBase', { branch: agent.baseBranch })}
               </button>
             </>
           )}

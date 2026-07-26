@@ -6,6 +6,7 @@ import { AgentStore } from '../src/store/AgentStore.js';
 import { AgentManager } from '../src/services/AgentManager.js';
 import { AgentProcess } from '../src/services/AgentProcess.js';
 import type { Agent } from '../src/models/Agent.js';
+import { execFileSync } from 'child_process';
 
 describe('AgentManager restoreConversation', () => {
   let tmpDir: string;
@@ -24,6 +25,15 @@ describe('AgentManager restoreConversation', () => {
     vi.restoreAllMocks();
     fs.rmSync(tmpDir, { recursive: true, force: true });
   });
+
+  const initGitRepository = (): void => {
+    execFileSync('git', ['init', '-b', 'main'], { cwd: tmpDir });
+    execFileSync('git', ['config', 'user.email', 'test@example.com'], { cwd: tmpDir });
+    execFileSync('git', ['config', 'user.name', 'Test User'], { cwd: tmpDir });
+    fs.writeFileSync(path.join(tmpDir, 'README.md'), '# Test\n');
+    execFileSync('git', ['add', 'README.md'], { cwd: tmpDir });
+    execFileSync('git', ['commit', '-m', 'initial'], { cwd: tmpDir });
+  };
 
   it('clears session, truncates JSONL, and builds conversation seed after restore', async () => {
     const agent: Agent = {
@@ -118,7 +128,7 @@ describe('AgentManager restoreConversation', () => {
     expect(startProcessSpy).toHaveBeenCalledOnce();
   });
 
-  it('marks a previously merged worktree as pending when a new turn starts', () => {
+  it('does not guess Worktree integration state merely because a new turn starts', () => {
     const agent: Agent = {
       id: 'agent-new-work-after-merge',
       name: 'Merged Worktree',
@@ -127,7 +137,7 @@ describe('AgentManager restoreConversation', () => {
       worktreePath: tmpDir,
       worktreeBranch: 'agent-test',
       workspaceMode: 'worktree',
-      worktreeMerged: true,
+      hasUnintegratedChanges: false,
       messages: [],
       lastActivity: 1,
       createdAt: 1,
@@ -137,7 +147,7 @@ describe('AgentManager restoreConversation', () => {
 
     manager.sendMessage(agent.id, 'new work');
 
-    expect(store.getAgent(agent.id)?.worktreeMerged).toBe(false);
+    expect(store.getAgent(agent.id)?.hasUnintegratedChanges).toBe(false);
   });
 
   it('rejects worktree mode for a non-Git directory instead of editing it directly', async () => {
@@ -145,12 +155,111 @@ describe('AgentManager restoreConversation', () => {
       provider: 'codex',
       directory: tmpDir,
       prompt: 'do work',
-      claudeMd: '# Internal instructions',
+      providerInstructions: '# Internal instructions',
       flags: {},
     }, undefined, { workspaceMode: 'worktree' })).rejects.toThrow('requires an existing Git repository');
 
     expect(fs.existsSync(path.join(tmpDir, 'AGENTS.md'))).toBe(false);
     expect(store.getAllAgents()).toHaveLength(0);
+  });
+
+  it('derives unintegrated Worktree state from Git history instead of a stored flag', async () => {
+    initGitRepository();
+    const agent = await manager.createAgent('Git State', {
+      provider: 'codex',
+      directory: tmpDir,
+      prompt: '',
+      flags: {},
+    }, undefined, { workspaceMode: 'worktree' });
+
+    expect(manager.getAgent(agent.id)?.hasUnintegratedChanges).toBe(false);
+    fs.writeFileSync(path.join(agent.worktreePath!, 'change.txt'), 'change\n');
+    execFileSync('git', ['add', 'change.txt'], { cwd: agent.worktreePath! });
+    execFileSync('git', ['commit', '-m', 'agent change'], { cwd: agent.worktreePath! });
+    expect(manager.getAgent(agent.id)?.hasUnintegratedChanges).toBe(true);
+
+    execFileSync('git', ['merge', '--ff-only', agent.worktreeBranch!], { cwd: tmpDir });
+    expect(manager.getAgent(agent.id)?.hasUnintegratedChanges).toBe(false);
+  });
+
+  it('deletes a Worktree Agent only after its branch is merged and pushed', async () => {
+    initGitRepository();
+    const remote = path.join(tmpDir, '.git', 'test-remote.git');
+    execFileSync('git', ['init', '--bare', remote]);
+    execFileSync('git', ['remote', 'add', 'origin', remote], { cwd: tmpDir });
+    execFileSync('git', ['push', '-u', 'origin', 'main'], { cwd: tmpDir });
+    const agent = await manager.createAgent('Integrate Cleanup', {
+      provider: 'codex',
+      directory: tmpDir,
+      prompt: '',
+      flags: {},
+    }, undefined, { workspaceMode: 'worktree' });
+
+    fs.writeFileSync(path.join(agent.worktreePath!, 'integrated.txt'), 'done\n');
+    execFileSync('git', ['add', 'integrated.txt'], { cwd: agent.worktreePath! });
+    execFileSync('git', ['commit', '-m', 'integrated change'], { cwd: agent.worktreePath! });
+    execFileSync('git', ['merge', '--ff-only', agent.worktreeBranch!], { cwd: tmpDir });
+    execFileSync('git', ['push'], { cwd: tmpDir });
+
+    const saved = store.getAgent(agent.id)!;
+    saved.status = 'stopped';
+    saved.runOutcome = 'succeeded';
+    saved.pendingIntegrationCleanup = true;
+    store.saveAgent(saved);
+    await (manager as unknown as { finalizeIntegrationCleanup: (id: string) => Promise<boolean> })
+      .finalizeIntegrationCleanup(agent.id);
+
+    expect(store.getAgent(agent.id)).toBeUndefined();
+    expect(fs.existsSync(agent.worktreePath!)).toBe(false);
+  });
+
+  it('does not expire Worktree Agents before the user explicitly cleans them up', async () => {
+    const old = Date.now() - 10_000;
+    store.saveAgent({
+      id: 'retained-worktree',
+      name: 'Retained Worktree',
+      status: 'stopped',
+      config: { provider: 'codex', directory: tmpDir, prompt: '', flags: {} },
+      workspaceMode: 'worktree',
+      worktreeBranch: 'agent-retained',
+      messages: [],
+      lastActivity: old,
+      createdAt: old,
+    });
+    store.saveAgent({
+      id: 'expired-direct',
+      name: 'Expired Direct',
+      status: 'stopped',
+      config: { provider: 'codex', directory: tmpDir, prompt: '', flags: {} },
+      workspaceMode: 'direct',
+      messages: [],
+      lastActivity: old,
+      createdAt: old,
+    });
+
+    expect(await manager.cleanupExpiredAgents(1000)).toBe(1);
+    expect(store.getAgent('retained-worktree')).toBeDefined();
+    expect(store.getAgent('expired-direct')).toBeUndefined();
+  });
+
+  it('allows only one active Direct Edit agent across subdirectories of the same repository', async () => {
+    initGitRepository();
+    const subdirectory = path.join(tmpDir, 'packages', 'app');
+    fs.mkdirSync(subdirectory, { recursive: true });
+
+    await manager.createAgent('First Direct', {
+      provider: 'codex',
+      directory: tmpDir,
+      prompt: '',
+      flags: {},
+    }, undefined, { workspaceMode: 'direct' });
+
+    await expect(manager.createAgent('Second Direct', {
+      provider: 'codex',
+      directory: subdirectory,
+      prompt: '',
+      flags: {},
+    }, undefined, { workspaceMode: 'direct' })).rejects.toThrow('Direct Edit is already active for this project');
   });
 
   it('reuses the saved session id when resuming a stopped codex agent', () => {

@@ -3,6 +3,7 @@ import type { NavigateFunction } from 'react-router-dom';
 import type { Agent } from '../api/client';
 import { api } from '../api/client';
 import { toggleTheme } from './theme';
+import { getInstructionFileName } from './instructionFiles';
 
 type LocalMessage = { id: string; role: string; content: string; timestamp: number };
 
@@ -167,7 +168,7 @@ export function executeSlashCommand(cmd: string, ctx: SlashCommandContext): void
     }
     case '/memory':
       if (agent) {
-        addLocalMessage(`CLAUDE.md:\n${agent.config.claudeMd || '(empty)'}`);
+        addLocalMessage(`${getInstructionFileName(agent.config.provider)}:\n${agent.config.providerInstructions || '(empty)'}`);
       }
       break;
     case '/model':

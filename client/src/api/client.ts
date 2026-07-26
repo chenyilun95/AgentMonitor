@@ -134,14 +134,15 @@ export const api = {
       method: 'POST',
       body: JSON.stringify({ text, queueMessageId }),
     }),
+  integrateAndDeleteAgent: (id: string, text: string) =>
+    request<{ ok: boolean; disposition: 'started' }>(`/agents/${id}/integrate-and-delete`, {
+      method: 'POST',
+      body: JSON.stringify({ text }),
+    }),
   cancelQueuedMessage: (id: string, messageId: string) =>
     request<AgentClientView>(`/agents/${id}/queue/${messageId}`, { method: 'DELETE' }),
   resumeQueuedMessages: (id: string) =>
     request<AgentClientView>(`/agents/${id}/queue/resume`, { method: 'POST' }),
-  updateWorktree: (id: string) =>
-    request<AgentClientView>(`/agents/${id}/worktree/update`, { method: 'POST' }),
-  mergeWorktree: (id: string) =>
-    request<AgentClientView>(`/agents/${id}/worktree/merge`, { method: 'POST' }),
   updateInteractionMode: (id: string, mode: AgentInteractionMode) =>
     request<AgentClientView>('/agents/' + id + '/interaction-mode', {
       method: 'PUT',
@@ -170,8 +171,8 @@ export const api = {
       method: 'PUT',
       body: JSON.stringify({ name }),
     }),
-  updateClaudeMd: (id: string, content: string) =>
-    request('/agents/' + id + '/claude-md', {
+  updateProviderInstructions: (id: string, content: string) =>
+    request('/agents/' + id + '/instructions', {
       method: 'PUT',
       body: JSON.stringify({ content }),
     }),
@@ -240,13 +241,13 @@ export const api = {
     request<DirListing>(`/directories${path ? `?path=${encodeURIComponent(path)}` : ''}`),
   readFile: (path: string) =>
     request<FilePreview>(`/directories/file?path=${encodeURIComponent(path)}`),
-  checkClaudeMd: (path: string) =>
+  checkProviderInstructions: (path: string) =>
     request<InstructionFileCheckResponse>(
-      `/directories/claude-md?path=${encodeURIComponent(path)}`,
+      `/directories/instructions?path=${encodeURIComponent(path)}`,
     ),
   checkInstructionFile: (path: string, provider: AgentProvider) =>
     request<InstructionFileCheckResponse>(
-      `/directories/claude-md?path=${encodeURIComponent(path)}&provider=${encodeURIComponent(provider)}`,
+      `/directories/instructions?path=${encodeURIComponent(path)}&provider=${encodeURIComponent(provider)}`,
     ),
   validateDirectory: (path: string) =>
     request<{ exists: boolean; path?: string }>(`/directories/validate?path=${encodeURIComponent(path)}`),
@@ -259,7 +260,7 @@ export const api = {
   deleteSavedDirectory: (path: string) =>
     request<{ ok: boolean }>(`/directories/saved?path=${encodeURIComponent(path)}`, { method: 'DELETE' }),
   getDirectoryGitInfo: (path: string) =>
-    request<{ isGit: boolean; root?: string; branch?: string; upstream?: string }>(`/directories/git-info?path=${encodeURIComponent(path)}`),
+    request<{ isGit: boolean; root?: string; repositoryRoot?: string; branch?: string; upstream?: string }>(`/directories/git-info?path=${encodeURIComponent(path)}`),
   pullDirectory: (path: string) =>
     request<{ ok: boolean; info: { isGit: boolean; root?: string; branch?: string; upstream?: string } }>('/directories/git-pull', {
       method: 'POST', body: JSON.stringify({ path }),

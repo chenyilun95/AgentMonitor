@@ -3,6 +3,22 @@ import fs from 'fs';
 import path from 'path';
 
 export class WorktreeManager {
+  private ensureInternalWorktreeExcluded(repoDir: string): void {
+    const excludeOutput = execSync('git rev-parse --git-path info/exclude', {
+      cwd: repoDir,
+      encoding: 'utf8',
+      stdio: 'pipe',
+    }).trim();
+    const excludePath = path.isAbsolute(excludeOutput)
+      ? excludeOutput
+      : path.resolve(repoDir, excludeOutput);
+    const pattern = '/.agent-worktrees/';
+    const existing = fs.existsSync(excludePath) ? fs.readFileSync(excludePath, 'utf8') : '';
+    if (existing.split(/\r?\n/).includes(pattern)) return;
+    fs.mkdirSync(path.dirname(excludePath), { recursive: true });
+    fs.appendFileSync(excludePath, `${existing && !existing.endsWith('\n') ? '\n' : ''}${pattern}\n`);
+  }
+
   createWorktree(
     repoDir: string,
     branchName: string,
@@ -14,6 +30,7 @@ export class WorktreeManager {
 
     // Verify the directory is a git repo (caller should check before calling)
     execSync('git rev-parse --git-dir', { cwd: repoDir, stdio: 'pipe' });
+    this.ensureInternalWorktreeExcluded(repoDir);
 
     // Create the worktree
     execSync(`git worktree add -b "${branchName}" "${worktreePath}"`, {
@@ -51,6 +68,7 @@ export class WorktreeManager {
     fs.mkdirSync(worktreeBase, { recursive: true });
 
     execSync('git rev-parse --git-dir', { cwd: repoDir, stdio: 'pipe' });
+    this.ensureInternalWorktreeExcluded(repoDir);
 
     const worktreePath = path.join(worktreeBase, branchName);
     if (fs.existsSync(worktreePath) || fs.lstatSync(worktreePath, { throwIfNoEntry: false })) {

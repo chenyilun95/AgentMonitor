@@ -148,7 +148,7 @@ describe('executeSlashCommand', () => {
     const ctx = makeContext({
       agent: {
         ...makeContext().agent!,
-        config: { ...makeContext().agent!.config, claudeMd: '# Rules\nBe nice' },
+        config: { ...makeContext().agent!.config, providerInstructions: '# Rules\nBe nice' },
       } as any,
     });
     executeSlashCommand('/memory', ctx);

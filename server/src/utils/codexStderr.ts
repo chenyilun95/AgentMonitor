@@ -5,6 +5,8 @@ export type CodexStderrDisposition = 'ignore' | 'warn' | 'error';
 const CODEX_STDIN_NOTICE = /^Reading additional input from stdin\.\.\.$/;
 const CODEX_TRANSIENT_DIAGNOSTICS = [
   /^(?:\S+\s+)?ERROR codex_models_manager::manager: failed to refresh available models: timeout waiting for child process to exit$/,
+  /^(?:\S+\s+)?ERROR codex_models_manager::cache: failed to load models cache: missing field .+$/,
+  /^(?:\S+\s+)?ERROR codex_models_manager::manager: failed to renew cache TTL: missing field .+$/,
   /^(?:\S+\s+)?ERROR rmcp::transport::worker: worker quit with fatal: Transport channel closed, when Client\(HttpRequest\(HttpRequest\("http\/request failed: error sending request for url \(https:\/\/developers\.openai\.com\/mcp\)"\)\)\)$/,
   /^(?:\S+\s+)?ERROR codex_api::endpoint::responses_websocket: failed to connect to websocket: IO error: tls handshake eof, url: wss:\/\/chatgpt\.com\/backend-api\/codex\/responses$/,
 ];

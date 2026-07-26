@@ -1,6 +1,6 @@
 import { v4 as uuid } from 'uuid';
 import { EventEmitter } from 'events';
-import { execSync } from 'child_process';
+import { execFileSync, execSync } from 'child_process';
 import { readFileSync, readdirSync, existsSync, mkdirSync, writeFileSync, statSync, unlinkSync, copyFileSync } from 'fs';
 import path, { basename } from 'path';
 import os from 'os';
@@ -17,7 +17,8 @@ import { FeishuNotifier } from './FeishuNotifier.js';
 import { SkillManager } from './SkillManager.js';
 import { normalizeUserPath, portableUserPath } from '../utils/pathUtils.js';
 import { classifyCodexStderr, normalizeStoredCodexStderr } from '../utils/codexStderr.js';
-import { getGitDirectoryInfo, mergeWorktree, updateWorktree } from './GitOperations.js';
+import { getGitDirectoryInfo } from './GitOperations.js';
+import { WorktreeSnapshotManager } from './WorktreeSnapshotManager.js';
 
 /** How long (ms) after a user message with no response before we notify (not auto-interrupt) */
 const STUCK_TIMEOUT_MS = 600_000; // 10 minutes — long tasks (build, push, chrome MCP) can take time
@@ -111,6 +112,7 @@ export class AgentManager extends EventEmitter {
   private slackNotifier: SlackNotifier;
   private feishuNotifier: FeishuNotifier;
   private skillManager: SkillManager | null;
+  private snapshotManager = new WorktreeSnapshotManager();
   /** Track when a user message was sent per agent (agentId → timestamp) */
   private pendingUserMessage: Map<string, number> = new Map();
   private stuckCheckInterval: ReturnType<typeof setInterval> | null = null;
@@ -141,6 +143,7 @@ export class AgentManager extends EventEmitter {
       }
       if (agent.status === 'running' || agent.status === 'waiting_input') {
         agent.status = 'stopped';
+        agent.runOutcome = 'interrupted';
         agent.pid = undefined;
         if (agent.queuedMessages?.length) {
           agent.queuePaused = true;
@@ -153,23 +156,44 @@ export class AgentManager extends EventEmitter {
         }
         this.store.saveAgent(agent);
       }
+      if (agent.pendingIntegrationCleanup) {
+        agent.pendingIntegrationCleanup = false;
+        agent.messages.push({
+          id: uuid(),
+          role: 'system',
+          content: '[Integration cleanup interrupted] The server restarted before Git verification and cleanup completed. The Agent and Worktree were kept; retry the action when ready.',
+          timestamp: Date.now(),
+        });
+        this.store.saveAgent(agent);
+      }
     }
 
-    // Backfill gitBranch for existing agents that lack it.
-    // Always detect from the original repo directory (config.directory),
-    // not the worktree path, since gitBranch represents the base branch.
+    // Migrate legacy Git fields and backfill stable project/repository identity.
     for (const agent of this.store.getAllAgents()) {
-      if (agent.gitBranch && agent.gitBranch !== agent.worktreeBranch) continue;
+      const legacy = agent as Agent & {
+        gitBranch?: string;
+        currentGitBranch?: string;
+        worktreeMerged?: boolean;
+      };
+      agent.baseBranch ||= legacy.gitBranch;
+      agent.currentBranch ||= legacy.currentGitBranch;
       try {
-        const branch = execSync('git rev-parse --abbrev-ref HEAD', {
-          cwd: normalizeUserPath(agent.config.directory), stdio: 'pipe', timeout: 5000,
-        }).toString().trim();
-        if (branch && branch !== 'HEAD') {
-          agent.gitBranch = branch;
-          agent.currentGitBranch = branch;
-          this.store.saveAgent(agent);
+        const info = getGitDirectoryInfo(agent.config.directory);
+        if (info.root) {
+          agent.repositoryRoot = info.repositoryRoot || info.root;
+          agent.projectKey = `git:${agent.repositoryRoot}`;
+          if (!agent.baseBranch && info.branch) agent.baseBranch = info.branch;
+        } else {
+          agent.projectKey ||= `dir:${portableUserPath(normalizeUserPath(agent.config.directory))}`;
         }
-      } catch { /* not a git repo */ }
+        this.refreshAgentGitState(agent);
+      } catch {
+        agent.projectKey ||= `dir:${portableUserPath(normalizeUserPath(agent.config.directory))}`;
+      }
+      delete legacy.gitBranch;
+      delete legacy.currentGitBranch;
+      delete legacy.worktreeMerged;
+      this.store.saveAgent(agent);
     }
 
     this.resumeBackgroundChecks();
@@ -228,29 +252,8 @@ export class AgentManager extends EventEmitter {
     this.lastGitBranchCheckAt = now;
 
     for (const agent of this.store.getAllAgents()) {
-      if (agent.status !== 'running' && agent.status !== 'waiting_input') continue;
-
-      const cwd = this.resolveExecutionDirectory(agent);
       try {
-        const branch = execSync('git rev-parse --abbrev-ref HEAD', {
-          cwd,
-          stdio: 'pipe',
-          timeout: 5000,
-        }).toString().trim();
-
-        if (branch === 'HEAD') continue;
-
-        let changed = false;
-        if (!agent.gitBranch) {
-          agent.gitBranch = branch;
-          agent.currentGitBranch = branch;
-          changed = true;
-        } else if (branch !== agent.currentGitBranch) {
-          agent.currentGitBranch = branch;
-          changed = true;
-        }
-
-        if (changed) {
+        if (this.refreshAgentGitState(agent)) {
           this.store.saveAgent(agent);
           this.emit('agent:update', agent.id, agent);
         }
@@ -258,6 +261,51 @@ export class AgentManager extends EventEmitter {
         // git not available or directory gone
       }
     }
+  }
+
+  private refreshAgentGitState(agent: Agent): boolean {
+    const cwd = this.resolveExecutionDirectory(agent);
+    const previous = JSON.stringify({
+      currentBranch: agent.currentBranch,
+      hasUnintegratedChanges: agent.hasUnintegratedChanges,
+      repositoryRoot: agent.repositoryRoot,
+      projectKey: agent.projectKey,
+    });
+    const branch = execFileSync('git', ['rev-parse', '--abbrev-ref', 'HEAD'], {
+      cwd, encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'], timeout: 5000,
+    }).trim();
+    if (branch !== 'HEAD') agent.currentBranch = branch;
+
+    const originalInfo = getGitDirectoryInfo(agent.config.directory);
+    if (originalInfo.root) {
+      agent.repositoryRoot = originalInfo.repositoryRoot || originalInfo.root;
+      agent.projectKey = `git:${agent.repositoryRoot}`;
+    }
+
+    if (agent.workspaceMode === 'worktree' && agent.worktreeBranch && agent.baseBranch) {
+      const dirty = execFileSync('git', ['status', '--porcelain'], {
+        cwd, encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'], timeout: 5000,
+      }).trim().length > 0;
+      try {
+        execFileSync('git', ['merge-base', '--is-ancestor', agent.worktreeBranch, agent.baseBranch], {
+          cwd: normalizeUserPath(agent.config.directory),
+          stdio: 'ignore',
+          timeout: 5000,
+        });
+        agent.hasUnintegratedChanges = dirty;
+      } catch (error) {
+        const status = (error as { status?: number }).status;
+        agent.hasUnintegratedChanges = status === 1 ? true : (dirty || undefined);
+      }
+    } else {
+      agent.hasUnintegratedChanges = undefined;
+    }
+    return previous !== JSON.stringify({
+      currentBranch: agent.currentBranch,
+      hasUnintegratedChanges: agent.hasUnintegratedChanges,
+      repositoryRoot: agent.repositoryRoot,
+      projectKey: agent.projectKey,
+    });
   }
 
   async createAgent(
@@ -322,6 +370,21 @@ export class AgentManager extends EventEmitter {
       throw new AgentWorkspaceError('Worktree mode requires an existing Git repository. Choose Direct Edit for a non-Git directory.');
     }
 
+    const repositoryRoot = gitRoot
+      ? (getGitDirectoryInfo(agentConfig.directory).repositoryRoot || gitRoot)
+      : undefined;
+    const projectKey = repositoryRoot ? `git:${repositoryRoot}` : `dir:${portableUserPath(agentConfig.directory)}`;
+    if (workspaceMode === 'direct') {
+      const activeDirect = this.store.getAllAgents().find(existing =>
+        existing.workspaceMode === 'direct'
+        && existing.projectKey === projectKey
+        && (existing.status === 'running' || existing.status === 'waiting_input')
+      );
+      if (activeDirect) {
+        throw new AgentWorkspaceError(`Direct Edit is already active for this project in agent "${activeDirect.name}".`);
+      }
+    }
+
     let initialBranch: string | undefined;
     if (isGitRepo && gitRoot) {
       try {
@@ -365,16 +428,26 @@ export class AgentManager extends EventEmitter {
       id,
       name,
       status: hasPrompt ? 'running' : 'waiting_input',
+      runOutcome: undefined,
       config: agentConfig,
       worktreePath,
       worktreeBranch,
       workspaceMode,
-      gitBranch: initialBranch,
-      currentGitBranch: initialBranch,
-      messages: [],
+      baseBranch: initialBranch,
+      currentBranch: workspaceMode === 'worktree' ? worktreeBranch : initialBranch,
+      repositoryRoot,
+      projectKey,
+      messages: hasPrompt
+        ? [{
+            id: uuid(),
+            role: 'user',
+            content: agentConfig.prompt,
+            timestamp: Date.now(),
+          }]
+        : [],
       lastActivity: Date.now(),
       createdAt: Date.now(),
-      projectName: basename(absoluteDirectory),
+      projectName: basename(repositoryRoot || absoluteDirectory),
       mcpServers: this.parseMcpServers(agentConfig.flags.mcpConfig),
       currentTask: agentConfig.prompt.length > 120 ? agentConfig.prompt.slice(0, 120) + '...' : agentConfig.prompt,
       originalPrompt: agentConfig.prompt,
@@ -491,6 +564,7 @@ export class AgentManager extends EventEmitter {
       // Don't override 'stopped' status (set when result message is received)
       if (current && current.status !== 'stopped') {
         const status = (code === 0 || code === null) ? 'stopped' : 'error';
+        current.runOutcome = status === 'stopped' ? 'succeeded' : 'failed';
         if (status === 'error') {
           current.messages.push({
             id: uuid(),
@@ -507,6 +581,12 @@ export class AgentManager extends EventEmitter {
         this.extractStructuredOutput(current);
       }
       this.processes.delete(agent.id);
+      if (current?.pendingIntegrationCleanup) {
+        void this.finalizeIntegrationCleanup(current.id).then((deleted) => {
+          if (!deleted) this.startNextQueuedMessage(current.id);
+        });
+        return;
+      }
       this.startNextQueuedMessage(agent.id);
     });
 
@@ -520,6 +600,7 @@ export class AgentManager extends EventEmitter {
       });
       const a = this.store.getAgent(agent.id);
       if (a) {
+        a.runOutcome = 'failed';
         a.messages.push({
           id: uuid(),
           role: 'system',
@@ -669,12 +750,14 @@ export class AgentManager extends EventEmitter {
   }
 
   private composeProcessPrompt(agent: Agent): string {
-    let prompt = agent.config.prompt;
+    const configuredInstructions = agent.config.providerInstructions?.trim();
+    let prompt = [
+      configuredInstructions ? `## AgentMonitor Provider Instructions\n\n${configuredInstructions}` : '',
+      agent.config.prompt,
+    ].filter(Boolean).join('\n\n');
 
     if (agent.workspaceMode === 'worktree') {
-      const configuredInstructions = agent.config.claudeMd?.trim();
       prompt = [
-        configuredInstructions ? `## AgentMonitor Instructions\n\n${configuredInstructions}` : '',
         WORKTREE_MODE_INSTRUCTIONS,
         `Worktree branch: ${agent.worktreeBranch || '(unknown)'}`,
         `Original repository: ${agent.config.directory}`,
@@ -780,7 +863,7 @@ export class AgentManager extends EventEmitter {
         interactionMode: agent.interactionMode,
         pendingPlan: agent.pendingPlan,
         pendingQuestion: agent.pendingQuestion,
-        currentGitBranch: agent.currentGitBranch,
+        currentBranch: agent.currentBranch,
       });
     }
 
@@ -1076,6 +1159,7 @@ export class AgentManager extends EventEmitter {
       // Handle error results (e.g. "No conversation found" when resuming expired session)
       const isError = (resultAny.is_error as boolean) || msg.result?.is_error;
       if (isError) {
+        agent.runOutcome = 'failed';
         const errors = (resultAny.errors as string[]) || [];
         const errText = errors.join('; ') || 'Claude returned an error result';
 
@@ -1102,6 +1186,7 @@ export class AgentManager extends EventEmitter {
           this.updateAgentStatus(agent.id, 'error');
         }
       } else {
+        agent.runOutcome = 'succeeded';
         this.addCompactTokenNotice(agent);
         this.updateAgentStatus(agent.id, 'stopped');
       }
@@ -1524,28 +1609,12 @@ export class AgentManager extends EventEmitter {
     if (agent) {
       agent.status = status;
       agent.lastActivity = Date.now();
-      if (status === 'stopped' && agent.worktreeBranch && !agent.worktreeMerged) {
-        this.checkWorktreeMerged(agent);
+      if (status === 'stopped' && agent.worktreeBranch) {
+        try { this.refreshAgentGitState(agent); } catch { /* workspace may have disappeared */ }
       }
       this.store.saveAgent(agent);
       this.emit('agent:status', agentId, status);
       this.emit('agent:update', agentId, agent);
-    }
-  }
-
-  private checkWorktreeMerged(agent: Agent): void {
-    const dir = normalizeUserPath(agent.config.directory);
-    try {
-      const { execSync } = require('child_process');
-      const merged = execSync(
-        `git branch --merged HEAD --list '${agent.worktreeBranch}'`,
-        { cwd: dir, encoding: 'utf-8', timeout: 5000 }
-      ).trim();
-      if (merged) {
-        agent.worktreeMerged = true;
-      }
-    } catch {
-      // ignore — git might not be available or dir might not exist
     }
   }
 
@@ -1761,6 +1830,112 @@ export class AgentManager extends EventEmitter {
     return { disposition: 'started' };
   }
 
+  integrateAndDeleteAgent(agentId: string, text: string): void {
+    const agent = this.store.getAgent(agentId);
+    if (!agent) throw new Error('Agent not found');
+    if (agent.workspaceMode !== 'worktree' || !agent.worktreePath || !agent.worktreeBranch || !agent.baseBranch) {
+      throw new Error('Only an isolated Worktree Agent can be integrated and deleted');
+    }
+    if (agent.status === 'running' || agent.status === 'waiting_input' || this.processes.has(agentId)) {
+      throw new Error('Stop the Agent before integrating and deleting it');
+    }
+    if (agent.queuedMessages?.length) {
+      throw new Error('Remove or finish queued messages before integrating and deleting the Agent');
+    }
+    agent.pendingIntegrationCleanup = true;
+    this.store.saveAgent(agent);
+    const result = this.sendMessage(agentId, text);
+    if (!result || result.disposition !== 'started') {
+      agent.pendingIntegrationCleanup = false;
+      this.store.saveAgent(agent);
+      throw new Error('Could not start the integration task');
+    }
+  }
+
+  private async finalizeIntegrationCleanup(agentId: string): Promise<boolean> {
+    const agent = this.store.getAgent(agentId);
+    if (!agent?.pendingIntegrationCleanup) return false;
+
+    const fail = (reason: string): void => {
+      const current = this.store.getAgent(agentId);
+      if (!current) return;
+      current.pendingIntegrationCleanup = false;
+      current.messages.push({
+        id: uuid(),
+        role: 'system',
+        content: `[Integration cleanup not completed] ${reason}`,
+        timestamp: Date.now(),
+      });
+      current.lastActivity = Date.now();
+      this.store.saveAgent(current);
+      this.emit('agent:update', agentId, current);
+    };
+
+    if (agent.runOutcome !== 'succeeded') {
+      fail('The Agent did not finish the integration task successfully. The Agent and Worktree were kept.');
+      return false;
+    }
+    if (agent.queuedMessages?.length) {
+      fail('New messages were queued while integration was running. The Agent and Worktree were kept, and the queue will continue.');
+      return false;
+    }
+    const { worktreePath, worktreeBranch, baseBranch } = agent;
+    if (!worktreePath || !worktreeBranch || !baseBranch) {
+      fail('The Agent no longer has complete Worktree integration metadata. The Agent record was kept.');
+      return false;
+    }
+
+    try {
+      const worktreeStatus = execFileSync('git', ['status', '--porcelain'], {
+        cwd: worktreePath,
+        encoding: 'utf8',
+        stdio: ['ignore', 'pipe', 'pipe'],
+        timeout: 5000,
+      }).trim();
+      if (worktreeStatus) {
+        fail('The Worktree still has uncommitted changes. The Agent and Worktree were kept.');
+        return false;
+      }
+
+      const originalDirectory = normalizeUserPath(agent.config.directory);
+      execFileSync('git', ['merge-base', '--is-ancestor', worktreeBranch, baseBranch], {
+        cwd: originalDirectory,
+        stdio: 'ignore',
+        timeout: 5000,
+      });
+      const upstream = execFileSync('git', ['rev-parse', '--abbrev-ref', `${baseBranch}@{upstream}`], {
+        cwd: originalDirectory,
+        encoding: 'utf8',
+        stdio: ['ignore', 'pipe', 'pipe'],
+        timeout: 5000,
+      }).trim();
+      const baseCommit = execFileSync('git', ['rev-parse', baseBranch], {
+        cwd: originalDirectory,
+        encoding: 'utf8',
+        stdio: ['ignore', 'pipe', 'pipe'],
+        timeout: 5000,
+      }).trim();
+      const upstreamCommit = execFileSync('git', ['rev-parse', upstream], {
+        cwd: originalDirectory,
+        encoding: 'utf8',
+        stdio: ['ignore', 'pipe', 'pipe'],
+        timeout: 5000,
+      }).trim();
+      if (baseCommit !== upstreamCommit) {
+        fail(`Original branch "${baseBranch}" is not synchronized with "${upstream}". The Agent and Worktree were kept.`);
+        return false;
+      }
+
+      agent.pendingIntegrationCleanup = false;
+      this.store.saveAgent(agent);
+      await this.deleteAgent(agentId);
+      return true;
+    } catch (err) {
+      fail(`Git verification failed: ${err instanceof Error ? err.message : String(err)}`);
+      return false;
+    }
+  }
+
   private addUserMessageToHistory(agent: Agent, text: string): void {
     if (agent.preRestoreSnapshot) {
       if (agent.preRestoreSnapshot.jsonlBackupPath) {
@@ -1768,7 +1943,7 @@ export class AgentManager extends EventEmitter {
       }
       delete agent.preRestoreSnapshot;
     }
-    if (agent.worktreeBranch) agent.worktreeMerged = false;
+    agent.runOutcome = undefined;
     const turnIndex = agent.messages.filter(m => m.role === 'user').length;
     this.takeCodeSnapshot(agent, turnIndex);
     agent.messages.push({
@@ -1846,49 +2021,6 @@ export class AgentManager extends EventEmitter {
     return this.store.getAgent(agentId);
   }
 
-  async updateAgentWorktree(agentId: string): Promise<Agent> {
-    const agent = this.store.getAgent(agentId);
-    if (!agent) throw new Error('Agent not found');
-    if (agent.workspaceMode === 'direct' || !agent.worktreePath || !agent.worktreeBranch || !agent.gitBranch) {
-      throw new Error('Agent does not have an isolated worktree');
-    }
-    if (agent.status === 'running' || agent.status === 'waiting_input') {
-      throw new Error('Stop the agent before updating its worktree');
-    }
-    await updateWorktree(agent.worktreePath, agent.gitBranch);
-    agent.worktreeMerged = false;
-    agent.lastActivity = Date.now();
-    this.store.saveAgent(agent);
-    this.emit('agent:update', agentId, agent);
-    return agent;
-  }
-
-  async mergeAgentWorktree(agentId: string): Promise<Agent> {
-    const agent = this.store.getAgent(agentId);
-    if (!agent) throw new Error('Agent not found');
-    if (agent.workspaceMode === 'direct' || !agent.worktreePath || !agent.worktreeBranch || !agent.gitBranch) {
-      throw new Error('Agent does not have an isolated worktree');
-    }
-    if (agent.status === 'running' || agent.status === 'waiting_input') {
-      throw new Error('Stop the agent before merging its worktree');
-    }
-    const targetRoot = getGitDirectoryInfo(agent.config.directory).root;
-    const activeDirect = this.store.getAllAgents().find(other => {
-      if (other.id === agent.id || other.workspaceMode !== 'direct') return false;
-      if (other.status !== 'running' && other.status !== 'waiting_input') return false;
-      return targetRoot && getGitDirectoryInfo(other.config.directory).root === targetRoot;
-    });
-    if (activeDirect) {
-      throw new Error(`Stop Direct Edit agent "${activeDirect.name}" before merging into the original repository`);
-    }
-    await mergeWorktree(agent.config.directory, agent.worktreePath, agent.worktreeBranch, agent.gitBranch);
-    agent.worktreeMerged = true;
-    agent.lastActivity = Date.now();
-    this.store.saveAgent(agent);
-    this.emit('agent:update', agentId, agent);
-    return agent;
-  }
-
   private resumeAgent(agent: Agent, newPrompt: string): void {
     console.log(`[AgentManager] Resuming agent ${agent.id} (session: ${agent.sessionId || 'none'})`);
 
@@ -1926,6 +2058,7 @@ export class AgentManager extends EventEmitter {
       // reflects the interrupted state instead of staying at "running".
       const agent = this.store.getAgent(agentId);
       if (agent && agent.status === 'running') {
+        agent.runOutcome = 'interrupted';
         this.updateAgentStatus(agentId, 'waiting_input');
       }
     }
@@ -1946,6 +2079,7 @@ export class AgentManager extends EventEmitter {
     agent.queuePaused = false;
     agent.messages = [];
     agent.status = 'stopped';
+    agent.runOutcome = 'canceled';
     agent.pid = undefined;
     agent.sessionId = undefined;
     agent.currentTask = undefined;
@@ -1954,7 +2088,7 @@ export class AgentManager extends EventEmitter {
     agent.contextWindow = undefined;
     agent.structuredOutput = undefined;
     agent.restoredConversationSeed = undefined;
-    agent.codeSnapshots = undefined;
+    this.releaseCodeSnapshots(agent);
     agent.pendingPlan = undefined;
     agent.lastActivity = Date.now();
     delete agent.config.flags.resume;
@@ -1992,6 +2126,7 @@ export class AgentManager extends EventEmitter {
     const agent = this.store.getAgent(agentId);
     const proc = this.processes.get(agentId);
     if (agent) {
+      agent.runOutcome = 'canceled';
       agent.queuedMessages = [];
       agent.queuePaused = false;
       this.store.saveAgent(agent);
@@ -2019,7 +2154,7 @@ export class AgentManager extends EventEmitter {
     }
 
     if (proc) {
-      proc.stop();
+      await proc.stop();
     }
     this.updateAgentStatus(agentId, 'stopped');
   }
@@ -2032,6 +2167,8 @@ export class AgentManager extends EventEmitter {
     if (opts.purgeSessionFiles) {
       this.purgeSessionFiles(agent);
     }
+
+    this.releaseCodeSnapshots(agent);
 
     if (agent?.worktreePath) {
       try {
@@ -2061,17 +2198,23 @@ export class AgentManager extends EventEmitter {
     }
   }
 
-  updateClaudeMd(agentId: string, content: string): void {
+  updateProviderInstructions(agentId: string, content: string): void {
     const agent = this.store.getAgent(agentId);
     if (!agent) return;
     // Keep monitor-specific instructions out of the checked-out files. They
     // are injected into the process prompt on the next provider turn.
-    agent.config.claudeMd = content;
+    agent.config.providerInstructions = content;
     this.store.saveAgent(agent);
   }
 
   getAgent(agentId: string): Agent | undefined {
-    return this.store.getAgent(agentId);
+    const agent = this.store.getAgent(agentId);
+    if (agent) {
+      try {
+        if (this.refreshAgentGitState(agent)) this.store.saveAgent(agent);
+      } catch { /* non-Git or missing workspace */ }
+    }
+    return agent;
   }
 
   getAllAgents(): Agent[] {
@@ -2102,6 +2245,7 @@ export class AgentManager extends EventEmitter {
       if (agent.source === 'external') continue;
       if (
         (agent.status === 'stopped' || agent.status === 'error') &&
+        agent.workspaceMode !== 'worktree' &&
         agent.lastActivity + retentionMs < now
       ) {
         await this.deleteAgent(agent.id);
@@ -2364,30 +2508,28 @@ export class AgentManager extends EventEmitter {
     if (!agent.worktreePath) return;
     if (agent.workspaceMode === 'direct') return;
     try {
-      execSync('git rev-parse --git-dir', { cwd: agent.worktreePath, stdio: 'pipe' });
-      const changes = execSync('git status --porcelain', {
-        cwd: agent.worktreePath,
-        encoding: 'utf-8',
-      }).trim();
-      // Preserve restore points without creating an empty commit every turn.
-      // Real changes remain isolated to the agent's worktree branch.
-      if (changes) {
-        execSync('git add -A && git commit -m "[snapshot] before turn ' + beforeTurnIndex + '"', {
-          cwd: agent.worktreePath, stdio: 'pipe', shell: '/bin/bash',
-        });
-      }
-      const commit = execSync('git rev-parse HEAD', { cwd: agent.worktreePath, encoding: 'utf-8' }).trim();
+      const snapshot = this.snapshotManager.create(agent.worktreePath, agent.id, beforeTurnIndex);
       if (!agent.codeSnapshots) agent.codeSnapshots = [];
       const existing = agent.codeSnapshots.findIndex(s => s.beforeTurnIndex === beforeTurnIndex);
       if (existing >= 0) {
-        agent.codeSnapshots[existing].commit = commit;
+        this.snapshotManager.release(agent.worktreePath, agent.codeSnapshots[existing]);
+        agent.codeSnapshots[existing] = snapshot;
       } else {
-        agent.codeSnapshots.push({ beforeTurnIndex, commit });
+        agent.codeSnapshots.push(snapshot);
       }
-      console.log(`[AgentManager] Code snapshot before turn ${beforeTurnIndex}: ${commit.slice(0, 8)}`);
+      console.log(`[AgentManager] Code snapshot before turn ${beforeTurnIndex}: ${snapshot.commit.slice(0, 8)}`);
     } catch {
       // Not a git repo or commit failed — skip silently
     }
+  }
+
+  private releaseCodeSnapshots(agent: Agent): void {
+    if (agent.worktreePath && agent.codeSnapshots) {
+      for (const snapshot of agent.codeSnapshots) {
+        this.snapshotManager.release(agent.worktreePath, snapshot);
+      }
+    }
+    agent.codeSnapshots = undefined;
   }
 
   private restoreAgentCode(agent: Agent, beforeTurnIndex: number): { restored: boolean; warning?: string } {
@@ -2401,7 +2543,9 @@ export class AgentManager extends EventEmitter {
       execSync('git rev-parse --git-dir', { cwd: agent.worktreePath, stdio: 'pipe' });
       const snapshot = agent.codeSnapshots?.find(s => s.beforeTurnIndex === beforeTurnIndex);
       if (snapshot) {
-        execSync(`git reset --hard ${snapshot.commit}`, { cwd: agent.worktreePath, stdio: 'pipe' });
+        this.snapshotManager.restore(agent.worktreePath, snapshot);
+        const discarded = agent.codeSnapshots!.filter(s => s.beforeTurnIndex >= beforeTurnIndex);
+        for (const item of discarded) this.snapshotManager.release(agent.worktreePath, item);
         agent.codeSnapshots = agent.codeSnapshots!.filter(s => s.beforeTurnIndex < beforeTurnIndex);
         console.log(`[AgentManager] Restored code to snapshot ${snapshot.commit.slice(0, 8)} (before turn ${beforeTurnIndex})`);
         return { restored: true };

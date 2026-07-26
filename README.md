@@ -30,7 +30,7 @@ The top-level navigation reflects the current product structure.
 
 ### Agent Panel: projects, not just processes
 
-The dashboard can group cards chronologically or by working directory. Project grouping makes a repository the center of the workflow: each directory section shows its agents and exposes one-click creation for either workspace mode.
+The dashboard can group cards chronologically or by project. A selected directory is only an Agent launch path; Git directories below the same canonical repository root are grouped into one repository project. Non-Git directories remain separate projects.
 
 Each card surfaces the information needed to operate a session without opening it: provider, source, status, project, Git branch/workspace mode, prompt summary, activity time, and cost or token usage. From the card you can open, clone, stop, delete, or ask a completed agent to commit its work.
 
@@ -62,7 +62,7 @@ Every monitor-created agent uses one of two workspace modes:
 | **Direct Edit** | The agent works in the selected directory. Agent Monitor creates only a link under `.agent-worktrees` for a consistent runtime path. | A single agent, non-Git folders, or changes you want immediately in the current checkout. |
 | **Worktree** | Agent Monitor creates an isolated branch and Git worktree under `<repo>/.agent-worktrees/`. | Concurrent agents, reviewable changes, and safe conversation/code restore points. |
 
-Agent Monitor injects workspace instructions into `CLAUDE.md` or `AGENTS.md`, tracks the branch on the dashboard, and keeps integration into the base branch an explicit Git step.
+Agent Monitor injects workspace and provider instructions into the agent process at runtime without modifying `CLAUDE.md` or `AGENTS.md`. It tracks the base and current branches separately and keeps integration into the base branch explicit.
 
 ### Agent teams and Harness mode
 

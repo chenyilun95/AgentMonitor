@@ -24,7 +24,7 @@ export function CreateAgent() {
   const nameManualRef = useRef(false);
   const [directory, setDirectory] = useState('');
   const [prompt, setPrompt] = useState('');
-  const [claudeMd, setClaudeMd] = useState('');
+  const [providerInstructions, setProviderInstructions] = useState('');
   const [instructionTouched, setInstructionTouched] = useState(false);
   const [adminEmail, setAdminEmail] = useState('');
   const [whatsappPhone, setWhatsappPhone] = useState('');
@@ -52,7 +52,7 @@ export function CreateAgent() {
   const [dirExists, setDirExists] = useState<boolean | null>(null);
   const [dirListing, setDirListing] = useState<DirListing | null>(null);
   const [showDirBrowser, setShowDirBrowser] = useState(false);
-  const [claudeMdPrompt, setClaudeMdPrompt] = useState<{ content: string; fileName: string } | null>(null);
+  const [providerInstructionsPrompt, setProviderInstructionsPrompt] = useState<{ content: string; fileName: string } | null>(null);
 
   // Templates, sessions, skills, and prompt suggestions
   const [templates, setTemplates] = useState<Template[]>([]);
@@ -85,8 +85,8 @@ export function CreateAgent() {
         setDirectory(source.config.directory);
         // Use originalPrompt (stored at creation time), falling back to first user message
         setPrompt(source.originalPrompt || source.messages?.find((m: { role: string }) => m.role === 'user')?.content || source.config.prompt);
-        setClaudeMd(source.config.claudeMd || '');
-        setInstructionTouched(!!source.config.claudeMd);
+        setProviderInstructions(source.config.providerInstructions || '');
+        setInstructionTouched(!!source.config.providerInstructions);
         setAdminEmail(source.config.adminEmail || '');
         setWhatsappPhone(source.config.whatsappPhone || '');
         setSlackWebhookUrl(source.config.slackWebhookUrl || '');
@@ -241,33 +241,33 @@ export function CreateAgent() {
     try {
       const result = await api.checkInstructionFile(dirPath, targetProvider);
       if (result.exists && result.content && result.fileName) {
-        if (!instructionTouched || !claudeMd.trim()) {
-          setClaudeMd(result.content);
-          setClaudeMdPrompt(null);
+        if (!instructionTouched || !providerInstructions.trim()) {
+          setProviderInstructions(result.content);
+          setProviderInstructionsPrompt(null);
           return;
         }
-        if (claudeMd.trim() !== result.content.trim()) {
-          setClaudeMdPrompt({ content: result.content, fileName: result.fileName });
+        if (providerInstructions.trim() !== result.content.trim()) {
+          setProviderInstructionsPrompt({ content: result.content, fileName: result.fileName });
           return;
         }
-        setClaudeMdPrompt(null);
+        setProviderInstructionsPrompt(null);
       } else {
-        setClaudeMdPrompt(null);
+        setProviderInstructionsPrompt(null);
       }
     } catch {
-      setClaudeMdPrompt(null);
+      setProviderInstructionsPrompt(null);
     }
   };
 
   const handleTemplateSelect = (templateId: string) => {
     if (templateId === '__empty__') {
-      setClaudeMd('');
+      setProviderInstructions('');
       setInstructionTouched(false);
       return;
     }
     const tmpl = templates.find((t) => t.id === templateId);
     if (tmpl) {
-      setClaudeMd(tmpl.content);
+      setProviderInstructions(tmpl.content);
       setInstructionTouched(true);
     }
   };
@@ -298,7 +298,7 @@ export function CreateAgent() {
         provider,
         directory,
         prompt,
-        claudeMd: claudeMd || undefined,
+        providerInstructions: providerInstructions || undefined,
         adminEmail: adminEmail || undefined,
         whatsappPhone: whatsappPhone || undefined,
         slackWebhookUrl: slackWebhookUrl || undefined,
@@ -329,8 +329,8 @@ export function CreateAgent() {
   };
 
   const instructionFileName = getInstructionFileName(provider);
-  const instructionFieldLabel = replaceInstructionFileName(t('create.claudeMd'), instructionFileName);
-  const instructionFieldPlaceholder = replaceInstructionFileName(t('create.claudeMdPlaceholder'), instructionFileName);
+  const instructionFieldLabel = replaceInstructionFileName(t('create.providerInstructions'), instructionFileName);
+  const instructionFieldPlaceholder = replaceInstructionFileName(t('create.providerInstructionsPlaceholder'), instructionFileName);
   const modelOptions = getModelOptions(provider, runtimeCapabilities, model !== 'default' ? model : undefined);
   const reasoningEffortOptions = getReasoningEffortOptions(provider, runtimeCapabilities);
 
@@ -521,20 +521,20 @@ export function CreateAgent() {
         )}
       </div>
 
-      {claudeMdPrompt && (
+      {providerInstructionsPrompt && (
         <div style={{ padding: 12, background: 'var(--bg-card)', border: '1px solid var(--border)', borderRadius: 'var(--radius)', marginBottom: 16 }}>
           <div style={{ marginBottom: 8, fontWeight: 600 }}>
-            {replaceInstructionFileName(t('create.claudeMdFound'), claudeMdPrompt.fileName)}
+            {replaceInstructionFileName(t('create.providerInstructionsFound'), providerInstructionsPrompt.fileName)}
           </div>
           <div style={{ display: 'flex', gap: 8 }}>
             <button className="btn btn-sm" onClick={() => {
-              setClaudeMd(claudeMdPrompt.content);
+              setProviderInstructions(providerInstructionsPrompt.content);
               setInstructionTouched(false);
-              setClaudeMdPrompt(null);
+              setProviderInstructionsPrompt(null);
             }}>
-              {replaceInstructionFileName(t('create.loadExisting'), claudeMdPrompt.fileName)}
+              {replaceInstructionFileName(t('create.loadExisting'), providerInstructionsPrompt.fileName)}
             </button>
-            <button className="btn btn-sm btn-outline" onClick={() => setClaudeMdPrompt(null)}>
+            <button className="btn btn-sm btn-outline" onClick={() => setProviderInstructionsPrompt(null)}>
               {t('create.keepCustom')}
             </button>
           </div>
@@ -786,9 +786,9 @@ export function CreateAgent() {
           )}
         </label>
         <textarea
-          value={claudeMd}
+          value={providerInstructions}
           onChange={(e) => {
-            setClaudeMd(e.target.value);
+            setProviderInstructions(e.target.value);
             setInstructionTouched(true);
           }}
           placeholder={instructionFieldPlaceholder}

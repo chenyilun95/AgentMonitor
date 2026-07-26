@@ -11,7 +11,7 @@ The chat interface provides a web-based terminal for interacting with individual
 - **Dash-prefixed input safety**: Codex messages beginning with `--` are forwarded as plain prompt text, not interpreted as CLI options
 - **Optimistic messages**: User messages appear instantly with a thinking indicator while waiting for agent response
 - **Slash commands**: 25 commands matching Claude Code CLI (see [Slash Commands](/guide/slash-commands))
-- **CLAUDE.md editor**: Edit agent instructions mid-session
+- **Provider instructions**: Inspect the instructions injected into Claude or Codex sessions
 - **Double Esc interrupt**: Press Escape twice quickly to interrupt a running agent
 - **Cost tracking**: Live cost and token usage in the header
 
@@ -22,7 +22,7 @@ The header shows:
 - Working directory and cost summary
 - Status indicator with color coding
 - Clone button — duplicate agent configuration
-- Edit CLAUDE.md button
+- Provider instruction information
 - **Terminal button** — toggle the embedded terminal view
 - Stop button (when agent is running)
 

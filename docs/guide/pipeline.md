@@ -31,7 +31,7 @@ Click **Configure** to set:
 - **Default Working Directory**: Used when tasks don't specify one
 - **Default Provider**: Claude or Codex
 - **Poll Interval**: How often the manager checks for updates (ms)
-- **Default CLAUDE.md**: Instructions applied to all managed agents
+- **Default provider instructions**: Instructions injected into all managed agents
 
 ### Sequential vs Parallel Tasks
 

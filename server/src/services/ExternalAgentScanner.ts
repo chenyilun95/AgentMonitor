@@ -8,6 +8,8 @@ import type { Agent, AgentProvider } from '../models/Agent.js';
 import type { AgentStore } from '../store/AgentStore.js';
 import { runtimeCapabilities } from './RuntimeCapabilities.js';
 import { extractImageAttachments } from '../utils/imageAttachments.js';
+import { getGitDirectoryInfo } from './GitOperations.js';
+import { portableUserPath } from '../utils/pathUtils.js';
 
 interface DiscoveredProcess {
   pid: number;
@@ -326,6 +328,8 @@ export class ExternalAgentScanner extends EventEmitter {
     const promptText = proc.prompt || firstUserMsg?.content || '(external agent)';
     const directory = proc.cwd || sessionSnapshot?.cwd || sessionInfo?.cwd || '/';
     const dirName = directory ? basename(directory) : 'unknown';
+    const gitInfo = getGitDirectoryInfo(directory);
+    const repositoryRoot = gitInfo.repositoryRoot || gitInfo.root;
 
     const agent: Agent = {
       id: uuid(),
@@ -353,6 +357,10 @@ export class ExternalAgentScanner extends EventEmitter {
       pid: proc.pid,
       sessionId: sessionSnapshot?.sessionId || sessionInfo?.sessionId || proc.sessionId,
       projectName: dirName,
+      repositoryRoot,
+      projectKey: repositoryRoot ? `git:${repositoryRoot}` : `dir:${portableUserPath(directory)}`,
+      baseBranch: gitInfo.branch,
+      currentBranch: gitInfo.branch,
       currentTask: promptText.length > 120 ? promptText.slice(0, 120) + '...' : promptText,
       originalPrompt: promptText,
       source: 'external',

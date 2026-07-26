@@ -8,8 +8,9 @@ import type { PipelineTask, AgentManagerConfig, MetaAgentConfig } from '../model
 import type { AgentProvider } from '../models/Agent.js';
 import { FeishuNotifier } from './FeishuNotifier.js';
 import type { HarnessOrchestrator } from './HarnessOrchestrator.js';
+import { getGitDirectoryInfo } from './GitOperations.js';
 
-const DEFAULT_CLAUDE_MD = `# Agent Manager Instructions
+const DEFAULT_PROVIDER_INSTRUCTIONS = `# Agent Manager Instructions
 
 You are an AI agent created by the Agent Manager to complete a specific task.
 Follow the prompt instructions carefully and complete the task.
@@ -56,10 +57,11 @@ export class MetaAgentManager extends EventEmitter {
     if (existing) return { ...existing, running: this.running };
     return {
       running: false,
-      claudeMd: DEFAULT_CLAUDE_MD,
+      providerInstructions: DEFAULT_PROVIDER_INSTRUCTIONS,
       defaultDirectory: process.cwd(),
       defaultProvider: 'claude',
       pollIntervalMs: DEFAULT_POLL_INTERVAL,
+      workspaceMode: 'auto',
     };
   }
 
@@ -125,7 +127,7 @@ export class MetaAgentManager extends EventEmitter {
       // Find the current order group to process
       const pendingTasks = updatedTasks.filter(t => t.status === 'pending');
       const runningTasks = updatedTasks.filter(t => t.status === 'running' || t.status === 'evaluating' || t.status === 'revision');
-      const failedTasks = updatedTasks.filter(t => t.status === 'failed');
+      const failedTasks = updatedTasks.filter(t => ['failed', 'canceled', 'interrupted'].includes(t.status));
 
       if (pendingTasks.length === 0 && runningTasks.length === 0) {
         // All tasks done (completed or failed)
@@ -181,7 +183,7 @@ export class MetaAgentManager extends EventEmitter {
         continue;
       }
 
-      if (agent.status === 'stopped') {
+      if (agent.status === 'stopped' && agent.runOutcome === 'succeeded') {
         // If this is a harness task, delegate to the orchestrator
         if (this.harnessOrchestrator && task.role) {
           task.status = 'completed';
@@ -197,13 +199,27 @@ export class MetaAgentManager extends EventEmitter {
           this.emit('task:update', task);
           console.log(`[AgentManager] Task "${task.name}" completed`);
         }
-      } else if (agent.status === 'error') {
+      } else if (agent.status === 'error' || agent.runOutcome === 'failed') {
         task.status = 'failed';
         task.error = 'Agent exited with error';
         task.completedAt = Date.now();
         this.store.saveTask(task);
         this.emit('task:update', task);
         console.log(`[AgentManager] Task "${task.name}" failed`);
+        await this.notifyTaskFailed(task);
+      } else if (agent.status === 'stopped' && (agent.runOutcome === 'canceled' || agent.runOutcome === 'interrupted')) {
+        task.status = agent.runOutcome;
+        task.error = agent.runOutcome === 'canceled' ? 'Agent was canceled' : 'Agent was interrupted';
+        task.completedAt = Date.now();
+        this.store.saveTask(task);
+        this.emit('task:update', task);
+        await this.notifyTaskFailed(task);
+      } else if (agent.status === 'stopped') {
+        task.status = 'interrupted';
+        task.error = 'Agent stopped without a recorded successful outcome';
+        task.completedAt = Date.now();
+        this.store.saveTask(task);
+        this.emit('task:update', task);
         await this.notifyTaskFailed(task);
       } else if (agent.status === 'waiting_input') {
         // Stuck agent detection: check how long it's been waiting
@@ -301,7 +317,11 @@ export class MetaAgentManager extends EventEmitter {
 
     const provider: AgentProvider = task.provider || cfg.defaultProvider;
     const directory = task.directory || cfg.defaultDirectory;
-    const claudeMd = task.claudeMd || cfg.claudeMd;
+    const providerInstructions = task.providerInstructions || cfg.providerInstructions;
+    const requestedWorkspaceMode = task.workspaceMode || cfg.workspaceMode || 'auto';
+    const workspaceMode = requestedWorkspaceMode === 'auto'
+      ? (getGitDirectoryInfo(directory).isGit ? 'worktree' : 'direct')
+      : requestedWorkspaceMode;
 
     try {
       const agent = await this.agentManager.createAgent(
@@ -310,13 +330,15 @@ export class MetaAgentManager extends EventEmitter {
           provider,
           directory,
           prompt: task.prompt,
-          claudeMd,
+          providerInstructions,
           flags: {
             dangerouslySkipPermissions: task.flags?.dangerouslySkipPermissions ?? true,
             model: task.model,
             fullAuto: task.flags?.fullAuto,
           },
         },
+        undefined,
+        { workspaceMode },
       );
 
       task.status = 'running';

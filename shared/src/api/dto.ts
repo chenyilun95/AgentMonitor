@@ -5,6 +5,8 @@ export interface CreateAgentRequest {
   provider?: AgentProvider;
   directory: string;
   prompt: string;
+  providerInstructions?: string;
+  /** @deprecated Use providerInstructions. */
   claudeMd?: string;
   adminEmail?: string;
   whatsappPhone?: string;
@@ -45,6 +47,8 @@ export interface CreateTaskRequest {
   directory?: string;
   provider?: AgentProvider;
   model?: string;
+  providerInstructions?: string;
+  /** @deprecated Use providerInstructions. */
   claudeMd?: string;
   flags?: Record<string, unknown>;
   order?: number;

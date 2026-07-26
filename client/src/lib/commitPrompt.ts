@@ -1,10 +1,10 @@
 import type { AgentClientView } from '@agent-monitor/shared';
 
 function requireWorktreeDetails(agent: AgentClientView): { worktreeBranch: string; baseBranch: string } {
-  if (!agent.worktreeBranch || !agent.gitBranch) {
+  if (!agent.worktreeBranch || !agent.baseBranch) {
     throw new Error('This agent does not have complete Worktree branch information.');
   }
-  return { worktreeBranch: agent.worktreeBranch, baseBranch: agent.gitBranch };
+  return { worktreeBranch: agent.worktreeBranch, baseBranch: agent.baseBranch };
 }
 
 export function buildUpdateFromBasePrompt(agent: AgentClientView): string {
@@ -44,7 +44,7 @@ export function buildMergeToBasePrompt(agent: AgentClientView): string {
 
 export function buildCommitPrompt(agent: AgentClientView): string {
   const isWorktree = agent.workspaceMode !== 'direct' && !!agent.worktreeBranch;
-  const baseBranch = agent.gitBranch;
+  const baseBranch = agent.baseBranch;
 
   if (isWorktree) {
     return [

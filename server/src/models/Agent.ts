@@ -3,6 +3,7 @@ export {
   type AgentProvider,
   type AgentInteractionMode,
   type AgentWorkspaceMode,
+  type AgentRunOutcome,
   REASONING_EFFORTS,
   type ReasoningEffort,
   PROVIDER_REASONING_EFFORTS,

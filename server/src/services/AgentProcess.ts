@@ -246,19 +246,34 @@ export class AgentProcess extends EventEmitter {
     }
   }
 
-  stop(): void {
-    if (this.process && this._pid) {
-      const pid = this._pid;
+  stop(): Promise<void> {
+    const child = this.process;
+    const pid = this._pid;
+    if (!child || !pid) return Promise.resolve();
+
+    return new Promise((resolve) => {
+      let settled = false;
+      let forceKillTimer: ReturnType<typeof setTimeout> | undefined;
+      let exitWaitTimer: ReturnType<typeof setTimeout> | undefined;
+      const finish = () => {
+        if (settled) return;
+        settled = true;
+        if (forceKillTimer) clearTimeout(forceKillTimer);
+        if (exitWaitTimer) clearTimeout(exitWaitTimer);
+        resolve();
+      };
+      child.once('close', finish);
       try {
         process.kill(-pid, 'SIGTERM');
       } catch {
-        this.process.kill('SIGTERM');
+        child.kill('SIGTERM');
       }
-      setTimeout(() => {
+      forceKillTimer = setTimeout(() => {
         try {
           process.kill(-pid, 'SIGKILL');
         } catch { /* already gone */ }
       }, 5000);
-    }
+      exitWaitTimer = setTimeout(finish, 5500);
+    });
   }
 }

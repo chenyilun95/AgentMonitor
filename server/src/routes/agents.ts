@@ -118,7 +118,7 @@ export function agentRoutes(manager: AgentManager, store: AgentStore): Router {
   // Create agent
   router.post('/', async (req, res) => {
     try {
-      const { name, directory, prompt, claudeMd, adminEmail, whatsappPhone, slackWebhookUrl, flags, provider, labels, workspaceMode, skills } = req.body as CreateAgentRequest;
+      const { name, directory, prompt, providerInstructions, claudeMd, adminEmail, whatsappPhone, slackWebhookUrl, flags, provider, labels, workspaceMode, skills } = req.body as CreateAgentRequest;
       const nextProvider: AgentProvider = provider === 'codex' ? 'codex' : 'claude';
       const reasoningEffort = flags?.reasoningEffort;
       const requestedDirectory = typeof directory === 'string' ? directory.trim() : '';
@@ -139,7 +139,7 @@ export function agentRoutes(manager: AgentManager, store: AgentStore): Router {
         provider: nextProvider,
         directory: normalizeUserPath(requestedDirectory),
         prompt: typeof prompt === 'string' ? prompt : '',
-        claudeMd,
+        providerInstructions: providerInstructions ?? claudeMd,
         adminEmail,
         whatsappPhone,
         slackWebhookUrl,
@@ -214,6 +214,21 @@ export function agentRoutes(manager: AgentManager, store: AgentStore): Router {
     res.json({ ok: true, ...result, agent: sanitizeAgentSnapshot(agent) });
   });
 
+  router.post('/:id/integrate-and-delete', (req, res) => {
+    const { text } = req.body as { text?: unknown };
+    if (typeof text !== 'string' || !text.trim()) {
+      res.status(400).json({ error: 'text is required' });
+      return;
+    }
+    try {
+      manager.integrateAndDeleteAgent(req.params.id, text);
+      res.json({ ok: true, disposition: 'started' });
+    } catch (err) {
+      const message = err instanceof Error ? err.message : String(err);
+      res.status(message === 'Agent not found' ? 404 : 409).json({ error: message });
+    }
+  });
+
   router.delete('/:id/queue/:messageId', (req, res) => {
     const agent = manager.cancelQueuedMessage(req.params.id, req.params.messageId);
     if (!agent) {
@@ -230,22 +245,6 @@ export function agentRoutes(manager: AgentManager, store: AgentStore): Router {
       return;
     }
     res.json(sanitizeAgentSnapshot(agent));
-  });
-
-  router.post('/:id/worktree/update', async (req, res) => {
-    try {
-      res.json(sanitizeAgentSnapshot(await manager.updateAgentWorktree(req.params.id)));
-    } catch (error) {
-      res.status(409).json({ error: error instanceof Error ? error.message : String(error) });
-    }
-  });
-
-  router.post('/:id/worktree/merge', async (req, res) => {
-    try {
-      res.json(sanitizeAgentSnapshot(await manager.mergeAgentWorktree(req.params.id)));
-    } catch (error) {
-      res.status(409).json({ error: error instanceof Error ? error.message : String(error) });
-    }
   });
 
   router.put('/:id/interaction-mode', (req, res) => {
@@ -399,14 +398,14 @@ export function agentRoutes(manager: AgentManager, store: AgentStore): Router {
     res.json({ ok: true });
   });
 
-  // Update CLAUDE.md
-  router.put('/:id/claude-md', (req, res) => {
+  // Update provider-specific instructions (legacy /claude-md route retained).
+  router.put(['/:id/instructions', '/:id/claude-md'], (req, res) => {
     const { content } = req.body;
     if (content === undefined) {
       res.status(400).json({ error: 'content is required' });
       return;
     }
-    manager.updateClaudeMd(req.params.id, content);
+    manager.updateProviderInstructions(String(req.params.id), content);
     res.json({ ok: true });
   });
 

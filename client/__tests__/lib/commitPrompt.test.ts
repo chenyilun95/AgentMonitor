@@ -38,7 +38,7 @@ describe('buildCommitPrompt', () => {
     const agent = makeAgent({
       workspaceMode: 'worktree',
       worktreeBranch: 'feature-123',
-      gitBranch: 'main',
+      baseBranch: 'main',
     });
     const prompt = buildCommitPrompt(agent);
 
@@ -73,7 +73,7 @@ describe('buildCommitPrompt', () => {
     const agent = makeAgent({
       workspaceMode: 'worktree',
       worktreeBranch: 'feature-123',
-      gitBranch: 'develop',
+      baseBranch: 'develop',
     });
     const prompt = buildCommitPrompt(agent);
 
@@ -91,7 +91,7 @@ describe('buildCommitPrompt', () => {
     const prompt = buildUpdateFromBasePrompt(makeAgent({
       workspaceMode: 'worktree',
       worktreeBranch: 'feature-123',
-      gitBranch: 'develop',
+      baseBranch: 'develop',
     }));
 
     expect(prompt).toContain('Update the current Worktree branch "feature-123"');
@@ -104,7 +104,7 @@ describe('buildCommitPrompt', () => {
     const prompt = buildMergeToBasePrompt(makeAgent({
       workspaceMode: 'worktree',
       worktreeBranch: 'feature-123',
-      gitBranch: 'develop',
+      baseBranch: 'develop',
     }));
 
     expect(prompt).toContain('Merge the current Worktree branch "feature-123" back into its original branch "develop"');

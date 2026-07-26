@@ -29,7 +29,7 @@ POST /api/agents
   "provider": "claude",
   "directory": "/path/to/project",
   "prompt": "What should the agent do?",
-  "claudeMd": "Optional CLAUDE.md content",
+  "providerInstructions": "Optional provider-specific instructions",
   "adminEmail": "admin@example.com",
   "flags": {
     "dangerouslySkipPermissions": true,
@@ -100,15 +100,17 @@ PUT /api/agents/:id/rename
 }
 ```
 
-## Update CLAUDE.md
+## Update Provider Instructions
 
 ```
-PUT /api/agents/:id/claude-md
+PUT /api/agents/:id/instructions
 ```
 
 **Body:**
 ```json
 {
-  "content": "Updated CLAUDE.md content"
+  "content": "Updated provider instructions"
 }
 ```
+
+`PUT /api/agents/:id/claude-md` remains available as a deprecated compatibility alias.
