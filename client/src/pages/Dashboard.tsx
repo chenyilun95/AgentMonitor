@@ -831,35 +831,26 @@ export function Dashboard() {
                         </>
                       )}
                       <div className="directory-group-icon-actions">
-                        <details className="directory-group-add-menu">
-                          <summary
-                            className="directory-group-icon-button directory-group-add"
-                            aria-label={t('dashboard.newAgent')}
-                            title={t('dashboard.newAgent')}
-                          >
-                            <span aria-hidden>+</span>
-                          </summary>
-                          <div className="directory-group-add-options">
-                            <button
-                              type="button"
-                              onClick={(event) => {
-                                event.currentTarget.closest('details')?.removeAttribute('open');
-                                navigate(`/create?directory=${encodeURIComponent(launchPath)}&mode=direct`);
-                              }}
-                            >
-                              {t('dashboard.newAgent')}
-                            </button>
-                            <button
-                              type="button"
-                              onClick={(event) => {
-                                event.currentTarget.closest('details')?.removeAttribute('open');
-                                navigate(`/create?directory=${encodeURIComponent(launchPath)}&mode=worktree`);
-                              }}
-                            >
-                              {t('dashboard.newWorktreeAgent')}
-                            </button>
-                          </div>
-                        </details>
+                        <button
+                          type="button"
+                          className="directory-group-icon-button directory-group-add directory-group-add-direct"
+                          aria-label={t('dashboard.newAgent')}
+                          title={t('dashboard.newAgent')}
+                          onClick={() => navigate(`/create?directory=${encodeURIComponent(launchPath)}&mode=direct`)}
+                        >
+                          <span className="directory-group-plus" aria-hidden>+</span>
+                          <span className="directory-group-add-kind" aria-hidden>D</span>
+                        </button>
+                        <button
+                          type="button"
+                          className="directory-group-icon-button directory-group-add directory-group-add-worktree"
+                          aria-label={t('dashboard.newWorktreeAgent')}
+                          title={t('dashboard.newWorktreeAgent')}
+                          onClick={() => navigate(`/create?directory=${encodeURIComponent(launchPath)}&mode=worktree`)}
+                        >
+                          <span className="directory-group-plus" aria-hidden>+</span>
+                          <span className="directory-group-add-kind" aria-hidden>W</span>
+                        </button>
                         {project.savedPaths.length > 0 && (
                           <button
                             type="button"

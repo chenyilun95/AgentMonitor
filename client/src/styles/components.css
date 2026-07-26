@@ -497,11 +497,8 @@
   gap: 6px;
 }
 
-.directory-group-add-menu {
-  position: relative;
-}
-
 .directory-group-icon-button {
+  position: relative;
   display: inline-flex;
   align-items: center;
   justify-content: center;
@@ -517,57 +514,35 @@
   font-family: var(--font-body);
   line-height: 1;
   cursor: pointer;
-  list-style: none;
   transition: border-color 0.15s ease, color 0.15s ease, background 0.15s ease;
 }
 
-.directory-group-icon-button::-webkit-details-marker {
-  display: none;
-}
-
-.directory-group-add:hover,
-.directory-group-add-menu[open] .directory-group-add {
+.directory-group-add:hover {
   border-color: var(--primary);
   color: var(--primary);
   background: var(--primary-dim);
 }
 
-.directory-group-add-options {
+.directory-group-plus {
+  transform: translate(-1px, -1px);
+}
+
+.directory-group-add-kind {
   position: absolute;
-  z-index: 30;
-  top: calc(100% + 7px);
-  right: 0;
-  display: flex;
-  flex-direction: column;
-  width: max-content;
-  min-width: 190px;
-  overflow: hidden;
-  border: 1px solid var(--border);
-  border-radius: var(--radius);
-  background: var(--bg-card);
-  box-shadow: var(--shadow-lg);
+  right: 2px;
+  bottom: 2px;
+  font-size: 7px;
+  font-weight: 800;
+  line-height: 1;
+  letter-spacing: -0.04em;
 }
 
-.directory-group-add-options button {
-  padding: 9px 12px;
-  border: 0;
-  border-bottom: 1px solid var(--border-subtle);
-  background: transparent;
-  color: var(--text);
-  font: inherit;
-  font-size: 13px;
-  text-align: left;
-  white-space: nowrap;
-  cursor: pointer;
-}
-
-.directory-group-add-options button:last-child {
-  border-bottom: 0;
-}
-
-.directory-group-add-options button:hover {
-  background: var(--primary-dim);
+.directory-group-add-direct {
   color: var(--primary);
+}
+
+.directory-group-add-worktree {
+  color: var(--green);
 }
 
 .directory-group-remove:hover {
