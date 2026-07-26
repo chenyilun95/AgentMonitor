@@ -1,5 +1,6 @@
 import { io, Socket } from 'socket.io-client';
 import type { ServerToClientEvents, ClientToServerEvents } from '@agent-monitor/shared';
+import { withAppBasePath } from '../lib/basePath';
 
 export type TypedSocket = Socket<ServerToClientEvents, ClientToServerEvents>;
 
@@ -8,6 +9,7 @@ let socket: TypedSocket | null = null;
 export function getSocket(): TypedSocket {
   if (!socket) {
     socket = io('/', {
+      path: withAppBasePath('/socket.io'),
       transports: ['websocket', 'polling'],
       tryAllTransports: true,
       withCredentials: true,

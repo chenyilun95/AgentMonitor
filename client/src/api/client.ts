@@ -32,6 +32,7 @@ import type {
   Template,
   UploadFileResponse,
 } from '@agent-monitor/shared';
+import { withAppBasePath } from '../lib/basePath';
 
 export type {
   AgentClientView,
@@ -72,7 +73,7 @@ export type { AgentClientView as Agent } from '@agent-monitor/shared';
 /** @deprecated Use AgentManagerConfig instead */
 export type MetaAgentConfig = AgentManagerConfig;
 
-const BASE = '/api';
+const BASE = withAppBasePath('/api');
 
 async function request<T>(path: string, opts?: RequestInit): Promise<T> {
   const res = await fetch(`${BASE}${path}`, {
@@ -82,7 +83,7 @@ async function request<T>(path: string, opts?: RequestInit): Promise<T> {
   });
   if (!res.ok) {
     if (res.status === 401 && !path.startsWith('/auth/')) {
-      window.location.href = '/login';
+      window.location.href = withAppBasePath('/login');
       throw new Error('Authentication required');
     }
     const body = await res.json().catch(() => ({}));
@@ -101,7 +102,7 @@ async function uploadFile<T>(path: string, file: File, fieldName: string): Promi
   });
   if (!res.ok) {
     if (res.status === 401) {
-      window.location.href = '/login';
+      window.location.href = withAppBasePath('/login');
       throw new Error('Authentication required');
     }
     const body = await res.json().catch(() => ({}));
