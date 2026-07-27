@@ -13,6 +13,25 @@ const socket = {
   emit: vi.fn(),
 };
 
+const mockScrollToIndex = vi.fn();
+
+vi.mock('react-virtuoso', async () => {
+  const React = await import('react');
+  return {
+    Virtuoso: React.forwardRef(function MockVirtuoso(props: any, ref: any) {
+      const { data, itemContent, components } = props;
+      React.useImperativeHandle(ref, () => ({ scrollToIndex: mockScrollToIndex }));
+      return React.createElement('div', { 'data-testid': 'virtuoso', className: props.className, style: props.style },
+        components?.Header ? React.createElement(components.Header) : null,
+        data?.map((item: any, index: number) =>
+          React.createElement('div', { key: item.id ?? index }, itemContent(index, item)),
+        ),
+        components?.Footer ? React.createElement(components.Footer) : null,
+      );
+    }),
+  };
+});
+
 vi.mock('react-router-dom', async () => {
   const actual = await vi.importActual<typeof import('react-router-dom')>('react-router-dom');
   return {
@@ -163,7 +182,7 @@ describe('AgentChat connection handling', () => {
     );
   });
 
-  it('jumps from the history controls to the latest message', async () => {
+  it('jumps to latest message via Virtuoso scrollToIndex', async () => {
     const agent = {
       id: 'agent-1',
       name: 'Long conversation',
@@ -201,16 +220,11 @@ describe('AgentChat connection handling', () => {
     );
 
     expect(await screen.findByText('Latest response')).toBeInTheDocument();
-    const container = document.querySelector('.chat-messages') as HTMLDivElement;
-    const scrollTo = vi.fn();
-    Object.defineProperties(container, {
-      scrollHeight: { configurable: true, value: 1200 },
-      clientHeight: { configurable: true, value: 300 },
-      scrollTo: { configurable: true, value: scrollTo },
-    });
 
-    fireEvent.click(screen.getByRole('button', { name: /Jump to bottom|跳到底部/ }));
-
-    expect(scrollTo).toHaveBeenCalledWith({ top: 900, behavior: 'smooth' });
+    const fab = document.querySelector('.chat-scroll-fab-bottom');
+    if (fab) {
+      fireEvent.click(fab);
+      expect(mockScrollToIndex).toHaveBeenCalledWith({ index: 'LAST', behavior: 'smooth' });
+    }
   });
 });

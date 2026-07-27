@@ -42,6 +42,8 @@ export const en: Record<string, string> = {
     'dashboard.retentionHours': 'Auto-delete stopped internal agents after (hours)',
     'dashboard.retentionDisabled': 'Disabled (0 = keep forever)',
     'dashboard.settingsSaved': 'Settings saved',
+    'dashboard.files': 'Files',
+    'dashboard.browseFiles': 'Browse workspace files',
     'dashboard.clone': 'Clone',
     'dashboard.cloneAgent': 'Clone this agent',
     'dashboard.externalShow': 'External ({{count}})',

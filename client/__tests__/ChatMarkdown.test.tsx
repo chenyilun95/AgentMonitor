@@ -15,6 +15,34 @@ describe('ChatMarkdown', () => {
     expect(container.querySelector('.katex-display')).toBeInTheDocument();
   });
 
+  it('does not produce KaTeX elements for plain text without math', () => {
+    const { container } = render(
+      <ChatMarkdown content="No math here, just plain text." workspacePath="/tmp/project" />,
+    );
+
+    expect(container.querySelector('.katex')).toBeNull();
+  });
+
+  it('renders bold markdown as <strong>', () => {
+    const { container } = render(
+      <ChatMarkdown content="**bold text**" workspacePath="/tmp/project" />,
+    );
+
+    const strong = container.querySelector('strong');
+    expect(strong).not.toBeNull();
+    expect(strong!.textContent).toBe('bold text');
+  });
+
+  it('renders inline code as <code>', () => {
+    const { container } = render(
+      <ChatMarkdown content="`some code`" workspacePath="/tmp/project" />,
+    );
+
+    const code = container.querySelector('code');
+    expect(code).not.toBeNull();
+    expect(code!.textContent).toBe('some code');
+  });
+
   it('continues to render GitHub-flavored Markdown', () => {
     const { getByRole } = render(
       <ChatMarkdown content={'| A | B |\n| - | - |\n| 1 | 2 |'} workspacePath="/tmp/project" />,

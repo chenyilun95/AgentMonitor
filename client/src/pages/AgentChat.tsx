@@ -1,5 +1,6 @@
-import { lazy, Suspense, useState, useEffect, useLayoutEffect, useRef, useCallback } from 'react';
-import { useParams, useNavigate } from 'react-router-dom';
+import { lazy, Suspense, useState, useEffect, useRef, useCallback, useMemo } from 'react';
+import { useParams, useNavigate, useSearchParams } from 'react-router-dom';
+import { Virtuoso, type VirtuosoHandle } from 'react-virtuoso';
 import { api, type Agent, type RuntimeCapabilities } from '../api/client';
 import { getSocket, joinAgent, leaveAgent } from '../api/socket';
 import { useTranslation } from '../i18n';
@@ -7,14 +8,11 @@ import { FileBrowserView } from '../components/FileBrowserView';
 import { PendingQuestionBanner } from '../components/PendingQuestionBanner';
 import { HistoryPicker } from '../components/HistoryPicker';
 import { BtwPopup } from '../components/BtwPopup';
-import { ChatMarkdown } from '../components/ChatMarkdown';
-import { ChatImage } from '../components/ChatImage';
+import { ChatMessageItem } from '../components/ChatMessageItem';
 import { getAgentStatusClass, getAgentStatusLabel } from '../lib/agentStatus';
 import { buildCommitPrompt, buildMergeToBasePrompt, buildUpdateFromBasePrompt } from '../lib/commitPrompt';
 import { buildResumeCommand } from '../lib/resumeCommand';
-import { getToolMessageDetails, type ToolMessageDetails } from '../lib/toolMessages';
 import { getSlashCommandDefinitions, executeSlashCommand } from '../lib/slashCommands';
-import { resolveImageSource } from '../lib/imageSources';
 import {
   getReasoningEffortLabel,
   getReasoningEffortOptions,
@@ -22,10 +20,7 @@ import {
   type ReasoningEffortSelection,
 } from '../lib/reasoningEffort';
 
-type ChatMessage = Agent['messages'][number];
 type LocalMessage = { id: string; role: string; content: string; timestamp: number };
-type DisplayMessage = ChatMessage | LocalMessage;
-type ChatMessageGroup = { id: string; messages: DisplayMessage[] };
 
 type PendingQuestion = NonNullable<Agent['pendingQuestion']>;
 
@@ -37,6 +32,7 @@ const TerminalView = lazy(() => import('../components/TerminalView').then(module
 export function AgentChat() {
   const { id } = useParams<{ id: string }>();
   const navigate = useNavigate();
+  const [searchParams] = useSearchParams();
   const { t } = useTranslation();
   const [agent, setAgent] = useState<Agent | null>(null);
   const [loadError, setLoadError] = useState(false);
@@ -50,12 +46,11 @@ export function AgentChat() {
   const [expandedTools, setExpandedTools] = useState<Set<string>>(new Set());
   const [showTerminal, setShowTerminal] = useState(false);
   const [hasOpenedTerminal, setHasOpenedTerminal] = useState(false);
-  const [showFiles, setShowFiles] = useState(false);
+  const [showFiles, setShowFiles] = useState(() => searchParams.get('view') === 'files');
   const [targetFilePath, setTargetFilePath] = useState<string | null>(null);
   const [renderMarkdown, setRenderMarkdown] = useState(() => localStorage.getItem('agentmonitor-markdown') !== 'false');
-  const messagesContainerRef = useRef<HTMLDivElement>(null);
-  const messagesEndRef = useRef<HTMLDivElement>(null);
-  const didInitialScrollRef = useRef(false);
+  const [atBottom, setAtBottom] = useState(true);
+  const virtuosoRef = useRef<VirtuosoHandle>(null);
   const lastEscRef = useRef(0);
   const escTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const agentRef = useRef(agent);
@@ -80,8 +75,6 @@ export function AgentChat() {
   const [runtimeCapabilities, setRuntimeCapabilities] = useState<RuntimeCapabilities | null>(null);
   const [showMobileActions, setShowMobileActions] = useState(false);
   const [loadingEarlierMessages, setLoadingEarlierMessages] = useState(false);
-  const prependScrollRef = useRef<{ height: number; top: number } | null>(null);
-  const skipNextAutoScrollRef = useRef(false);
 
   const addLocalMessage = (content: string, role = 'system') => {
     const timestamp = Date.now();
@@ -171,14 +164,6 @@ export function AgentChat() {
     const beforeMessageId = current?.messages[0]?.id;
     if (!id || !current?.messagePage?.hasMore || !beforeMessageId || loadingEarlierMessages) return;
 
-    const container = messagesContainerRef.current;
-    if (container) {
-      prependScrollRef.current = {
-        height: container.scrollHeight,
-        top: container.scrollTop,
-      };
-      skipNextAutoScrollRef.current = true;
-    }
     setLoadingEarlierMessages(true);
     try {
       const page = await api.getAgent(id, {
@@ -198,8 +183,6 @@ export function AgentChat() {
         };
       });
     } catch (err) {
-      prependScrollRef.current = null;
-      skipNextAutoScrollRef.current = false;
       addLocalMessage(`[Error] ${String(err)}`);
     } finally {
       setLoadingEarlierMessages(false);
@@ -207,7 +190,6 @@ export function AgentChat() {
   }, [id, loadingEarlierMessages]);
 
   useEffect(() => {
-    didInitialScrollRef.current = false;
     setDirectPeers([]);
     fetchAgent();
     api.getRuntimeCapabilities().then(setRuntimeCapabilities).catch(() => {});
@@ -348,60 +330,28 @@ export function AgentChat() {
     };
   }, [id, fetchAgent]);
 
-  useLayoutEffect(() => {
-    if (!agent || didInitialScrollRef.current) return;
-    const container = messagesContainerRef.current;
-    if (container) {
-      const previousScrollBehavior = container.style.scrollBehavior;
-      container.style.scrollBehavior = 'auto';
-      container.scrollTop = container.scrollHeight;
-      container.style.scrollBehavior = previousScrollBehavior;
-    } else {
-      messagesEndRef.current?.scrollIntoView({ behavior: 'auto' });
-    }
-    didInitialScrollRef.current = true;
-  }, [agent]);
-
-  useLayoutEffect(() => {
-    const previous = prependScrollRef.current;
-    const container = messagesContainerRef.current;
-    if (!previous || !container) return;
-    container.scrollTop = previous.top + (container.scrollHeight - previous.height);
-    prependScrollRef.current = null;
-  }, [agent?.messages?.length]);
-
-  useEffect(() => {
-    if (!didInitialScrollRef.current) return;
-    if (skipNextAutoScrollRef.current) {
-      skipNextAutoScrollRef.current = false;
-      return;
-    }
-    const container = messagesContainerRef.current;
-    if (!container) return;
-    const target = Math.max(0, container.scrollHeight - container.clientHeight);
-    if (typeof container.scrollTo === 'function') {
-      container.scrollTo({ top: target, behavior: 'smooth' });
-    } else {
-      container.scrollTop = target;
-    }
-  }, [agent?.messages?.length, localMessages.length]);
-
   const scrollToLatestMessage = useCallback(() => {
-    prependScrollRef.current = null;
-    skipNextAutoScrollRef.current = false;
-    didInitialScrollRef.current = true;
-    const container = messagesContainerRef.current;
-    if (container) {
-      const target = Math.max(0, container.scrollHeight - container.clientHeight);
-      if (typeof container.scrollTo === 'function') {
-        container.scrollTo({ top: target, behavior: 'smooth' });
-      } else {
-        container.scrollTop = target;
-      }
-      return;
-    }
-    messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
+    virtuosoRef.current?.scrollToIndex({ index: 'LAST', behavior: 'smooth' });
   }, []);
+
+  const scrollToEarliestMessage = useCallback(() => {
+    virtuosoRef.current?.scrollToIndex({ index: 0, behavior: 'smooth' });
+  }, []);
+
+  const handleToggleExpand = useCallback((msgId: string) => {
+    setExpandedTools(prev => {
+      const next = new Set(prev);
+      if (next.has(msgId)) next.delete(msgId);
+      else next.add(msgId);
+      return next;
+    });
+  }, []);
+
+  const handleStartReached = useCallback(() => {
+    if (agentRef.current?.messagePage?.hasMore && !loadingEarlierMessages) {
+      void loadEarlierMessages();
+    }
+  }, [loadingEarlierMessages, loadEarlierMessages]);
 
   useEffect(() => {
     if (agent) {
@@ -891,9 +841,25 @@ export function AgentChat() {
     }
   };
 
-  const filteredCommands = slashCommands.filter((c) =>
-    c.cmd.startsWith(slashFilter || '/'),
+  const filteredCommands = useMemo(
+    () => slashCommands.filter((c) => c.cmd.startsWith(slashFilter || '/')),
+    [slashCommands, slashFilter],
   );
+
+  const displayMessages = useMemo(
+    () => agent
+      ? [...agent.messages, ...localMessages].sort((a, b) => a.timestamp - b.timestamp)
+      : [],
+    [agent?.messages, localMessages],
+  );
+
+  const workspacePath = agent?.worktreePath || agent?.config.directory || '';
+
+  const openWorkspaceMarkdownFile = useCallback((markdownPath: string) => {
+    setTargetFilePath(markdownPath);
+    setShowTerminal(false);
+    setShowFiles(true);
+  }, []);
 
   if (!agent) {
     if (!loadError) return <div>{t('common.loading')}</div>;
@@ -910,21 +876,6 @@ export function AgentChat() {
   const reasoningEffortOptions = getReasoningEffortOptions(agent.config.provider, runtimeCapabilities);
   const interactionMode = agent.interactionMode || 'default';
   const isPlanMode = interactionMode === 'plan';
-  const displayMessages = [...agent.messages, ...localMessages].sort((a, b) => a.timestamp - b.timestamp);
-  const workspacePath = agent.worktreePath || agent.config.directory;
-  const openWorkspaceMarkdownFile = (markdownPath: string) => {
-    setTargetFilePath(markdownPath);
-    setShowTerminal(false);
-    setShowFiles(true);
-  };
-  const chatMessageGroups = displayMessages.reduce<ChatMessageGroup[]>((groups, msg) => {
-    if (msg.role === 'user' || groups.length === 0) {
-      groups.push({ id: `turn-${msg.id}`, messages: [msg] });
-    } else {
-      groups[groups.length - 1].messages.push(msg);
-    }
-    return groups;
-  }, []);
 
   return (
     <div className="chat-container">
@@ -1152,130 +1103,92 @@ export function AgentChat() {
         visible={showFiles}
         targetFilePath={targetFilePath}
       />
-      <div ref={messagesContainerRef} className="chat-messages" style={{ display: showTerminal || showFiles ? 'none' : undefined }}>
-        {agent.messagePage && agent.messages.length > 0 && (
-          <div className="chat-load-earlier">
-            <div className="chat-history-actions">
-              {agent.messagePage.hasMore && (
-                <button
-                  type="button"
-                  className="btn btn-sm btn-outline"
-                  disabled={loadingEarlierMessages}
-                  onClick={() => void loadEarlierMessages()}
-                >
-                  {loadingEarlierMessages ? t('common.loading') : t('chat.loadEarlier')}
-                </button>
-              )}
-              <button
-                type="button"
-                className="btn btn-sm btn-outline"
-                onClick={scrollToLatestMessage}
-              >
-                {t('chat.jumpToLatest')}
-              </button>
-            </div>
-            <span>{t('chat.messageCount', {
-              loaded: agent.messages.length,
-              total: agent.messagePage.total,
-            })}</span>
-          </div>
+      <div className="chat-messages-wrapper" style={{ display: showTerminal || showFiles ? 'none' : undefined }}>
+        <Virtuoso
+          ref={virtuosoRef}
+          className="chat-messages"
+          style={{ height: 'auto', flex: 1, minHeight: 0 }}
+          data={displayMessages}
+          initialTopMostItemIndex={Math.max(0, displayMessages.length - 1)}
+          followOutput={(isAtBottom) => isAtBottom ? 'smooth' : false}
+          atBottomStateChange={setAtBottom}
+          startReached={handleStartReached}
+          overscan={200}
+          increaseViewportBy={200}
+          itemContent={(_index, msg) => (
+            <ChatMessageItem
+              key={msg.id}
+              msg={msg}
+              renderMarkdown={renderMarkdown}
+              workspacePath={workspacePath}
+              configuredRoot={agent.config.directory}
+              isExpanded={expandedTools.has(msg.id)}
+              onToggleExpand={handleToggleExpand}
+              onOpenMarkdownFile={openWorkspaceMarkdownFile}
+            />
+          )}
+          components={{
+            Header: () => agent.messagePage && agent.messages.length > 0 ? (
+              <div className="chat-load-earlier">
+                <span>{t('chat.messageCount', {
+                  loaded: agent.messages.length,
+                  total: agent.messagePage.total,
+                })}</span>
+              </div>
+            ) : null,
+            Footer: () => (
+              <>
+                {agent.status === 'running' && (
+                  <div className="chat-message assistant thinking">
+                    <span className="thinking-dots">
+                      <span /><span /><span />
+                    </span>
+                    {(agent.tokenUsage || agent.costUsd !== undefined) && (
+                      <span className="thinking-stats">
+                        {agent.tokenUsage && `${(agent.tokenUsage.input + agent.tokenUsage.output).toLocaleString()} tokens`}
+                        {agent.costUsd !== undefined && ` · $${agent.costUsd.toFixed(4)}`}
+                        {agent.contextWindow && ` · ${Math.round(agent.contextWindow.used / agent.contextWindow.total * 100)}% context`}
+                      </span>
+                    )}
+                  </div>
+                )}
+                {agent.structuredOutput != null && (agent.status === 'stopped' || agent.status === 'error') && (
+                  <div style={{ margin: '12px 0', padding: 12, background: 'var(--bg-tertiary)', borderRadius: 8, border: '1px solid var(--border)' }}>
+                    <div style={{ fontWeight: 600, marginBottom: 8, display: 'flex', alignItems: 'center', gap: 6 }}>
+                      {'📋'} Structured Output
+                    </div>
+                    <pre style={{ margin: 0, whiteSpace: 'pre-wrap', fontSize: '0.85em', overflow: 'auto', maxHeight: 400 }}>
+                      {JSON.stringify(agent.structuredOutput, null, 2)}
+                    </pre>
+                  </div>
+                )}
+              </>
+            ),
+          }}
+        />
+        {agent.messagePage?.hasMore && (
+          <button
+            className="chat-scroll-fab chat-scroll-fab-top"
+            onClick={scrollToEarliestMessage}
+            title={t('chat.loadEarlier')}
+          >
+            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
+              <polyline points="18 15 12 9 6 15" />
+            </svg>
+          </button>
         )}
-        {chatMessageGroups.map((group) => (
-          <div key={group.id} className="chat-turn">
-            {group.messages.map((msg) => {
-              const toolDetails = getToolMessageDetails(msg as ChatMessage);
-              const isToolMsg = !!toolDetails;
-              const isExpanded = expandedTools.has(msg.id);
-              return (
-                <div key={msg.id} className={`chat-message ${msg.role}`}>
-                  {isToolMsg ? (
-                    <>
-                      <div
-                        className="tool-header"
-                        onClick={() => setExpandedTools(prev => {
-                          const next = new Set(prev);
-                          if (next.has(msg.id)) next.delete(msg.id);
-                          else next.add(msg.id);
-                          return next;
-                        })}
-                      >
-                        <span className="tool-toggle">{isExpanded ? '\u25BC' : '\u25B6'}</span>
-                        <span className="tool-name">{toolDetails.title}</span>
-                      </div>
-                      {isExpanded && (
-                        <div className="tool-details">
-                          {toolDetails.input && (
-                            <div className="tool-section">
-                              <div className="tool-section-label">Input</div>
-                              <pre className="tool-content">{toolDetails.input}</pre>
-                            </div>
-                          )}
-                          {toolDetails.output && (
-                            <div className="tool-section">
-                              <div className="tool-section-label">Output</div>
-                              <pre className="tool-content">{toolDetails.output}</pre>
-                            </div>
-                          )}
-                          {toolDetails.details && (
-                            <div className="tool-section">
-                              <div className="tool-section-label">Details</div>
-                              <pre className="tool-content">{toolDetails.details}</pre>
-                            </div>
-                          )}
-                        </div>
-                      )}
-                    </>
-                  ) : (
-                    renderMarkdown && msg.role === 'assistant'
-                      ? <ChatMarkdown
-                          content={msg.content}
-                          workspacePath={workspacePath}
-                          configuredRoot={agent.config.directory}
-                          onOpenMarkdownFile={openWorkspaceMarkdownFile}
-                        />
-                      : msg.content
-                  )}
-                  {'attachments' in msg && msg.attachments?.map((attachment, index) => {
-                    const src = resolveImageSource(workspacePath, attachment.source);
-                    return src ? <ChatImage
-                      key={`${attachment.source}-${index}`}
-                      src={src}
-                      alt={attachment.name || 'Agent output image'}
-                      linked
-                    /> : null;
-                  })}
-                </div>
-              );
-            })}
-          </div>
-        ))}
-        {agent.status === 'running' && (
-          <div className="chat-message assistant thinking">
-            <span className="thinking-dots">
-              <span /><span /><span />
-            </span>
-            {(agent.tokenUsage || agent.costUsd !== undefined) && (
-              <span className="thinking-stats">
-                {agent.tokenUsage && `${(agent.tokenUsage.input + agent.tokenUsage.output).toLocaleString()} tokens`}
-                {agent.costUsd !== undefined && ` · $${agent.costUsd.toFixed(4)}`}
-                {agent.contextWindow && ` · ${Math.round(agent.contextWindow.used / agent.contextWindow.total * 100)}% context`}
-              </span>
-            )}
-          </div>
+        {!atBottom && (
+          <button
+            className="chat-scroll-fab chat-scroll-fab-bottom"
+            onClick={scrollToLatestMessage}
+            title={t('chat.jumpToLatest')}
+          >
+            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
+              <polyline points="6 9 12 15 18 9" />
+            </svg>
+          </button>
         )}
-        {agent.structuredOutput != null && (agent.status === 'stopped' || agent.status === 'error') && (
-          <div style={{ margin: '12px 0', padding: 12, background: 'var(--bg-tertiary)', borderRadius: 8, border: '1px solid var(--border)' }}>
-            <div style={{ fontWeight: 600, marginBottom: 8, display: 'flex', alignItems: 'center', gap: 6 }}>
-              <span>📋</span> Structured Output
-            </div>
-            <pre style={{ margin: 0, whiteSpace: 'pre-wrap', fontSize: '0.85em', overflow: 'auto', maxHeight: 400 }}>
-              {JSON.stringify(agent.structuredOutput, null, 2)}
-            </pre>
-          </div>
-        )}
-        <div ref={messagesEndRef} />
       </div>
-
       {!showTerminal && !showFiles && agent.pendingQuestion && !agent.pendingQuestion.answeredAt && (
         <PendingQuestionBanner pending={agent.pendingQuestion} onSubmit={handleAnswerQuestion} />
       )}

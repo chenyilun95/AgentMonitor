@@ -541,6 +541,13 @@ export function Dashboard() {
         <div className="card-actions">
           <button
             className="btn btn-sm btn-outline"
+            onClick={(e) => { e.stopPropagation(); navigate(`/agent/${agent.id}?view=files`); }}
+            title={t('dashboard.browseFiles')}
+          >
+            {t('dashboard.files')}
+          </button>
+          <button
+            className="btn btn-sm btn-outline"
             onClick={(e) => { e.stopPropagation(); navigate(`/create?from=${agent.id}`); }}
             title={t('dashboard.cloneAgent')}
           >

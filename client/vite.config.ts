@@ -4,6 +4,9 @@ import path from 'path';
 
 export default defineConfig({
   plugins: [react()],
+  build: {
+    cssCodeSplit: false,
+  },
   resolve: {
     alias: {
       '@agent-monitor/shared': path.resolve(__dirname, '../shared/src'),

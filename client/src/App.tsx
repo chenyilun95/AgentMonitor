@@ -1,8 +1,26 @@
-import { lazy, Suspense, useEffect, useState } from 'react';
+import { Component, lazy, Suspense, useEffect, useState, type ReactNode } from 'react';
 import { Routes, Route, Link, useLocation } from 'react-router-dom';
 import { Login } from './pages/Login';
 import { useAuth } from './hooks/useAuth';
 import { LanguageProvider, useTranslation } from './i18n';
+
+class ErrorBoundary extends Component<{ children: ReactNode }, { error: Error | null }> {
+  state: { error: Error | null } = { error: null };
+  static getDerivedStateFromError(error: Error) { return { error }; }
+  render() {
+    if (this.state.error) {
+      return (
+        <div style={{ padding: '2rem', color: '#e55', fontFamily: 'monospace', fontSize: 13, whiteSpace: 'pre-wrap', wordBreak: 'break-word' }}>
+          <h3 style={{ margin: '0 0 1rem' }}>Page Error</h3>
+          <p>{this.state.error.message}</p>
+          <pre style={{ fontSize: 11, opacity: 0.7, maxHeight: '50vh', overflow: 'auto' }}>{this.state.error.stack}</pre>
+          <button onClick={() => this.setState({ error: null })} style={{ marginTop: '1rem', padding: '8px 16px' }}>Retry</button>
+        </div>
+      );
+    }
+    return this.props.children;
+  }
+}
 
 const Dashboard = lazy(() => import('./pages/Dashboard').then(module => ({ default: module.Dashboard })));
 const CreateAgent = lazy(() => import('./pages/CreateAgent').then(module => ({ default: module.CreateAgent })));
@@ -77,17 +95,19 @@ function AuthenticatedApp() {
     <div className="app">
       <NavBar onLogout={logout} />
       <main className="main">
-        <Suspense fallback={<div style={{ padding: '2rem', textAlign: 'center' }}>Loading...</div>}>
-          <Routes>
-            <Route path="/" element={<Dashboard />} />
-            <Route path="/servers" element={<GpuMonitor />} />
-            <Route path="/pipeline" element={<Pipeline />} />
-            <Route path="/create" element={<CreateAgent />} />
-            <Route path="/agent/:id" element={<AgentChat />} />
-            <Route path="/templates" element={<Templates />} />
-            <Route path="/skills" element={<Skills />} />
-          </Routes>
-        </Suspense>
+        <ErrorBoundary>
+          <Suspense fallback={<div style={{ padding: '2rem', textAlign: 'center' }}>Loading...</div>}>
+            <Routes>
+              <Route path="/" element={<Dashboard />} />
+              <Route path="/servers" element={<GpuMonitor />} />
+              <Route path="/pipeline" element={<Pipeline />} />
+              <Route path="/create" element={<CreateAgent />} />
+              <Route path="/agent/:id" element={<AgentChat />} />
+              <Route path="/templates" element={<Templates />} />
+              <Route path="/skills" element={<Skills />} />
+            </Routes>
+          </Suspense>
+        </ErrorBoundary>
       </main>
     </div>
   );

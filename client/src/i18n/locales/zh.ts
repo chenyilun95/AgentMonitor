@@ -42,6 +42,8 @@ export const zh: Record<string, string> = {
     'dashboard.retentionHours': '自动删除已停止的内部代理（小时后）',
     'dashboard.retentionDisabled': '已禁用（0 = 永久保留）',
     'dashboard.settingsSaved': '设置已保存',
+    'dashboard.files': '文件',
+    'dashboard.browseFiles': '浏览工作区文件',
     'dashboard.clone': '克隆',
     'dashboard.cloneAgent': '克隆此代理',
     'dashboard.externalShow': '外部代理 ({{count}})',

@@ -1,3 +1,4 @@
+import { memo } from 'react';
 import ReactMarkdown from 'react-markdown';
 import rehypeKatex from 'rehype-katex';
 import remarkGfm from 'remark-gfm';
@@ -14,16 +15,23 @@ interface ChatMarkdownProps {
   onOpenMarkdownFile?: (path: string) => void;
 }
 
-export function ChatMarkdown({
+const MATH_PATTERN = /\$\$|\$[^$]|\\\(|\\\[|\\begin\{/;
+const REMARK_PLAIN: any[] = [remarkGfm];
+const REMARK_MATH: any[] = [remarkGfm, remarkMath];
+const REHYPE_PLAIN: any[] = [];
+const REHYPE_MATH: any[] = [rehypeKatex];
+
+export const ChatMarkdown = memo(function ChatMarkdown({
   content,
   workspacePath,
   configuredRoot = workspacePath,
   onOpenMarkdownFile,
 }: ChatMarkdownProps) {
+  const hasMath = MATH_PATTERN.test(content);
   return (
     <ReactMarkdown
-      remarkPlugins={[remarkGfm, remarkMath]}
-      rehypePlugins={[rehypeKatex]}
+      remarkPlugins={hasMath ? REMARK_MATH : REMARK_PLAIN}
+      rehypePlugins={hasMath ? REHYPE_MATH : REHYPE_PLAIN}
       components={{
         a: ({ href, children, title }) => {
           const markdownPath = resolveWorkspaceMarkdownLink(href, workspacePath, configuredRoot);
@@ -83,4 +91,4 @@ export function ChatMarkdown({
       {content}
     </ReactMarkdown>
   );
-}
+});
