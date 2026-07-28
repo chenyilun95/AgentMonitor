@@ -244,6 +244,31 @@
   }
 }
 
+/* --- Directory Browser Page --- */
+.directory-browser-page {
+  display: flex;
+  flex-direction: column;
+  height: calc(100vh - 100px);
+  overflow: hidden;
+}
+
+.directory-browser-header {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 0 0 12px;
+}
+
+.directory-browser-path {
+  font-family: var(--font-mono, monospace);
+  font-size: 14px;
+  color: var(--text-secondary, var(--text-muted));
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  min-width: 0;
+}
+
 /* --- Modal --- */
 .modal-overlay {
   position: fixed;

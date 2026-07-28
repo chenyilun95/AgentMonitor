@@ -44,6 +44,8 @@ export const zh: Record<string, string> = {
     'dashboard.settingsSaved': '设置已保存',
     'dashboard.files': '文件',
     'dashboard.browseFiles': '浏览工作区文件',
+    'dashboard.browseDirectoryFiles': '浏览目录文件',
+    'directoryBrowser.back': '返回',
     'dashboard.clone': '克隆',
     'dashboard.cloneAgent': '克隆此代理',
     'dashboard.externalShow': '外部代理 ({{count}})',

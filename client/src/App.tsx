@@ -29,6 +29,7 @@ const Templates = lazy(() => import('./pages/Templates').then(module => ({ defau
 const Skills = lazy(() => import('./pages/Skills').then(module => ({ default: module.Skills })));
 const Pipeline = lazy(() => import('./pages/Pipeline').then(module => ({ default: module.Pipeline })));
 const GpuMonitor = lazy(() => import('./pages/GpuMonitor').then(module => ({ default: module.GpuMonitor })));
+const DirectoryBrowser = lazy(() => import('./pages/DirectoryBrowser').then(module => ({ default: module.DirectoryBrowser })));
 
 function NavBar({ onLogout }: { onLogout?: () => void }) {
   const location = useLocation();
@@ -103,6 +104,7 @@ function AuthenticatedApp() {
               <Route path="/pipeline" element={<Pipeline />} />
               <Route path="/create" element={<CreateAgent />} />
               <Route path="/agent/:id" element={<AgentChat />} />
+              <Route path="/browse" element={<DirectoryBrowser />} />
               <Route path="/templates" element={<Templates />} />
               <Route path="/skills" element={<Skills />} />
             </Routes>

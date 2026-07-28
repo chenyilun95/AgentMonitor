@@ -541,13 +541,6 @@ export function Dashboard() {
         <div className="card-actions">
           <button
             className="btn btn-sm btn-outline"
-            onClick={(e) => { e.stopPropagation(); navigate(`/agent/${agent.id}?view=files`); }}
-            title={t('dashboard.browseFiles')}
-          >
-            {t('dashboard.files')}
-          </button>
-          <button
-            className="btn btn-sm btn-outline"
             onClick={(e) => { e.stopPropagation(); navigate(`/create?from=${agent.id}`); }}
             title={t('dashboard.cloneAgent')}
           >
@@ -889,6 +882,13 @@ export function Dashboard() {
                           )}
                         </>
                       )}
+                      <button
+                        className="btn btn-sm btn-outline"
+                        onClick={() => navigate(`/browse?path=${encodeURIComponent(dir)}`)}
+                        title={t('dashboard.browseDirectoryFiles')}
+                      >
+                        {t('dashboard.files')}
+                      </button>
                       <div className="directory-group-icon-actions">
                         <button
                           type="button"

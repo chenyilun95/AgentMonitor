@@ -44,6 +44,8 @@ export const en: Record<string, string> = {
     'dashboard.settingsSaved': 'Settings saved',
     'dashboard.files': 'Files',
     'dashboard.browseFiles': 'Browse workspace files',
+    'dashboard.browseDirectoryFiles': 'Browse directory files',
+    'directoryBrowser.back': 'Back',
     'dashboard.clone': 'Clone',
     'dashboard.cloneAgent': 'Clone this agent',
     'dashboard.externalShow': 'External ({{count}})',
