@@ -4,6 +4,9 @@ import crypto from 'crypto';
 import { config } from './config.js';
 
 const JWT_EXPIRY = '24h';
+const LOGIN_WINDOW_MS = 60_000;
+const MAX_LOGIN_ATTEMPTS = 5;
+const loginAttempts = new Map<string, { count: number; resetAt: number }>();
 
 const jwtSecret = crypto
   .createHash('sha256')
@@ -24,9 +27,24 @@ export function createAuthRoutes(): Router {
     if (!config.password) {
       return res.json({ ok: true });
     }
+
+    const ip = req.ip || req.socket.remoteAddress || 'unknown';
+    const now = Date.now();
+    const record = loginAttempts.get(ip);
+    if (record && now < record.resetAt && record.count >= MAX_LOGIN_ATTEMPTS) {
+      return res.status(429).json({ error: 'Too many login attempts. Try again later.' });
+    }
+
     if (password !== config.password) {
+      if (!record || now >= record.resetAt) {
+        loginAttempts.set(ip, { count: 1, resetAt: now + LOGIN_WINDOW_MS });
+      } else {
+        record.count++;
+      }
       return res.status(401).json({ error: 'Invalid password' });
     }
+
+    loginAttempts.delete(ip);
     const token = jwt.sign({ local: true }, getJwtSecret(), { expiresIn: JWT_EXPIRY });
     res.cookie('auth_token', token, {
       httpOnly: true,

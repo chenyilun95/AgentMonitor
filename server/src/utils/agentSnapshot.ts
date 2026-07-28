@@ -1,4 +1,5 @@
 import type { Agent, AgentClientView } from '../models/Agent.js';
+import { normalizeUserPath } from './pathUtils.js';
 
 const DASHBOARD_MESSAGE_PREVIEW_LIMIT = 500;
 
@@ -23,6 +24,10 @@ export function sanitizeAgentSnapshot(agent: Agent): Agent {
     (result as any).preRestoreUserTurns = preRestoreSnapshot.messages
       .filter(m => m.role === 'user')
       .map(m => ({ id: m.id, content: m.content, timestamp: m.timestamp }));
+  }
+
+  if (result.config?.directory) {
+    result = { ...result, config: { ...result.config, directory: normalizeUserPath(result.config.directory) } };
   }
 
   const context = result.contextWindow;
