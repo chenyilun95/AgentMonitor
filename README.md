@@ -216,4 +216,11 @@ npm run docs:dev     # local VitePress documentation
 npm run docs:build   # build documentation
 ```
 
+> **Build order note:** `server` and `client` depend on the compiled output of `shared` (`shared/dist/`). `npm run dev` and `npm run build` handle this automatically, but when running modules individually you must build `shared` first:
+>
+> ```bash
+> cd shared && npm run build && cd ..   # required before standalone server/client commands
+> npm run test:server                   # now works
+> ```
+
 More detailed guides are available under [docs/](docs/index.md), including [agent chat](docs/guide/agent-chat.md), [pipelines](docs/guide/pipeline.md), [notifications](docs/guide/notifications.md), and [configuration](docs/guide/configuration.md).

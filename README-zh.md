@@ -216,4 +216,11 @@ npm run docs:dev     # 本地启动 VitePress 文档
 npm run docs:build   # 构建文档
 ```
 
+> **构建顺序说明：** `server` 和 `client` 依赖 `shared` 的编译产物（`shared/dist/`）。`npm run dev` 和 `npm run build` 会自动处理构建顺序，但单独运行某个模块时需要先编译 `shared`：
+>
+> ```bash
+> cd shared && npm run build && cd ..   # 单独跑 server/client 之前必须执行
+> npm run test:server                   # 现在可以正常运行
+> ```
+
 更详细的资料位于 [docs/](docs/index.md)，包括 [Agent Chat](docs/guide/agent-chat.md)、[流水线](docs/guide/pipeline.md)、[通知](docs/guide/notifications.md)和[配置](docs/guide/configuration.md)。
