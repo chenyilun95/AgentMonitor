@@ -1,3 +1,4 @@
+import fs from 'fs';
 import type { Agent, AgentClientView } from '../models/Agent.js';
 import { normalizeUserPath } from './pathUtils.js';
 
@@ -28,6 +29,12 @@ export function sanitizeAgentSnapshot(agent: Agent): Agent {
 
   if (result.config?.directory) {
     result = { ...result, config: { ...result.config, directory: normalizeUserPath(result.config.directory) } };
+  }
+
+  if (result.workspaceMode === 'direct' && result.worktreePath) {
+    try {
+      result = { ...result, worktreePath: fs.realpathSync(result.worktreePath) };
+    } catch { /* symlink gone — keep as-is */ }
   }
 
   const context = result.contextWindow;

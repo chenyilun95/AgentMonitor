@@ -319,4 +319,19 @@ export const api = {
   getGpuConfig: () => request<GpuMonitorConfig>('/gpu/config'),
   updateGpuConfig: (data: Partial<GpuMonitorConfig>) =>
     request<GpuMonitorConfig>('/gpu/config', { method: 'PUT', body: JSON.stringify(data) }),
+
+  // Wiki
+  getWikiConfig: () => request<{ wikiDirectory: string; exists: boolean }>('/wiki/config'),
+  updateWikiConfig: (wikiDirectory: string) =>
+    request<{ wikiDirectory: string; exists: boolean }>('/wiki/config', {
+      method: 'PUT', body: JSON.stringify({ wikiDirectory }),
+    }),
+  getWikiPages: () => request<{ pages: { name: string; path: string; updated?: string }[] }>('/wiki/pages'),
+  getWikiSources: () => request<{ sources: { name: string; path: string; size: number }[] }>('/wiki/sources'),
+  getWikiPage: (name: string) => request<{ name: string; content: string }>(`/wiki/page/${encodeURIComponent(name)}`),
+  getWikiPublicPages: () => request<{ pages: string[] }>('/wiki/public'),
+  setWikiPagePublic: (name: string, isPublic: boolean) =>
+    request<{ pages: string[] }>(`/wiki/public/${encodeURIComponent(name)}`, {
+      method: 'PUT', body: JSON.stringify({ isPublic }),
+    }),
 };

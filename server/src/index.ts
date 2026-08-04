@@ -36,6 +36,7 @@ import { FeishuNotifier } from './services/FeishuNotifier.js';
 import { TelegramService } from './services/TelegramService.js';
 import { GpuMonitorService } from './services/GpuMonitorService.js';
 import { gpuMonitorRoutes } from './routes/gpu-monitor.js';
+import { wikiRoutes, publicWikiRoutes } from './routes/wiki.js';
 import type { Agent } from './models/Agent.js';
 import { sanitizeAgentListSnapshot } from './utils/agentSnapshot.js';
 
@@ -72,6 +73,10 @@ export function createApp() {
   app.use('/api', requireAuth);
 
   const store = new AgentStore();
+
+  // Public wiki pages (no auth required) - /wiki/:path serves rendered markdown
+  // Bare /wiki falls through to SPA (wiki panel dashboard)
+  app.use('/wiki', publicWikiRoutes(store));
   const skillManager = new SkillManager();
   const emailNotifier = new EmailNotifier();
   const whatsappNotifier = new WhatsAppNotifier();
@@ -158,6 +163,7 @@ export function createApp() {
   app.use('/api/settings', settingsRoutes(store));
   app.use('/api/upload-image', uploadRoutes());
   app.use('/api/skills', skillRoutes(skillManager));
+  app.use('/api/wiki', wikiRoutes(store));
 
   // GPU Monitor (optional - only when GPU_SERVERS_CONF is set)
   let gpuMonitor: GpuMonitorService | null = null;

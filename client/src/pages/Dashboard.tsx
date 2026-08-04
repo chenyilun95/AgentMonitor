@@ -29,7 +29,6 @@ export function Dashboard() {
     error?: string;
   } | null>(null);
   const [showExternal, setShowExternal] = useState(() => localStorage.getItem('agentmonitor-show-external') !== 'false');
-  const [labelFilter, setLabelFilter] = useState('');
   const [groupBy, setGroupBy] = useState<'time' | 'project'>(() => (
     localStorage.getItem('agentmonitor-group-by') === 'time' ? 'time' : 'project'
   ));
@@ -372,25 +371,14 @@ export function Dashboard() {
     (a) => a.source === 'external' && (a.status === 'running' || a.status === 'waiting_input'),
   );
   const displayAgents = agents.filter((a) => {
-    if (!labelFilter) return true;
-    const sep = labelFilter.indexOf('=');
-    if (sep < 0) {
-      // Filter by key existence
-      return a.labels && labelFilter in a.labels;
-    }
-    const k = labelFilter.slice(0, sep);
-    const v = labelFilter.slice(sep + 1);
-    return a.labels?.[k] === v;
+    if (a.labels?.type === 'wiki') return false;
+    return true;
   }).sort((a, b) => {
     const byLastActivity = b.lastActivity - a.lastActivity;
     if (byLastActivity !== 0) return byLastActivity;
     return b.createdAt - a.createdAt;
   });
 
-  // Collect all unique labels for the filter dropdown
-  const allLabels = Array.from(new Set(
-    agents.flatMap(a => Object.entries(a.labels || {}).map(([k, v]) => v ? `${k}=${v}` : k))
-  ));
   const visibleAgents = displayAgents.filter(a => showExternal || a.source !== 'external');
   const waitingInputAgents = visibleAgents.filter(a => a.status === 'waiting_input');
   const STALE_MS = 24 * 60 * 60 * 1000;
@@ -420,9 +408,6 @@ export function Dashboard() {
             {agent.source === 'external' && (
               <span className="provider-badge" style={{ background: 'var(--primary)', color: '#fff', marginLeft: 4 }}>{t('dashboard.externalBadge')}</span>
             )}
-            {agent.labels && Object.entries(agent.labels).map(([k, v]) => (
-              <span key={k} className="provider-badge" style={{ background: 'var(--bg-tertiary)', color: 'var(--text-secondary)', marginLeft: 4, fontSize: '0.7em' }}>{v ? `${k}=${v}` : k}</span>
-            ))}
             <span className="agent-title-text">{agent.name}</span>
             <button
               type="button"
@@ -676,16 +661,6 @@ export function Dashboard() {
               {t('dashboard.groupByProject')}
             </button>
           </div>
-          {allLabels.length > 0 && (
-            <select
-              value={labelFilter}
-              onChange={(e) => setLabelFilter(e.target.value)}
-              style={{ padding: '6px 8px', borderRadius: 6, border: '1px solid var(--border)', background: 'var(--bg-secondary)', color: 'var(--text-primary)', fontSize: '0.85em' }}
-            >
-              <option value="">All Labels</option>
-              {allLabels.map(l => <option key={l} value={l}>{l}</option>)}
-            </select>
-          )}
           <button className="btn" onClick={() => navigate('/create')}>
             {t('dashboard.newAgent')}
           </button>

@@ -1,5 +1,7 @@
+import { withAppBasePath } from './basePath';
+
 function isBrowserImageSource(src: string): boolean {
-  return /^(https?:|data:image\/|blob:|\/api\/)/i.test(src);
+  return /^(https?:|data:image\/|blob:)/i.test(src) || src.includes('/api/');
 }
 
 function normalizePath(filePath: string): string {
@@ -34,5 +36,5 @@ export function resolveImageSource(workspacePath: string, source?: string): stri
   const resolved = localSource.startsWith('/')
     ? normalizePath(localSource)
     : normalizePath(`${workspacePath}/${localSource}`);
-  return `/api/directories/asset?path=${encodeURIComponent(resolved)}`;
+  return withAppBasePath(`/api/directories/asset?path=${encodeURIComponent(resolved)}`);
 }

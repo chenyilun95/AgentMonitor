@@ -219,6 +219,28 @@
   font-size: 12px;
 }
 
+/* Sticky user message pinned at top of chat area */
+.chat-sticky-user-message {
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  z-index: 10;
+  cursor: pointer;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.2);
+  border-radius: 0;
+  border-bottom-right-radius: 0;
+  margin-left: 0;
+  margin-bottom: 0;
+  max-height: 20vh;
+  opacity: 0.92;
+  transition: opacity 0.2s;
+}
+
+.chat-sticky-user-message:hover {
+  opacity: 1;
+}
+
 .chat-scroll-fab {
   position: absolute;
   z-index: 10;

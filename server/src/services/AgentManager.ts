@@ -27,6 +27,7 @@ const GIT_BRANCH_CHECK_CACHE_MS = 60_000;
 const MAX_AGENT_LOG_ENTRIES = 400;
 const MAX_AGENT_LOG_MESSAGE_CHARS = 8000;
 const MAX_AGENT_LOG_PAYLOAD_CHARS = 16000;
+const AUTO_COMPACT_CONTEXT_THRESHOLD = 0.80;
 const PLAN_MODE_INSTRUCTIONS = `You are in AgentMonitor Plan Mode for this turn.
 
 Rules:
@@ -115,6 +116,14 @@ export class AgentManager extends EventEmitter {
   private snapshotManager = new WorktreeSnapshotManager();
   /** Track when a user message was sent per agent (agentId → timestamp) */
   private pendingUserMessage: Map<string, number> = new Map();
+  /** Track consecutive queue-drain errors per agent to avoid infinite retry loops */
+  private queueErrorCount: Map<string, number> = new Map();
+  /** Last stream-level error per agent (e.g. Codex turn.failed) for descriptive exit messages */
+  private lastStreamError: Map<string, string> = new Map();
+  /** Track agents whose current turn produced a proper completion signal (result / turn.completed) */
+  private completedTurns: Set<string> = new Set();
+  /** Track agents that are currently auto-compacting (to avoid loops) */
+  private pendingAutoCompact: Set<string> = new Set();
   private stuckCheckInterval: ReturnType<typeof setInterval> | null = null;
   private lastGitBranchCheckAt = 0;
 
@@ -145,15 +154,12 @@ export class AgentManager extends EventEmitter {
         agent.status = 'stopped';
         agent.runOutcome = 'interrupted';
         agent.pid = undefined;
-        if (agent.queuedMessages?.length) {
-          agent.queuePaused = true;
-          agent.messages.push({
-            id: uuid(),
-            role: 'system',
-            content: '[Interrupted] The server restarted before the active turn completed. Queued messages are paused until you resume them.',
-            timestamp: Date.now(),
-          });
-        }
+        agent.messages.push({
+          id: uuid(),
+          role: 'system',
+          content: '[Incomplete output] Agent was interrupted by a server restart.',
+          timestamp: Date.now(),
+        });
         this.store.saveAgent(agent);
       }
       if (agent.pendingIntegrationCleanup) {
@@ -194,6 +200,18 @@ export class AgentManager extends EventEmitter {
       delete legacy.currentGitBranch;
       delete legacy.worktreeMerged;
       this.store.saveAgent(agent);
+    }
+
+    // Auto-resume agents with queued messages after server restart
+    const agentsToResume = this.store.getAllAgents()
+      .filter(a => a.source !== 'external' && a.queuedMessages?.length && !a.queuePaused);
+    if (agentsToResume.length) {
+      setTimeout(() => {
+        for (const a of agentsToResume) {
+          console.log(`[AgentManager] Auto-resuming queued messages for agent ${a.id} after restart`);
+          this.startNextQueuedMessage(a.id);
+        }
+      }, 3000);
     }
 
     this.resumeBackgroundChecks();
@@ -542,30 +560,52 @@ export class AgentManager extends EventEmitter {
       // A completed result marks the agent stopped before AgentManager closes
       // the transport. SSH-backed runners commonly report 255 in that case.
       const current = this.store.getAgent(agent.id);
-      const expectedTransportClose = current?.status === 'stopped';
+      const expectedTransportClose = current?.status === 'stopped' || current?.status === 'error';
+      const turnCompleted = this.completedTurns.has(agent.id);
+      this.completedTurns.delete(agent.id);
+      this.pendingAutoCompact.delete(agent.id);
       this.appendAgentLog(agent.id, {
         level: code === 0 || code === null || expectedTransportClose ? 'info' : 'error',
         source: 'process',
         message: expectedTransportClose && code !== 0 && code !== null
           ? `Agent transport closed after completed turn (code ${code})`
           : `Agent process exited with code ${code}`,
-        payload: { code, expectedTransportClose },
+        payload: { code, expectedTransportClose, turnCompleted },
       });
-      // Don't override 'stopped' status (set when result message is received)
-      if (current && current.status !== 'stopped') {
-        const status = (code === 0 || code === null) ? 'stopped' : 'error';
-        current.runOutcome = status === 'stopped' ? 'succeeded' : 'failed';
-        if (status === 'error') {
+      // Don't override status already set by result handler ('stopped' or 'error')
+      if (current && !expectedTransportClose) {
+        if (current.runOutcome === 'canceled' || current.runOutcome === 'interrupted') {
+          this.updateAgentStatus(agent.id, 'stopped');
+        } else if (code !== 0 && code !== null) {
+          current.runOutcome = 'failed';
+          const streamError = this.lastStreamError.get(agent.id);
           current.messages.push({
             id: uuid(),
             role: 'system',
-            content: `Agent process exited with code ${code}`,
+            content: streamError
+              ? `[Error] ${streamError}`
+              : `Agent process exited with code ${code}`,
             timestamp: Date.now(),
           });
           this.store.saveAgent(current);
+          this.updateAgentStatus(agent.id, 'error');
+        } else if (!turnCompleted) {
+          current.runOutcome = 'interrupted';
+          current.messages.push({
+            id: uuid(),
+            role: 'system',
+            content: '[Incomplete output] Agent process ended before completing its response. This may be caused by a network issue, process crash, or resource limit.',
+            timestamp: Date.now(),
+          });
+          this.store.saveAgent(current);
+          this.updateAgentStatus(agent.id, 'stopped');
+        } else {
+          current.runOutcome = 'succeeded';
+          this.addCompactTokenNotice(current);
+          this.updateAgentStatus(agent.id, 'stopped');
         }
-        this.updateAgentStatus(agent.id, status);
       }
+      this.lastStreamError.delete(agent.id);
       // Extract structured output if schema was provided
       if (current) {
         this.extractStructuredOutput(current);
@@ -1150,6 +1190,8 @@ export class AgentManager extends EventEmitter {
         agent.contextWindow = { used: inputTokens, total: maxTokens };
       }
 
+      this.completedTurns.add(agent.id);
+
       // Handle error results (e.g. "No conversation found" when resuming expired session)
       const isError = (resultAny.is_error as boolean) || msg.result?.is_error;
       if (isError) {
@@ -1180,6 +1222,40 @@ export class AgentManager extends EventEmitter {
           this.updateAgentStatus(agent.id, 'error');
         }
       } else {
+        // Auto-compact: if context usage is high and we haven't just compacted
+        const isAutoCompactResult = this.pendingAutoCompact.has(agent.id);
+        if (isAutoCompactResult) {
+          this.pendingAutoCompact.delete(agent.id);
+        }
+
+        if (
+          !isAutoCompactResult &&
+          agent.contextWindow &&
+          agent.contextWindow.used / agent.contextWindow.total >= AUTO_COMPACT_CONTEXT_THRESHOLD
+        ) {
+          const compactProc = this.processes.get(agent.id);
+          if (compactProc) {
+            const pct = Math.round((agent.contextWindow.used / agent.contextWindow.total) * 100);
+            this.pendingAutoCompact.add(agent.id);
+            agent.messages.push({
+              id: uuid(),
+              role: 'system',
+              content: `[Auto-compact] Context usage at ${pct}% (${agent.contextWindow.used.toLocaleString()} / ${agent.contextWindow.total.toLocaleString()} tokens). Running /compact automatically.`,
+              timestamp: Date.now(),
+            });
+            agent.messages.push({
+              id: uuid(),
+              role: 'user',
+              content: '/compact',
+              timestamp: Date.now(),
+            });
+            this.store.saveAgent(agent);
+            this.emit('agent:update', agent.id, agent);
+            compactProc.sendMessage('/compact');
+            return;
+          }
+        }
+
         agent.runOutcome = 'succeeded';
         this.addCompactTokenNotice(agent);
         this.updateAgentStatus(agent.id, 'stopped');
@@ -1359,6 +1435,7 @@ export class AgentManager extends EventEmitter {
     }
 
     if (msg.type === 'turn.completed') {
+      this.completedTurns.add(agent.id);
       if (msg.usage) {
         agent.tokenUsage = {
           input: (agent.tokenUsage?.input || 0) + (msg.usage.input_tokens || 0),
@@ -1366,6 +1443,16 @@ export class AgentManager extends EventEmitter {
         };
         this.addCompactTokenNotice(agent);
         this.store.saveAgent(agent);
+      }
+    }
+
+    if (msg.type === 'error' || msg.type === 'turn.failed') {
+      const anyMsg = msg as Record<string, unknown>;
+      const errorText = msg.type === 'turn.failed'
+        ? ((anyMsg.error as { message?: string })?.message || 'turn failed')
+        : (anyMsg.message as string || '');
+      if (errorText) {
+        this.lastStreamError.set(agent.id, errorText);
       }
     }
   }
@@ -1970,7 +2057,28 @@ export class AgentManager extends EventEmitter {
 
   private startNextQueuedMessage(agentId: string): void {
     const agent = this.store.getAgent(agentId);
-    if (!agent || agent.status === 'error' || agent.queuePaused || !agent.queuedMessages?.length) return;
+    if (!agent || agent.queuePaused || !agent.queuedMessages?.length) return;
+
+    if (agent.status === 'error') {
+      const count = (this.queueErrorCount.get(agentId) || 0) + 1;
+      this.queueErrorCount.set(agentId, count);
+      if (count >= 3) {
+        agent.queuePaused = true;
+        agent.messages.push({
+          id: uuid(),
+          role: 'system',
+          content: '[Queue paused] Multiple consecutive errors. Click "Resume queue" to retry.',
+          timestamp: Date.now(),
+        });
+        this.store.saveAgent(agent);
+        this.emit('agent:update', agentId, agent);
+        this.queueErrorCount.delete(agentId);
+        return;
+      }
+    } else {
+      this.queueErrorCount.delete(agentId);
+    }
+
     const next = agent.queuedMessages[0];
     agent.queuedMessages = agent.queuedMessages.slice(1);
     agent.queuePaused = false;
@@ -2008,6 +2116,7 @@ export class AgentManager extends EventEmitter {
     }
     if (this.processes.has(agentId)) return agent;
     agent.queuePaused = false;
+    this.queueErrorCount.delete(agentId);
     if (agent.status === 'error') agent.status = 'stopped';
     this.store.saveAgent(agent);
     this.emit('agent:update', agentId, agent);

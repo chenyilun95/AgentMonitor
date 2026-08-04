@@ -1,8 +1,8 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import ReactMarkdown from 'react-markdown';
-import remarkGfm from 'remark-gfm';
 import { api, type DirListing, type FilePreview } from '../api/client';
 import { resolveImageSource } from '../lib/imageSources';
+import { prepareMarkdown, REMARK_MATH, REHYPE_MATH } from '../lib/markdown';
 
 interface FileBrowserViewProps {
   rootPath: string;
@@ -27,7 +27,9 @@ function dirname(filePath: string): string {
   return idx > 0 ? filePath.slice(0, idx) : '/';
 }
 
-function resolveMarkdownAsset(markdownPath: string, src?: string): string | undefined {
+function resolveMarkdownAsset(markdownPath: string, src?: string, frontmatterOrigin?: string): string | undefined {
+  if (!src) return src;
+  if (frontmatterOrigin && src.startsWith('/')) return frontmatterOrigin + src;
   return resolveImageSource(dirname(markdownPath), src);
 }
 
@@ -43,10 +45,25 @@ export function FileBrowserView({ rootPath, visible, targetFilePath }: FileBrows
     localStorage.getItem('agentmonitor-file-view-mode') === 'raw' ? 'raw' : 'preview',
   );
 
+  const [wikiDir, setWikiDir] = useState<string | null>(null);
+  const [publicPages, setPublicPages] = useState<string[]>([]);
   useEffect(() => {
-    setCurrentPath(rootPath);
-    setPreview(null);
-    setError(null);
+    api.getWikiConfig().then(cfg => {
+      if (cfg.exists) {
+        setWikiDir(cfg.wikiDirectory);
+        api.getWikiPublicPages().then(d => setPublicPages(d.pages)).catch(() => {});
+      }
+    }).catch(() => {});
+  }, []);
+
+  const prevRootRef = useRef(rootPath);
+  useEffect(() => {
+    if (rootPath !== prevRootRef.current) {
+      prevRootRef.current = rootPath;
+      setCurrentPath(rootPath);
+      setPreview(null);
+      setError(null);
+    }
   }, [rootPath]);
 
   const loadDirectory = useCallback(async (dirPath: string) => {
@@ -66,9 +83,13 @@ export function FileBrowserView({ rootPath, visible, targetFilePath }: FileBrows
     }
   }, []);
 
+  const wasVisible = useRef(false);
   useEffect(() => {
-    if (visible) void loadDirectory(currentPath);
-  }, [currentPath, loadDirectory, visible]);
+    if (visible && !wasVisible.current) {
+      void loadDirectory(currentPath);
+    }
+    wasVisible.current = visible;
+  }, [visible, currentPath, loadDirectory]);
 
   const openFile = useCallback(async (filePath: string) => {
     setLoadingFile(true);
@@ -94,6 +115,12 @@ export function FileBrowserView({ rootPath, visible, targetFilePath }: FileBrows
   }, [loadDirectory, openFile, targetFilePath, visible]);
 
   const sortedEntries = useMemo(() => listing?.entries || [], [listing]);
+
+  const { markdownBody, frontmatterOrigin } = useMemo(() => {
+    if (!preview?.isMarkdown) return { markdownBody: '', frontmatterOrigin: undefined };
+    const { body, origin } = prepareMarkdown(preview.content);
+    return { markdownBody: body, frontmatterOrigin: origin };
+  }, [preview?.content, preview?.isMarkdown]);
 
   if (!visible) return null;
 
@@ -128,7 +155,7 @@ export function FileBrowserView({ rootPath, visible, targetFilePath }: FileBrows
               onClick={() => {
                 if (entry.isDirectory) {
                   setPreview(null);
-                  setCurrentPath(entry.path);
+                  void loadDirectory(entry.path);
                 } else {
                   void openFile(entry.path);
                 }
@@ -158,26 +185,61 @@ export function FileBrowserView({ rootPath, visible, targetFilePath }: FileBrows
               <span>Select a Markdown or text file</span>
             )}
           </div>
-          {preview?.isMarkdown && (
+          {preview && (
             <div className="file-preview-actions">
-              <button
-                className={`btn btn-sm ${viewMode === 'preview' ? 'btn-primary' : 'btn-outline'}`}
-                onClick={() => {
-                  setViewMode('preview');
-                  localStorage.setItem('agentmonitor-file-view-mode', 'preview');
-                }}
-              >
-                Preview
-              </button>
-              <button
-                className={`btn btn-sm ${viewMode === 'raw' ? 'btn-primary' : 'btn-outline'}`}
-                onClick={() => {
-                  setViewMode('raw');
-                  localStorage.setItem('agentmonitor-file-view-mode', 'raw');
-                }}
-              >
-                Raw
-              </button>
+              {preview.isMarkdown && (
+                <>
+                  <button
+                    className={`btn btn-sm ${viewMode === 'preview' ? 'btn-primary' : 'btn-outline'}`}
+                    onClick={() => {
+                      setViewMode('preview');
+                      localStorage.setItem('agentmonitor-file-view-mode', 'preview');
+                    }}
+                  >
+                    Preview
+                  </button>
+                  <button
+                    className={`btn btn-sm ${viewMode === 'raw' ? 'btn-primary' : 'btn-outline'}`}
+                    onClick={() => {
+                      setViewMode('raw');
+                      localStorage.setItem('agentmonitor-file-view-mode', 'raw');
+                    }}
+                  >
+                    Raw
+                  </button>
+                </>
+              )}
+              {(() => {
+                if (!wikiDir || !preview.isMarkdown) return null;
+                const wikiSubdir = wikiDir + '/wiki/';
+                if (!preview.path.startsWith(wikiSubdir)) return null;
+                const pageName = preview.path.slice(wikiSubdir.length);
+                if (!pageName.endsWith('.md')) return null;
+                const isPublic = publicPages.includes(pageName);
+                const publicUrl = `/wiki/${pageName.replace(/\.md$/, '')}`;
+                return (
+                  <>
+                    <button
+                      className={`btn btn-sm ${isPublic ? 'wiki-btn-public' : 'btn-outline'}`}
+                      onClick={async () => {
+                        try {
+                          const result = await api.setWikiPagePublic(pageName, !isPublic);
+                          setPublicPages(result.pages);
+                        } catch (err) {
+                          console.error('Failed to toggle public:', err);
+                        }
+                      }}
+                    >
+                      {isPublic ? '公开' : '私有'}
+                    </button>
+                    {isPublic && (
+                      <a href={publicUrl} target="_blank" rel="noopener noreferrer" className="wiki-public-link" title={publicUrl}>
+                        &#128279;
+                      </a>
+                    )}
+                  </>
+                );
+              })()}
             </div>
           )}
         </div>
@@ -189,14 +251,15 @@ export function FileBrowserView({ rootPath, visible, targetFilePath }: FileBrows
             ? (
               <div className="file-preview-markdown">
                 <ReactMarkdown
-                  remarkPlugins={[remarkGfm]}
+                  remarkPlugins={REMARK_MATH}
+                  rehypePlugins={REHYPE_MATH}
                   components={{
                     img: ({ src, alt, title }) => (
-                      <img src={resolveMarkdownAsset(preview.path, src)} alt={alt || ''} title={title} loading="lazy" />
+                      <img src={resolveMarkdownAsset(preview.path, src, frontmatterOrigin)} alt={alt || ''} title={title} loading="lazy" />
                     ),
                   }}
                 >
-                  {preview.content}
+                  {markdownBody}
                 </ReactMarkdown>
               </div>
             )

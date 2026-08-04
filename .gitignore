@@ -12,3 +12,4 @@ server/data/gpu-servers.conf
 .env
 CLAUDE.md
 test-results/
+llm-wiki

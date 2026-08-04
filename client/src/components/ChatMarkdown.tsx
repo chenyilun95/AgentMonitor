@@ -1,10 +1,12 @@
 import { memo } from 'react';
 import ReactMarkdown from 'react-markdown';
-import rehypeKatex from 'rehype-katex';
-import remarkGfm from 'remark-gfm';
-import remarkMath from 'remark-math';
-import 'katex/dist/katex.min.css';
 import { resolveImageSource } from '../lib/imageSources';
+import {
+  hasMath as detectMath,
+  prepareMarkdownForMath,
+  REMARK_PLAIN, REMARK_MATH,
+  REHYPE_PLAIN, REHYPE_MATH,
+} from '../lib/markdown';
 import { resolveWorkspaceMarkdownLink } from '../lib/markdownFileLinks';
 import { ChatImage } from './ChatImage';
 
@@ -15,23 +17,18 @@ interface ChatMarkdownProps {
   onOpenMarkdownFile?: (path: string) => void;
 }
 
-const MATH_PATTERN = /\$\$|\$[^$]|\\\(|\\\[|\\begin\{/;
-const REMARK_PLAIN: any[] = [remarkGfm];
-const REMARK_MATH: any[] = [remarkGfm, remarkMath];
-const REHYPE_PLAIN: any[] = [];
-const REHYPE_MATH: any[] = [rehypeKatex];
-
 export const ChatMarkdown = memo(function ChatMarkdown({
   content,
   workspacePath,
   configuredRoot = workspacePath,
   onOpenMarkdownFile,
 }: ChatMarkdownProps) {
-  const hasMath = MATH_PATTERN.test(content);
+  const mathDetected = detectMath(content);
+  const processed = mathDetected ? prepareMarkdownForMath(content) : content;
   return (
     <ReactMarkdown
-      remarkPlugins={hasMath ? REMARK_MATH : REMARK_PLAIN}
-      rehypePlugins={hasMath ? REHYPE_MATH : REHYPE_PLAIN}
+      remarkPlugins={mathDetected ? REMARK_MATH : REMARK_PLAIN}
+      rehypePlugins={mathDetected ? REHYPE_MATH : REHYPE_PLAIN}
       components={{
         a: ({ href, children, title }) => {
           const markdownPath = resolveWorkspaceMarkdownLink(href, workspacePath, configuredRoot);
@@ -88,7 +85,7 @@ export const ChatMarkdown = memo(function ChatMarkdown({
         },
       }}
     >
-      {content}
+      {processed}
     </ReactMarkdown>
   );
 });

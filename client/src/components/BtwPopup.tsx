@@ -1,6 +1,11 @@
 import type { MutableRefObject } from 'react';
 import ReactMarkdown from 'react-markdown';
-import remarkGfm from 'remark-gfm';
+import {
+  hasMath as detectMath,
+  prepareMarkdownForMath,
+  REMARK_PLAIN, REMARK_MATH,
+  REHYPE_PLAIN, REHYPE_MATH,
+} from '../lib/markdown';
 
 interface BtwState {
   status: 'input' | 'loading' | 'answer';
@@ -61,7 +66,10 @@ export function BtwPopup({ btwState, onClose, onSubmit, btwInputRef, t }: BtwPop
               {btwState.error ? (
                 <span style={{ color: 'var(--danger)' }}>{btwState.error}</span>
               ) : (
-                <ReactMarkdown remarkPlugins={[remarkGfm]}>{btwState.answer || ''}</ReactMarkdown>
+                <ReactMarkdown
+                  remarkPlugins={detectMath(btwState.answer || '') ? REMARK_MATH : REMARK_PLAIN}
+                  rehypePlugins={detectMath(btwState.answer || '') ? REHYPE_MATH : REHYPE_PLAIN}
+                >{prepareMarkdownForMath(btwState.answer || '')}</ReactMarkdown>
               )}
             </div>
             <div style={{ fontSize: 11, color: 'var(--text-muted)', marginTop: 8 }}>Esc {t('common.close')}</div>

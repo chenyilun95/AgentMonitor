@@ -185,7 +185,7 @@
 }
 
 .file-preview-markdown img {
-  max-width: 100%;
+  max-width: min(100%, 480px);
   height: auto;
   display: block;
   margin: 12px 0;
@@ -213,6 +213,18 @@
   background: transparent;
   border: none;
   padding: 0;
+}
+
+.file-preview-markdown .katex-display {
+  margin: 12px 0;
+  overflow-x: auto;
+  overflow-y: hidden;
+  padding: 2px 0;
+}
+
+.file-preview-markdown .katex {
+  white-space: normal;
+  word-break: normal;
 }
 
 .file-preview-raw {

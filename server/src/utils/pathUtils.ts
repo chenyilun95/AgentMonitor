@@ -1,3 +1,4 @@
+import fs from 'fs';
 import os from 'os';
 import path from 'path';
 
@@ -13,7 +14,9 @@ export function expandHomePath(inputPath: string): string {
 
 export function normalizeUserPath(inputPath: string): string {
   const expanded = expandHomePath(inputPath);
-  return expanded ? path.resolve(expanded) : expanded;
+  if (!expanded) return expanded;
+  const resolved = path.resolve(expanded);
+  try { return fs.realpathSync(resolved); } catch { return resolved; }
 }
 
 export function normalizeOptionalUserPath(inputPath: string | undefined): string | undefined {

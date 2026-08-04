@@ -311,11 +311,12 @@ export function AgentChat() {
     // Poll only as a fallback for an active conversation with a stale socket.
     // Stopped chats can have large histories and should stay completely idle.
     const pollInterval = setInterval(() => {
-      const status = agentRef.current?.status;
-      const active = status === 'running' || status === 'waiting_input';
+      const cur = agentRef.current;
+      const active = cur?.status === 'running' || cur?.status === 'waiting_input';
+      const hasQueue = (cur?.queuedMessages?.length || 0) > 0;
       const visible = document.visibilityState === 'visible';
       const socketStale = !socket.connected || Date.now() - lastSocketActivityAt > 15_000;
-      if (active && visible && socketStale) fetchAgent();
+      if ((active || hasQueue) && visible && socketStale) fetchAgent();
     }, 10_000);
 
     return () => {
@@ -335,8 +336,11 @@ export function AgentChat() {
   }, []);
 
   const scrollToEarliestMessage = useCallback(() => {
+    if (agentRef.current?.messagePage?.hasMore && !loadingEarlierMessages) {
+      void loadEarlierMessages();
+    }
     virtuosoRef.current?.scrollToIndex({ index: 0, behavior: 'smooth' });
-  }, []);
+  }, [loadingEarlierMessages, loadEarlierMessages]);
 
   const handleToggleExpand = useCallback((msgId: string) => {
     setExpandedTools(prev => {
@@ -670,7 +674,6 @@ export function AgentChat() {
     setInput('');
     setAttachedFiles([]);
     setInputRequired(null);
-
     const queueMessageId = `client-${Date.now()}-${Math.random().toString(36).slice(2)}`;
     const expectQueue = agentRef.current?.status === 'running';
     if (expectQueue) {
@@ -852,6 +855,32 @@ export function AgentChat() {
       : [],
     [agent?.messages, localMessages],
   );
+
+  const [visibleStartIndex, setVisibleStartIndex] = useState(0);
+
+  const firstItemIndex = Math.max(0, (agent?.messagePage?.total ?? displayMessages.length) - displayMessages.length);
+
+  const stickyUserMessageInfo = useMemo(() => {
+    const arrayStart = Math.min(
+      Math.max(0, visibleStartIndex - firstItemIndex),
+      displayMessages.length - 1,
+    );
+    for (let i = arrayStart; i >= 0; i--) {
+      if (displayMessages[i].role === 'user') {
+        if (i < arrayStart && i < displayMessages.length - 1) {
+          return { index: i, content: displayMessages[i].content };
+        }
+        return null;
+      }
+    }
+    return null;
+  }, [displayMessages, visibleStartIndex, firstItemIndex]);
+
+  const handleStickyInputClick = useCallback(() => {
+    if (stickyUserMessageInfo) {
+      virtuosoRef.current?.scrollToIndex({ index: stickyUserMessageInfo.index + firstItemIndex, align: 'start', behavior: 'smooth' });
+    }
+  }, [stickyUserMessageInfo, firstItemIndex]);
 
   const workspacePath = agent?.worktreePath || agent?.config.directory || '';
 
@@ -1109,9 +1138,11 @@ export function AgentChat() {
           className="chat-messages"
           style={{ height: 'auto', flex: 1, minHeight: 0 }}
           data={displayMessages}
+          firstItemIndex={firstItemIndex}
           initialTopMostItemIndex={Math.max(0, displayMessages.length - 1)}
           followOutput={(isAtBottom) => isAtBottom ? 'smooth' : false}
           atBottomStateChange={setAtBottom}
+          rangeChanged={({ startIndex }) => setVisibleStartIndex(startIndex)}
           startReached={handleStartReached}
           overscan={200}
           increaseViewportBy={200}
@@ -1166,6 +1197,17 @@ export function AgentChat() {
             ),
           }}
         />
+        {stickyUserMessageInfo && (
+          <div
+            className="chat-message user chat-sticky-user-message"
+            onClick={handleStickyInputClick}
+            role="button"
+            tabIndex={0}
+            title={t('chat.jumpToInput')}
+          >
+            {stickyUserMessageInfo.content}
+          </div>
+        )}
         {agent.messagePage?.hasMore && (
           <button
             className="chat-scroll-fab chat-scroll-fab-top"

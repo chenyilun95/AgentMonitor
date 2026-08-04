@@ -6,4 +6,5 @@ export interface ServerSettings {
   pathHistory: Record<string, string[]>;
   deleteSessionFilesPolicy: DeleteSessionFilesPolicy;
   opencliTemplateSeeded?: boolean;
+  wikiDirectory?: string;
 }

@@ -155,6 +155,8 @@ export const en: Record<string, string> = {
     'chat.noHistory': 'No conversation history.',
     'chat.loadEarlier': 'Load earlier messages',
     'chat.jumpToLatest': 'Jump to bottom',
+    'chat.jumpToInput': 'Click to scroll to this input',
+    'chat.currentInput': 'Current input',
     'chat.messageCount': '{{loaded}} of {{total}} messages',
     'chat.restoreTitle': 'Restore to this turn?',
     'chat.restoreCodeAndConv': 'Restore code and conversation',
@@ -394,6 +396,34 @@ export const en: Record<string, string> = {
 
     // Nav (additions)
     'nav.servers': 'GPU Servers',
+
+    // Wiki
+    'nav.wiki': 'Wiki',
+    'wiki.title': 'Knowledge Wiki',
+    'wiki.addSource': 'Add Source',
+    'wiki.sourcePlaceholder': 'Enter URL, topic name, or paper title...',
+    'wiki.processing': 'Creating agent...',
+    'wiki.empty': 'No wiki agents yet. Add a source to get started.',
+    'wiki.pages': 'Wiki Pages',
+    'wiki.sources': 'Raw Sources',
+    'wiki.noPages': 'No wiki pages yet.',
+    'wiki.noSources': 'No raw sources yet.',
+    'wiki.agentLabel': 'wiki',
+    'wiki.notConfigured': 'Wiki directory not found. Set the wiki directory path in settings.',
+    'wiki.configDir': 'Wiki Directory',
+    'wiki.configDirPlaceholder': '~/rep/llm-wiki',
+    'wiki.viewPage': 'View',
+    'wiki.syncRepo': 'Sync',
+    'wiki.settings': 'Settings',
+    'wiki.tabAgents': 'Agents',
+    'wiki.tabPages': 'Pages',
+    'wiki.tabSources': 'Sources',
+    'wiki.files': 'Files',
+    'wiki.public': 'Public',
+    'wiki.private': 'Private',
+    'wiki.publish': 'Publish this page',
+    'wiki.unpublish': 'Unpublish this page',
+    'wiki.openPublic': 'Open public link',
 
     // GPU Monitor
     'gpu.title': 'GPU Monitor',

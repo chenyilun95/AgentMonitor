@@ -3,6 +3,7 @@ import { Routes, Route, Link, useLocation } from 'react-router-dom';
 import { Login } from './pages/Login';
 import { useAuth } from './hooks/useAuth';
 import { LanguageProvider, useTranslation } from './i18n';
+import { api } from './api/client';
 
 class ErrorBoundary extends Component<{ children: ReactNode }, { error: Error | null }> {
   state: { error: Error | null } = { error: null };
@@ -30,11 +31,40 @@ const Skills = lazy(() => import('./pages/Skills').then(module => ({ default: mo
 const Pipeline = lazy(() => import('./pages/Pipeline').then(module => ({ default: module.Pipeline })));
 const GpuMonitor = lazy(() => import('./pages/GpuMonitor').then(module => ({ default: module.GpuMonitor })));
 const DirectoryBrowser = lazy(() => import('./pages/DirectoryBrowser').then(module => ({ default: module.DirectoryBrowser })));
+const Wiki = lazy(() => import('./pages/Wiki').then(module => ({ default: module.Wiki })));
 
 function NavBar({ onLogout }: { onLogout?: () => void }) {
   const location = useLocation();
   const { t } = useTranslation();
   const [theme, setTheme] = useState(() => localStorage.getItem('agentmonitor-theme') || 'light');
+  const [wikiInput, setWikiInput] = useState('');
+  const [wikiCreating, setWikiCreating] = useState(false);
+  const [wikiDir, setWikiDir] = useState<string | null>(null);
+
+  useEffect(() => {
+    api.getWikiConfig().then(c => { if (c.exists) setWikiDir(c.wikiDirectory); }).catch(() => {});
+  }, []);
+
+  const handleWikiAdd = async () => {
+    const source = wikiInput.trim();
+    if (!source || !wikiDir) return;
+    setWikiCreating(true);
+    try {
+      const slug = source.replace(/^https?:\/\//, '').replace(/[^a-zA-Z0-9一-鿿]+/g, '-').replace(/^-|-$/g, '').slice(0, 40);
+      await api.createAgent({
+        name: `wiki-${slug || 'source'}`,
+        directory: wikiDir,
+        prompt: source,
+        workspaceMode: 'direct' as const,
+        labels: { type: 'wiki', source },
+      });
+      setWikiInput('');
+    } catch (err) {
+      console.error('Failed to create wiki agent:', err);
+    } finally {
+      setWikiCreating(false);
+    }
+  };
 
   return (
     <nav className="nav">
@@ -52,10 +82,27 @@ function NavBar({ onLogout }: { onLogout?: () => void }) {
         <Link to="/skills" className={location.pathname === '/skills' ? 'active' : ''}>
           {t('nav.skills')}
         </Link>
+        <Link to="/wiki" className={location.pathname === '/wiki' ? 'active' : ''}>
+          {t('nav.wiki')}
+        </Link>
         <Link to="/servers" className={location.pathname === '/servers' ? 'active' : ''}>
           {t('nav.servers')}
         </Link>
       </div>
+      {wikiDir && (
+        <div className="nav-wiki-search">
+          <input
+            value={wikiInput}
+            onChange={e => setWikiInput(e.target.value)}
+            placeholder={t('wiki.sourcePlaceholder')}
+            onKeyDown={e => { if (e.key === 'Enter' && wikiInput.trim()) handleWikiAdd(); }}
+            disabled={wikiCreating}
+          />
+          <button className="btn btn-sm" onClick={handleWikiAdd} disabled={!wikiInput.trim() || wikiCreating}>
+            {wikiCreating ? '...' : '+'}
+          </button>
+        </div>
+      )}
       <button
         className="nav-control"
         onClick={() => {
@@ -66,7 +113,7 @@ function NavBar({ onLogout }: { onLogout?: () => void }) {
         }}
         title={t('nav.theme')}
       >
-        {theme === 'light' ? '\u263D' : '\u2600'}
+        {theme === 'light' ? '☽' : '☀'}
       </button>
       {onLogout && (
         <button
@@ -107,6 +154,7 @@ function AuthenticatedApp() {
               <Route path="/browse" element={<DirectoryBrowser />} />
               <Route path="/templates" element={<Templates />} />
               <Route path="/skills" element={<Skills />} />
+              <Route path="/wiki" element={<Wiki />} />
             </Routes>
           </Suspense>
         </ErrorBoundary>
