@@ -156,8 +156,9 @@ export function Dashboard() {
   const executeDelete = async (
     id: string,
     purgeSessionFiles: boolean,
+    force?: boolean,
   ) => {
-    await api.deleteAgent(id, { purgeSessionFiles });
+    await api.deleteAgent(id, { purgeSessionFiles, force });
     fetchAgents();
   };
 
@@ -184,7 +185,7 @@ export function Dashboard() {
     }
   };
 
-  const handleDeleteConfirm = async () => {
+  const handleDeleteConfirm = async (force?: boolean) => {
     if (!deleteDialog) return;
     const shouldPurge = deleteDialog.canPurge && deleteDialog.purgeSessionFiles;
     if (deleteDialog.dontAskAgain && shouldPurge) {
@@ -196,6 +197,7 @@ export function Dashboard() {
       await executeDelete(
         deleteDialog.agentId,
         shouldPurge,
+        force,
       );
       setDeleteDialog(null);
     } catch (err) {
@@ -1091,13 +1093,21 @@ export function Dashboard() {
               <button className="btn btn-outline" onClick={() => setDeleteDialog(null)}>
                 {t('common.cancel')}
               </button>
-              <button
-                className="btn btn-danger"
-                disabled={deleteDialog.hasUnintegratedChanges}
-                onClick={handleDeleteConfirm}
-              >
-                {t('dashboard.deleteConfirmAction')}
-              </button>
+              {deleteDialog.hasUnintegratedChanges ? (
+                <button
+                  className="btn btn-danger"
+                  onClick={() => handleDeleteConfirm(true)}
+                >
+                  {t('dashboard.forceDeleteAction')}
+                </button>
+              ) : (
+                <button
+                  className="btn btn-danger"
+                  onClick={() => handleDeleteConfirm()}
+                >
+                  {t('dashboard.deleteConfirmAction')}
+                </button>
+              )}
             </div>
           </div>
         </div>

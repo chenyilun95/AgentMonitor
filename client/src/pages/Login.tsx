@@ -1,5 +1,5 @@
 import { useState, FormEvent } from 'react';
-import { useNavigate } from 'react-router-dom';
+import { useNavigate, useLocation } from 'react-router-dom';
 import { withAppBasePath } from '../lib/basePath';
 
 export function Login() {
@@ -7,6 +7,9 @@ export function Login() {
   const [error, setError] = useState('');
   const [loading, setLoading] = useState(false);
   const navigate = useNavigate();
+  const location = useLocation();
+
+  const returnTo = new URLSearchParams(location.search).get('returnTo') || '/';
 
   async function handleSubmit(e: FormEvent) {
     e.preventDefault();
@@ -20,7 +23,7 @@ export function Login() {
         body: JSON.stringify({ password }),
       });
       if (res.ok) {
-        navigate('/');
+        navigate(returnTo, { replace: true });
       } else {
         setError('Invalid password');
       }

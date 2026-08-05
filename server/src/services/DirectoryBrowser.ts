@@ -40,6 +40,10 @@ const PREVIEWABLE_ASSET_EXTENSIONS = new Set([
   '.png',
   '.svg',
   '.webp',
+  '.mp4',
+  '.webm',
+  '.mov',
+  '.ogg',
 ]);
 
 export interface DirEntry {

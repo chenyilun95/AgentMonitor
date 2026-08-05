@@ -181,18 +181,34 @@ export function wikiRoutes(store: AgentStore): Router {
  * Public (no-auth) routes for serving wiki pages as standalone HTML.
  * Mounted at /wiki/* BEFORE auth middleware.
  */
-const WIKI_ASSET_EXTENSIONS = new Set(['.jpg', '.jpeg', '.png', '.gif', '.svg', '.webp', '.bmp', '.ico']);
+const WIKI_ASSET_EXTENSIONS = new Set([
+  '.jpg', '.jpeg', '.png', '.gif', '.svg', '.webp', '.bmp', '.ico',
+  '.mp4', '.webm', '.mov', '.ogg',
+]);
 
-function rewriteImagePaths(markdown: string, pageDir: string): string {
-  return markdown.replace(
+function rewriteAssetUrl(rawUrl: string, pageDir: string): string {
+  if (/^(https?:|data:|blob:|\/wiki\/)/i.test(rawUrl)) return rawUrl;
+  const resolved = path.posix.normalize(path.posix.join(pageDir, rawUrl));
+  const encoded = resolved.split('/').map(s => encodeURIComponent(s)).join('/');
+  return `/wiki/_assets/${encoded}`;
+}
+
+function rewriteMediaPaths(markdown: string, pageDir: string): string {
+  let result = markdown.replace(
     /!\[([^\]]*)\]\(([^)]+)\)/g,
     (match, alt: string, rawUrl: string) => {
-      if (/^(https?:|data:|blob:)/i.test(rawUrl)) return match;
-      const resolved = path.posix.normalize(path.posix.join(pageDir, rawUrl));
-      const encoded = resolved.split('/').map(s => encodeURIComponent(s)).join('/');
-      return `![${alt}](/wiki/_assets/${encoded})`;
+      const rewritten = rewriteAssetUrl(rawUrl, pageDir);
+      return rewritten === rawUrl ? match : `![${alt}](${rewritten})`;
     },
   );
+  result = result.replace(
+    /(<(?:video|img|source)\b[^>]*\s)src=(["'])([^"']+)\2/gi,
+    (match, before: string, quote: string, rawUrl: string) => {
+      const rewritten = rewriteAssetUrl(rawUrl, pageDir);
+      return rewritten === rawUrl ? match : `${before}src=${quote}${rewritten}${quote}`;
+    },
+  );
+  return result;
 }
 
 export function publicWikiRoutes(store: AgentStore): Router {
@@ -204,6 +220,7 @@ export function publicWikiRoutes(store: AgentStore): Router {
     const ext = path.extname(assetPath).toLowerCase();
     if (!WIKI_ASSET_EXTENSIONS.has(ext)) { res.status(403).send('Forbidden file type'); return; }
     const wikiDir = resolveWikiPath(store);
+
     const filePath = path.resolve(wikiDir, assetPath);
     if (!filePath.startsWith(path.resolve(wikiDir))) { res.status(400).send('Invalid path'); return; }
     if (!fs.existsSync(filePath)) { res.status(404).send('Not found'); return; }
@@ -220,9 +237,9 @@ export function publicWikiRoutes(store: AgentStore): Router {
       if (!host.includes('yilunchen.com')) { next(); return; }
 
       const items = publicPages.map(p => {
-        const display = p.replace(/\.md$/, '');
-        const href = `/wiki/${display}`;
-        return `<li><a href="${href}">${display}</a></li>`;
+        const slug = path.posix.basename(p, '.md');
+        const href = `/wiki/${slug}`;
+        return `<li><a href="${href}">${slug}</a></li>`;
       }).join('\n');
 
       res.send(`<!DOCTYPE html>
@@ -254,10 +271,10 @@ export function publicWikiRoutes(store: AgentStore): Router {
     }
 
     const wikiBase = path.join(wikiDir, 'wiki');
-    let pagePath = rawPath;
-    if (!pagePath.endsWith('.md')) pagePath += '.md';
+    const slug = rawPath.replace(/\.md$/, '');
+    const pagePath = publicPages.find(p => path.posix.basename(p, '.md') === slug);
 
-    if (!publicPages.includes(pagePath)) {
+    if (!pagePath) {
       next();
       return;
     }
@@ -280,9 +297,9 @@ export function publicWikiRoutes(store: AgentStore): Router {
     markdown = markdown.replace(/^---\r?\n[\s\S]*?\r?\n---\r?\n?/, '');
 
     const pageDir = path.posix.dirname('wiki/' + pagePath);
-    markdown = rewriteImagePaths(markdown, pageDir);
+    markdown = rewriteMediaPaths(markdown, pageDir);
 
-    const title = pagePath.replace(/\.md$/, '').split('/').pop() || 'Wiki';
+    const title = slug || 'Wiki';
 
     res.send(`<!DOCTYPE html>
 <html lang="zh-CN">

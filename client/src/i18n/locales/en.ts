@@ -89,11 +89,12 @@ export const en: Record<string, string> = {
     'dashboard.deleteConfirmWorktree': 'The entire worktree directory will be deleted:',
     'dashboard.deleteConfirmBranch': 'The Agent branch will also be deleted:',
     'dashboard.deleteConfirmWorkspaceWarning': 'The directory and branch are permanently removed only when the Worktree is clean and its Agent branch is merged into the base branch. Failed verification keeps everything.',
-    'dashboard.deleteBlockedUnintegrated': 'Uncommitted files or unmerged commits were detected, so deletion was stopped. Use “Merge & Delete” first.',
+    'dashboard.deleteBlockedUnintegrated': 'Uncommitted files or unmerged commits were detected. You can force-delete to discard them.',
     'dashboard.deleteConfirmPurge': 'Also purge the original CLI session file(s)',
     'dashboard.deleteConfirmNoSession': 'No sessionId found for this agent, so no session file can be purged.',
     'dashboard.deleteConfirmDontAsk': 'Do not ask again (save as default behavior)',
     'dashboard.deleteConfirmAction': 'Delete',
+    'dashboard.forceDeleteAction': 'Force Delete',
 
     // Create Agent
     'create.title': 'Create Agent',

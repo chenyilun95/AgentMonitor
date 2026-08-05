@@ -65,16 +65,24 @@
   text-align: left;
 }
 
-.file-browser-entry:hover,
+.file-browser-entry:hover {
+  background: var(--bg-tertiary);
+}
+
 .file-browser-entry.selected {
   background: var(--bg-tertiary);
+  box-shadow: inset 3px 0 0 var(--primary);
 }
 
 .file-browser-entry.directory {
   font-weight: 600;
 }
 
-.file-browser-entry-icon,
+.file-browser-entry-icon {
+  font-size: 14px;
+  line-height: 1;
+}
+
 .file-browser-entry-meta {
   color: var(--text-muted);
   font-size: 11px;
@@ -128,7 +136,16 @@
 }
 
 .file-preview-markdown {
-  line-height: 1.6;
+  line-height: 1.7;
+  font-size: 14.5px;
+}
+
+.file-preview-markdown video {
+  max-width: 100%;
+  height: auto;
+  display: block;
+  margin: 12px 0;
+  border-radius: var(--radius);
 }
 
 .file-preview-markdown > :first-child {
@@ -279,6 +296,70 @@
   text-overflow: ellipsis;
   white-space: nowrap;
   min-width: 0;
+}
+
+/* --- Reader Mode --- */
+.file-reader-overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 90;
+  background: var(--bg);
+  display: flex;
+  flex-direction: column;
+  animation: overlayIn 0.2s ease;
+}
+
+.file-reader-topbar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 10px 24px;
+  border-bottom: 1px solid var(--border);
+  background: var(--bg-card);
+  flex-shrink: 0;
+  gap: 12px;
+}
+
+.file-reader-title {
+  font-size: 15px;
+  font-weight: 600;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  min-width: 0;
+}
+
+.file-reader-actions {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-shrink: 0;
+}
+
+.file-reader-scroll {
+  flex: 1;
+  overflow: auto;
+  padding: 40px 24px;
+}
+
+.file-reader-content {
+  max-width: 720px;
+  margin: 0 auto;
+  font-size: 16px;
+  line-height: 1.8;
+}
+
+.file-reader-content img {
+  max-width: 100%;
+}
+
+@media (max-width: 760px) {
+  .file-reader-scroll {
+    padding: 20px 16px;
+  }
+  .file-reader-topbar {
+    padding: 10px 16px;
+  }
 }
 
 /* --- Modal --- */

@@ -50,6 +50,7 @@ export class AgentWorkspaceError extends Error {}
 
 interface DeleteAgentOptions {
   purgeSessionFiles?: boolean;
+  force?: boolean;
 }
 
 export interface RestoreConversationResult {
@@ -2317,7 +2318,7 @@ export class AgentManager extends EventEmitter {
       const hasUnsafeChanges = inspectWorktreeChanges(agent.worktreeBranch, agent.baseBranch);
       agent.hasUnintegratedChanges = hasUnsafeChanges || undefined;
       this.store.saveAgent(agent);
-      if (hasUnsafeChanges) {
+      if (hasUnsafeChanges && !opts.force) {
         throw new AgentWorkspaceError(
           'This Worktree has uncommitted files or commits that are not merged into the base branch. Integrate the changes first; the Agent, directory, and branch were kept.',
         );
@@ -2326,7 +2327,8 @@ export class AgentManager extends EventEmitter {
 
     await this.stopAgent(agentId);
     if (
-      agent.workspaceMode === 'worktree'
+      !opts.force
+      && agent.workspaceMode === 'worktree'
       && agent.worktreeBranch
       && agent.baseBranch
       && inspectWorktreeChanges(agent.worktreeBranch, agent.baseBranch)

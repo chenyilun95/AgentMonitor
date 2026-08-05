@@ -83,7 +83,9 @@ async function request<T>(path: string, opts?: RequestInit): Promise<T> {
   });
   if (!res.ok) {
     if (res.status === 401 && !path.startsWith('/auth/')) {
-      window.location.href = withAppBasePath('/login');
+      const returnTo = window.location.pathname + window.location.search;
+      const qs = returnTo && returnTo !== '/' ? `?returnTo=${encodeURIComponent(returnTo)}` : '';
+      window.location.href = withAppBasePath(`/login${qs}`);
       throw new Error('Authentication required');
     }
     const body = await res.json().catch(() => ({}));
@@ -102,7 +104,9 @@ async function uploadFile<T>(path: string, file: File, fieldName: string): Promi
   });
   if (!res.ok) {
     if (res.status === 401) {
-      window.location.href = withAppBasePath('/login');
+      const returnTo = window.location.pathname + window.location.search;
+      const qs = returnTo && returnTo !== '/' ? `?returnTo=${encodeURIComponent(returnTo)}` : '';
+      window.location.href = withAppBasePath(`/login${qs}`);
       throw new Error('Authentication required');
     }
     const body = await res.json().catch(() => ({}));
@@ -131,7 +135,7 @@ export const api = {
     request('/agents/' + id + '/stop', { method: 'POST' }),
   stopAllAgents: () =>
     request('/agents/actions/stop-all', { method: 'POST' }),
-  deleteAgent: (id: string, opts?: { purgeSessionFiles?: boolean }) =>
+  deleteAgent: (id: string, opts?: { purgeSessionFiles?: boolean; force?: boolean }) =>
     request('/agents/' + id, {
       method: 'DELETE',
       body: opts ? JSON.stringify(opts) : undefined,

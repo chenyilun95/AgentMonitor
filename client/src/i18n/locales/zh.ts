@@ -89,11 +89,12 @@ export const zh: Record<string, string> = {
     'dashboard.deleteConfirmWorktree': '将删除整个 worktree 目录：',
     'dashboard.deleteConfirmBranch': '同时删除 Agent 分支：',
     'dashboard.deleteConfirmWorkspaceWarning': '仅当 Worktree 干净且 Agent 分支已合并到基础分支时，才会永久删除目录和分支；校验失败会保留全部内容。',
-    'dashboard.deleteBlockedUnintegrated': '检测到未提交文件或尚未合并的提交，已中止删除。请先使用“合并并删除”。',
+    'dashboard.deleteBlockedUnintegrated': '检测到未提交文件或尚未合并的提交，可以强制删除以丢弃这些更改。',
     'dashboard.deleteConfirmPurge': '同时清理原始 CLI 会话文件',
     'dashboard.deleteConfirmNoSession': '该代理没有 sessionId，无法清理会话文件。',
     'dashboard.deleteConfirmDontAsk': '不再提示（保存为默认行为）',
     'dashboard.deleteConfirmAction': '删除',
+    'dashboard.forceDeleteAction': '强制删除',
 
     // Create Agent
     'create.title': '创建代理',
