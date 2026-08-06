@@ -11,8 +11,8 @@ import time
 from pathlib import Path
 
 
-DEFAULT_FFMPEG = "/opt/homebrew/bin/ffmpeg"
-DEFAULT_FFPROBE = "/opt/homebrew/bin/ffprobe"
+DEFAULT_FFMPEG = shutil.which("ffmpeg") or "ffmpeg"
+DEFAULT_FFPROBE = shutil.which("ffprobe") or "ffprobe"
 
 
 def safe_name(value: str) -> str:
@@ -203,7 +203,7 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--note-id", default="")
     parser.add_argument("--source-url", default="")
     parser.add_argument("--source-provider", default="")
-    parser.add_argument("--raw-root", type=Path, default=Path("~/rep/llm-wiki/raw"))
+    parser.add_argument("--raw-root", type=Path, default=Path("./raw"))
     parser.add_argument("--output-dir", type=Path)
     parser.add_argument("--temp-dir")
     parser.add_argument("--keep-chunks", action="store_true")

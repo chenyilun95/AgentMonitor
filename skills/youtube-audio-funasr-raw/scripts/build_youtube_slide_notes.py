@@ -10,8 +10,23 @@ import subprocess
 from pathlib import Path
 
 
-DEFAULT_YTDLP = "/Users/ylchen/tmp/youtube-raw-venv/bin/yt-dlp"
-DEFAULT_CHROME = "/Applications/Google Chrome.app/Contents/MacOS/Google Chrome"
+DEFAULT_YTDLP = shutil.which("yt-dlp") or "yt-dlp"
+
+
+def _find_chrome() -> str:
+    import sys
+    if sys.platform == "darwin":
+        mac = "/Applications/Google Chrome.app/Contents/MacOS/Google Chrome"
+        if Path(mac).exists():
+            return mac
+    for name in ("google-chrome", "google-chrome-stable", "chromium-browser", "chromium"):
+        found = shutil.which(name)
+        if found:
+            return found
+    return "google-chrome"
+
+
+DEFAULT_CHROME = _find_chrome()
 
 
 def run(cmd: list[str]) -> None:

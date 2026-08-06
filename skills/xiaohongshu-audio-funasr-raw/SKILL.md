@@ -39,27 +39,17 @@ For a quick test, add `--audio-seconds 60` to only extract the first 60 seconds.
 
 ```bash
 TITLE="中文标题"
-mkdir -p ~/rep/llm_wiki/raw/assets/"$TITLE"
-mkdir -p ~/rep/llm_wiki/raw/xiaohongshu/"$TITLE"
-cp /tmp/xhs-greenvideo/video.mp4 ~/rep/llm_wiki/raw/assets/"$TITLE"/video-01.mp4
-cp /tmp/xhs-greenvideo/audio.m4a ~/rep/llm_wiki/raw/xiaohongshu/"$TITLE"/audio.m4a
+mkdir -p ~/rep/llm-wiki/raw/assets/"$TITLE"
+mkdir -p ~/rep/llm-wiki/raw/xiaohongshu/"$TITLE"
+cp /tmp/xhs-greenvideo/video.mp4 ~/rep/llm-wiki/raw/assets/"$TITLE"/video-01.mp4
+cp /tmp/xhs-greenvideo/audio.m4a ~/rep/llm-wiki/raw/xiaohongshu/"$TITLE"/audio.m4a
 ```
 
 ## Step 2: Transcribe with FunASR
 
 ```bash
-# Linux
-/home/yilunchen/.venvs/funasr/bin/python \
-  ~/.codex/skills/xiaohongshu-audio-funasr-raw/scripts/transcribe_xhs_audio_to_raw.py \
-  --audio ~/rep/llm_wiki/raw/xiaohongshu/"$TITLE"/audio.m4a \
-  --title "$TITLE" \
-  --note-id NOTE_ID \
-  --source-url 'https://www.xiaohongshu.com/explore/NOTE_ID?...' \
-  --source-provider greenvideo \
-  --raw-root ~/rep/llm_wiki/raw
-
-# macOS
-/Users/ylchen/tmp/funasr-venv/bin/python \
+# Use the FunASR venv python (activate venv or use full path)
+python3 \
   ~/.codex/skills/xiaohongshu-audio-funasr-raw/scripts/transcribe_xhs_audio_to_raw.py \
   --audio ~/rep/llm-wiki/raw/xiaohongshu/"$TITLE"/audio.m4a \
   --title "$TITLE" \
@@ -82,10 +72,10 @@ Output in `raw/xiaohongshu/<title>/`:
 Extract one frame every 60 seconds from the downloaded video:
 
 ```bash
-mkdir -p ~/rep/llm_wiki/raw/xiaohongshu/"$TITLE"/frames
-ffmpeg -y -i ~/rep/llm_wiki/raw/assets/"$TITLE"/video-01.mp4 \
+mkdir -p ~/rep/llm-wiki/raw/xiaohongshu/"$TITLE"/frames
+ffmpeg -y -i ~/rep/llm-wiki/raw/assets/"$TITLE"/video-01.mp4 \
   -vf "fps=1/60,scale=1280:-1" -q:v 3 \
-  ~/rep/llm_wiki/raw/xiaohongshu/"$TITLE"/frames/slide_%02d.jpg
+  ~/rep/llm-wiki/raw/xiaohongshu/"$TITLE"/frames/slide_%02d.jpg
 ```
 
 This produces `slide_01.jpg`, `slide_02.jpg`, ... (one per minute of video). Adjust `fps=1/60` for different intervals:
@@ -138,23 +128,13 @@ Key guidelines:
 
 After creating wiki doc, add an entry to `wiki/index.md` under the appropriate section.
 
-## Platform-Specific Defaults
+## Dependencies
 
-### Linux
-- Python/FunASR: `/home/yilunchen/.venvs/funasr/bin/python`
-- ffmpeg/ffprobe: system PATH (no prefix needed)
-- Repo root: `~/rep/llm_wiki`
-
-### macOS
-- Python/FunASR: `/Users/ylchen/tmp/funasr-venv/bin/python`
-- ffmpeg: `/opt/homebrew/bin/ffmpeg`
-- ffprobe: `/opt/homebrew/bin/ffprobe`
-- Repo root: `~/rep/llm-wiki`
-
-### Common
+All tools must be available in `PATH`:
+- `ffmpeg` / `ffprobe`: media processing
+- Python 3.10+ with FunASR venv (activate before running transcription scripts)
 - GreenVideo resolver: `https://greenvideo.cc/xiaohongshu`
-- ASR model: `iic/SenseVoiceSmall`
-- VAD model: `fsmn-vad`
+- ASR model: `iic/SenseVoiceSmall`, VAD model: `fsmn-vad`
 - Output namespace: `raw/xiaohongshu/<safe-title>/`
 - Chunk size: `600` seconds
 
@@ -188,10 +168,10 @@ Key options for `transcribe_xhs_audio_to_raw.py`:
 After transcription:
 
 ```bash
-ls -lh ~/rep/llm_wiki/raw/xiaohongshu/"$TITLE"
-ls -lh ~/rep/llm_wiki/raw/xiaohongshu/"$TITLE"/frames/
-wc -m ~/rep/llm_wiki/raw/xiaohongshu/"$TITLE"/transcript.txt
-head -80 ~/rep/llm_wiki/raw/xiaohongshu/"$TITLE"/transcript.md
+ls -lh ~/rep/llm-wiki/raw/xiaohongshu/"$TITLE"
+ls -lh ~/rep/llm-wiki/raw/xiaohongshu/"$TITLE"/frames/
+wc -m ~/rep/llm-wiki/raw/xiaohongshu/"$TITLE"/transcript.txt
+head -80 ~/rep/llm-wiki/raw/xiaohongshu/"$TITLE"/transcript.md
 ```
 
 SenseVoice common ASR errors in embodied AI domain:

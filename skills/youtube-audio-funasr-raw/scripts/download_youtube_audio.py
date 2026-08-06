@@ -11,8 +11,8 @@ from pathlib import Path
 from urllib.parse import parse_qs, urlparse
 
 
-DEFAULT_FFMPEG = "/opt/homebrew/bin/ffmpeg"
-DEFAULT_YTDLP = "/Users/ylchen/tmp/youtube-raw-venv/bin/yt-dlp"
+DEFAULT_FFMPEG = shutil.which("ffmpeg") or "ffmpeg"
+DEFAULT_YTDLP = shutil.which("yt-dlp") or "yt-dlp"
 
 
 def infer_video_id(url: str) -> str:

@@ -412,7 +412,7 @@ export const en: Record<string, string> = {
     'wiki.agentLabel': 'wiki',
     'wiki.notConfigured': 'Wiki directory not found. Set the wiki directory path in settings.',
     'wiki.configDir': 'Wiki Directory',
-    'wiki.configDirPlaceholder': '~/rep/llm-wiki',
+    'wiki.configDirPlaceholder': '~/llm-wiki',
     'wiki.viewPage': 'View',
     'wiki.syncRepo': 'Sync',
     'wiki.settings': 'Settings',
@@ -425,6 +425,8 @@ export const en: Record<string, string> = {
     'wiki.publish': 'Publish this page',
     'wiki.unpublish': 'Unpublish this page',
     'wiki.openPublic': 'Open public link',
+    'wiki.tabPublic': 'Public Pages',
+    'wiki.noPublicPages': 'No public pages yet.',
 
     // GPU Monitor
     'gpu.title': 'GPU Monitor',

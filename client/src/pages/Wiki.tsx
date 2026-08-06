@@ -12,9 +12,11 @@ export function Wiki() {
   const [agents, setAgents] = useState<Agent[]>([]);
   const [loading, setLoading] = useState(true);
   const [wikiConfig, setWikiConfig] = useState<{ wikiDirectory: string; exists: boolean } | null>(null);
-  const [activeTab, setActiveTab] = useState<'agents' | 'files'>('agents');
+  const [activeTab, setActiveTab] = useState<'agents' | 'files' | 'public'>('agents');
   const [showSettings, setShowSettings] = useState(false);
   const [configDir, setConfigDir] = useState('');
+  const [wikiPages, setWikiPages] = useState<{ name: string; path: string; updated?: string }[]>([]);
+  const [publicPages, setPublicPages] = useState<string[]>([]);
   const navigate = useNavigate();
   const { t } = useTranslation();
 
@@ -28,6 +30,14 @@ export function Wiki() {
       setAgents(wikiAgents);
       setWikiConfig(configData);
       setConfigDir(configData.wikiDirectory);
+      if (configData.exists) {
+        const [pagesData, publicData] = await Promise.all([
+          api.getWikiPages(),
+          api.getWikiPublicPages(),
+        ]);
+        setWikiPages(pagesData.pages);
+        setPublicPages(publicData.pages);
+      }
     } catch (err) {
       console.error('Failed to fetch wiki data:', err);
     } finally {
@@ -148,6 +158,13 @@ export function Wiki() {
             >
               {t('dashboard.files')}
             </button>
+            <button
+              className={`wiki-tab ${activeTab === 'public' ? 'active' : ''}`}
+              onClick={() => setActiveTab('public')}
+            >
+              {t('wiki.tabPublic')}
+              <span className="wiki-tab-count">{publicPages.length}</span>
+            </button>
             <button className="btn btn-outline btn-sm wiki-settings-btn" onClick={() => setShowSettings(s => !s)} title={t('wiki.settings')}>
               &#9881;
             </button>
@@ -220,6 +237,79 @@ export function Wiki() {
           <div className="wiki-files-fullscreen" style={activeTab !== 'files' ? { display: 'none' } : undefined}>
             <FileBrowserView rootPath={wikiConfig.wikiDirectory} visible={activeTab === 'files'} />
           </div>
+
+          {activeTab === 'public' && (() => {
+            const publicSet = new Set(publicPages);
+            const publicEntries = wikiPages.filter(p => publicSet.has(p.name));
+            const privateEntries = wikiPages.filter(p => !publicSet.has(p.name));
+
+            const togglePublic = async (pageName: string, isPublic: boolean) => {
+              try {
+                const result = await api.setWikiPagePublic(pageName, isPublic);
+                setPublicPages(result.pages);
+              } catch (err) {
+                console.error('Failed to toggle public:', err);
+              }
+            };
+
+            const renderPageSlug = (name: string) => {
+              const base = name.split('/').pop() || name;
+              return base.replace(/\.md$/, '');
+            };
+
+            const renderRow = (page: { name: string; updated?: string }, isPublic: boolean) => {
+              const slug = renderPageSlug(page.name);
+              const publicUrl = `/wiki/${slug}`;
+              return (
+                <div key={page.name} className={`wiki-public-row${isPublic ? '' : ' wiki-public-row-private'}`}>
+                  <span className="wiki-public-row-name" title={page.name}>
+                    {slug}
+                    {page.name.includes('/') && (
+                      <span className="wiki-public-row-dir">{page.name.replace(/\/[^/]+$/, '/')}</span>
+                    )}
+                  </span>
+                  <span className="wiki-public-row-actions">
+                    {isPublic && (
+                      <a href={publicUrl} target="_blank" rel="noopener noreferrer" className="wiki-public-link" title={publicUrl}>
+                        &#128279;
+                      </a>
+                    )}
+                    <button
+                      className={`btn btn-sm ${isPublic ? 'btn-outline' : 'wiki-btn-public'}`}
+                      onClick={() => togglePublic(page.name, !isPublic)}
+                    >
+                      {isPublic ? t('wiki.unpublish') : t('wiki.publish')}
+                    </button>
+                  </span>
+                </div>
+              );
+            };
+
+            return (
+              <div className="wiki-public-section">
+                <div className="wiki-public-group">
+                  <div className="wiki-public-group-header">
+                    {t('wiki.public')}
+                    <span className="wiki-tab-count">{publicEntries.length}</span>
+                  </div>
+                  {publicEntries.length === 0 ? (
+                    <div className="wiki-public-empty">{t('wiki.noPublicPages')}</div>
+                  ) : (
+                    publicEntries.map(p => renderRow(p, true))
+                  )}
+                </div>
+                {privateEntries.length > 0 && (
+                  <div className="wiki-public-group">
+                    <div className="wiki-public-group-header">
+                      {t('wiki.private')}
+                      <span className="wiki-tab-count">{privateEntries.length}</span>
+                    </div>
+                    {privateEntries.map(p => renderRow(p, false))}
+                  </div>
+                )}
+              </div>
+            );
+          })()}
         </>
       )}
 

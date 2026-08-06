@@ -63,19 +63,8 @@ ffmpeg -i video.mp4 -vn -c:a copy audio.m4a
 Transcribe with FunASR/SenseVoice:
 
 ```bash
-# Linux
-/home/yilunchen/.venvs/funasr/bin/python \
-  <skills>/xiaohongshu-audio-funasr-raw/scripts/transcribe_xhs_audio_to_raw.py \
-  --audio audio.m4a \
-  --title '<中文标题>' \
-  --note-id <note_id> \
-  --source-url '<原始URL>' \
-  --source-provider greenvideo \
-  --raw-root ~/rep/llm_wiki/raw \
-  --chunk-seconds 600
-
-# macOS
-/Users/ylchen/tmp/funasr-venv/bin/python \
+# Use the FunASR venv python (activate venv or use full path)
+python3 \
   <skills>/xiaohongshu-audio-funasr-raw/scripts/transcribe_xhs_audio_to_raw.py \
   --audio audio.m4a \
   --title '<中文标题>' \

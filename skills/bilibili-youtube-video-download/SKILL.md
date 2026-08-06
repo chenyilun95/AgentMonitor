@@ -21,10 +21,10 @@ After downloading a video, extract frames for wiki article illustrations:
 ```bash
 TITLE="Video Title"
 SOURCE="bilibili"  # or "youtube"
-mkdir -p ~/rep/llm_wiki/raw/$SOURCE/"$TITLE"/frames
+mkdir -p ~/rep/llm-wiki/raw/$SOURCE/"$TITLE"/frames
 ffmpeg -y -i /path/to/video.mp4 \
   -vf "fps=1/60,scale=1280:-1" -q:v 3 \
-  ~/rep/llm_wiki/raw/$SOURCE/"$TITLE"/frames/slide_%02d.jpg
+  ~/rep/llm-wiki/raw/$SOURCE/"$TITLE"/frames/slide_%02d.jpg
 ```
 
 Adjust `fps=1/60` for different intervals (`fps=1/30` = every 30s, `fps=1/120` = every 2min).
@@ -32,7 +32,7 @@ Adjust `fps=1/60` for different intervals (`fps=1/30` = every 30s, `fps=1/120` =
 ### Audio Extraction for Transcription
 
 ```bash
-ffmpeg -i /path/to/video.mp4 -vn -c:a copy ~/rep/llm_wiki/raw/$SOURCE/"$TITLE"/audio.m4a
+ffmpeg -i /path/to/video.mp4 -vn -c:a copy ~/rep/llm-wiki/raw/$SOURCE/"$TITLE"/audio.m4a
 ```
 
 Then use the `youtube-audio-funasr-raw` skill's transcription step (it works for any audio file, not just YouTube).

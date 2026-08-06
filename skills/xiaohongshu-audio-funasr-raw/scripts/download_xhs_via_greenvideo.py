@@ -12,7 +12,7 @@ import urllib.request
 from pathlib import Path
 
 
-DEFAULT_FFMPEG = "/opt/homebrew/bin/ffmpeg"
+DEFAULT_FFMPEG = shutil.which("ffmpeg") or "ffmpeg"
 GREENVIDEO_URL = "https://greenvideo.cc/xiaohongshu"
 NOTE_ID_RE = re.compile(r"/(?:explore|discovery/item|search_result)/([0-9a-fA-F]{24})")
 

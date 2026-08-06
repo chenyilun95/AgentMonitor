@@ -18,7 +18,7 @@ For articles that require JS rendering (e.g., interactive content, lazy-loaded s
 **Method A — HTTP fetch (recommended)**
 
 ```bash
-python3 ~/rep/AgentMonitor/skills/wechat-article-to-markdown/scripts/fetch_wechat.py \
+python3 ~/.claude/skills/wechat-article-to-markdown/scripts/fetch_wechat.py \
   "https://mp.weixin.qq.com/s/ARTICLE_ID" \
   /tmp/wechat-article.json
 ```
@@ -58,9 +58,9 @@ with sync_playwright() as p:
 ### Step 2: Convert to Markdown
 
 ```bash
-python3 ~/rep/AgentMonitor/skills/wechat-article-to-markdown/scripts/convert_wechat_article.py \
+python3 ~/.claude/skills/wechat-article-to-markdown/scripts/convert_wechat_article.py \
   --input /tmp/wechat-article.json \
-  --output-dir ~/rep/llm_wiki/raw/wechat
+  --output-dir ~/rep/llm-wiki/raw/wechat
 ```
 
 Output:
@@ -71,7 +71,7 @@ Output:
 
 ```bash
 TITLE="文章标题"
-mv ~/rep/llm_wiki/raw/wechat/"$TITLE".md ~/rep/llm_wiki/wiki/wechat/"$TITLE".md
+mv ~/rep/llm-wiki/raw/wechat/"$TITLE".md ~/rep/llm-wiki/wiki/wechat/"$TITLE".md
 ```
 
 ## Batch Usage
@@ -83,11 +83,11 @@ URLS=(
 )
 
 for url in "${URLS[@]}"; do
-  python3 ~/rep/AgentMonitor/skills/wechat-article-to-markdown/scripts/fetch_wechat.py \
+  python3 ~/.claude/skills/wechat-article-to-markdown/scripts/fetch_wechat.py \
     "$url" /tmp/wechat-article.json
-  python3 ~/rep/AgentMonitor/skills/wechat-article-to-markdown/scripts/convert_wechat_article.py \
+  python3 ~/.claude/skills/wechat-article-to-markdown/scripts/convert_wechat_article.py \
     --input /tmp/wechat-article.json \
-    --output-dir ~/rep/llm_wiki/raw/wechat
+    --output-dir ~/rep/llm-wiki/raw/wechat
   sleep 2
 done
 ```

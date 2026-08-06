@@ -18,7 +18,6 @@ from urllib.parse import parse_qs, urlparse
 def find_ytdlp() -> str:
     candidates = [
         Path.home() / ".local" / "bin" / "yt-dlp",
-        Path("/usr/local/bin/yt-dlp"),
     ]
     for c in candidates:
         if c.exists() and c.stat().st_size > 0:

@@ -8,6 +8,7 @@ server/data/meta-agent.json
 server/data/settings.json
 server/data/telegram_bindings.json
 server/data/gpu-servers.conf
+server/data/backups/
 *.log
 .env
 CLAUDE.md

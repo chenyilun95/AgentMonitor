@@ -406,7 +406,7 @@ export const zh: Record<string, string> = {
     'wiki.agentLabel': 'wiki',
     'wiki.notConfigured': 'Wiki 目录未找到。请在设置中配置 Wiki 目录路径。',
     'wiki.configDir': 'Wiki 目录',
-    'wiki.configDirPlaceholder': '~/rep/llm-wiki',
+    'wiki.configDirPlaceholder': '~/llm-wiki',
     'wiki.viewPage': '查看',
     'wiki.syncRepo': '同步',
     'wiki.settings': '设置',
@@ -419,6 +419,8 @@ export const zh: Record<string, string> = {
     'wiki.publish': '公开此页面',
     'wiki.unpublish': '取消公开',
     'wiki.openPublic': '打开公开链接',
+    'wiki.tabPublic': '公开页面',
+    'wiki.noPublicPages': '暂无公开页面。',
 
     // Common (additions)
     'common.close': '关闭',

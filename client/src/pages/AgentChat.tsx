@@ -75,6 +75,7 @@ export function AgentChat() {
   const [runtimeCapabilities, setRuntimeCapabilities] = useState<RuntimeCapabilities | null>(null);
   const [showMobileActions, setShowMobileActions] = useState(false);
   const [loadingEarlierMessages, setLoadingEarlierMessages] = useState(false);
+  const [scrollingToTop, setScrollingToTop] = useState(false);
 
   const addLocalMessage = (content: string, role = 'system') => {
     const timestamp = Date.now();
@@ -231,29 +232,20 @@ export function AgentChat() {
       });
     };
 
-    // Full snapshot (for status changes, initial load, dashboard sync)
     const onUpdate = (data: { agentId: string; agent: Agent }) => {
       if (data.agentId === id && data.agent) {
         markSocketActivity();
-        // Only apply if server has at least as many messages (avoid overwriting optimistic messages)
         setAgent(prev => {
           if (!prev) return data.agent;
-          if (data.agent.messages.length >= prev.messages.length) return data.agent;
-          // Server hasn't caught up with our optimistic message yet — merge status only
+          const byId = new Map(prev.messages.map(m => [m.id, m]));
+          for (const m of data.agent.messages) byId.set(m.id, m);
+          const messages = [...byId.values()];
           return {
-            ...prev,
-            status: data.agent.status as Agent['status'],
-            costUsd: data.agent.costUsd,
-            tokenUsage: data.agent.tokenUsage,
-            contextWindow: data.agent.contextWindow,
-            interactionMode: data.agent.interactionMode,
-            pendingPlan: data.agent.pendingPlan,
-            pendingQuestion: data.agent.pendingQuestion,
-            queuedMessages: data.agent.queuedMessages,
-            queuePaused: data.agent.queuePaused,
-            hasUnintegratedChanges: data.agent.hasUnintegratedChanges,
-            currentBranch: data.agent.currentBranch,
-            lastActivity: data.agent.lastActivity,
+            ...data.agent,
+            messages,
+            messagePage: prev.messagePage
+              ? { ...prev.messagePage, total: Math.max(prev.messagePage.total, messages.length) }
+              : undefined,
           };
         });
       }
@@ -291,9 +283,8 @@ export function AgentChat() {
       setAgent(prev => prev ? {
         ...prev,
         ...data.agent,
-        // Dashboard snapshots intentionally contain only the latest message.
-        // Chat history is maintained by the initial fetch and agent:delta.
         messages: prev.messages,
+        messagePage: prev.messagePage,
         structuredOutput: data.agent.structuredOutput ?? prev.structuredOutput,
         codeSnapshots: data.agent.codeSnapshots ?? prev.codeSnapshots,
       } : prev);
@@ -332,15 +323,29 @@ export function AgentChat() {
   }, [id, fetchAgent]);
 
   const scrollToLatestMessage = useCallback(() => {
-    virtuosoRef.current?.scrollToIndex({ index: 'LAST', behavior: 'smooth' });
+    virtuosoRef.current?.scrollTo({ top: Number.MAX_SAFE_INTEGER, behavior: 'smooth' });
   }, []);
 
   const scrollToEarliestMessage = useCallback(() => {
     if (agentRef.current?.messagePage?.hasMore && !loadingEarlierMessages) {
+      setScrollingToTop(true);
       void loadEarlierMessages();
+    } else {
+      virtuosoRef.current?.scrollToIndex({ index: 0, behavior: 'smooth' });
     }
-    virtuosoRef.current?.scrollToIndex({ index: 0, behavior: 'smooth' });
   }, [loadingEarlierMessages, loadEarlierMessages]);
+
+  useEffect(() => {
+    if (!scrollingToTop || loadingEarlierMessages) return;
+    if (agentRef.current?.messagePage?.hasMore) {
+      void loadEarlierMessages();
+    } else {
+      requestAnimationFrame(() => {
+        virtuosoRef.current?.scrollToIndex({ index: 0, behavior: 'smooth' });
+      });
+      setScrollingToTop(false);
+    }
+  }, [scrollingToTop, loadingEarlierMessages, loadEarlierMessages]);
 
   const handleToggleExpand = useCallback((msgId: string) => {
     setExpandedTools(prev => {
@@ -861,16 +866,14 @@ export function AgentChat() {
   const firstItemIndex = Math.max(0, (agent?.messagePage?.total ?? displayMessages.length) - displayMessages.length);
 
   const stickyUserMessageInfo = useMemo(() => {
+    if (displayMessages.length === 0) return null;
     const arrayStart = Math.min(
       Math.max(0, visibleStartIndex - firstItemIndex),
       displayMessages.length - 1,
     );
-    for (let i = arrayStart; i >= 0; i--) {
+    for (let i = arrayStart - 1; i >= 0; i--) {
       if (displayMessages[i].role === 'user') {
-        if (i < arrayStart && i < displayMessages.length - 1) {
-          return { index: i, content: displayMessages[i].content };
-        }
-        return null;
+        return { index: i, content: displayMessages[i].content };
       }
     }
     return null;
@@ -1141,6 +1144,7 @@ export function AgentChat() {
           firstItemIndex={firstItemIndex}
           initialTopMostItemIndex={Math.max(0, displayMessages.length - 1)}
           followOutput={(isAtBottom) => isAtBottom ? 'smooth' : false}
+          atBottomThreshold={50}
           atBottomStateChange={setAtBottom}
           rangeChanged={({ startIndex }) => setVisibleStartIndex(startIndex)}
           startReached={handleStartReached}
@@ -1210,13 +1214,18 @@ export function AgentChat() {
         )}
         {agent.messagePage?.hasMore && (
           <button
-            className="chat-scroll-fab chat-scroll-fab-top"
+            className={`chat-scroll-fab chat-scroll-fab-top${scrollingToTop ? ' loading' : ''}`}
             onClick={scrollToEarliestMessage}
+            disabled={scrollingToTop}
             title={t('chat.loadEarlier')}
           >
-            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
-              <polyline points="18 15 12 9 6 15" />
-            </svg>
+            {scrollingToTop ? (
+              <span className="thinking-dots"><span /><span /><span /></span>
+            ) : (
+              <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
+                <polyline points="18 15 12 9 6 15" />
+              </svg>
+            )}
           </button>
         )}
         {!atBottom && (

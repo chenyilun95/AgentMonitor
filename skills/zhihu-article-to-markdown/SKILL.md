@@ -22,7 +22,7 @@ The only reliable method is **puppeteer-extra + stealth plugin**, which patches 
 
 ```bash
 NODE_PATH=/tmp/node_modules node \
-  ~/rep/AgentMonitor/skills/zhihu-article-to-markdown/scripts/fetch_zhihu.mjs \
+  ~/.claude/skills/zhihu-article-to-markdown/scripts/fetch_zhihu.mjs \
   "https://zhuanlan.zhihu.com/p/ARTICLE_ID" \
   /tmp/zhihu_article.json
 ```
@@ -37,9 +37,9 @@ This:
 ### Step 2: Convert to Markdown
 
 ```bash
-python3 ~/rep/AgentMonitor/skills/zhihu-article-to-markdown/scripts/zhihu_to_markdown.py \
+python3 ~/.claude/skills/zhihu-article-to-markdown/scripts/zhihu_to_markdown.py \
   --input /tmp/zhihu_article.json \
-  --output-dir ~/rep/llm_wiki/raw/zhihu
+  --output-dir ~/rep/llm-wiki/raw/zhihu
 ```
 
 Output:
@@ -54,7 +54,7 @@ Options:
 
 ```bash
 # Move to target wiki location
-mv ~/rep/llm_wiki/raw/zhihu/<slug>.md ~/rep/llm_wiki/wiki/basics/<name>.md
+mv ~/rep/llm-wiki/raw/zhihu/<slug>.md ~/rep/llm-wiki/wiki/basics/<name>.md
 ```
 
 ## Batch Usage
@@ -70,11 +70,11 @@ URLS=(
 for url in "${URLS[@]}"; do
   ID=$(echo "$url" | grep -oP 'p/\K\d+')
   NODE_PATH=/tmp/node_modules node \
-    ~/rep/AgentMonitor/skills/zhihu-article-to-markdown/scripts/fetch_zhihu.mjs \
+    ~/.claude/skills/zhihu-article-to-markdown/scripts/fetch_zhihu.mjs \
     "$url" "/tmp/zhihu_${ID}.json"
-  python3 ~/rep/AgentMonitor/skills/zhihu-article-to-markdown/scripts/zhihu_to_markdown.py \
+  python3 ~/.claude/skills/zhihu-article-to-markdown/scripts/zhihu_to_markdown.py \
     --input "/tmp/zhihu_${ID}.json" \
-    --output-dir ~/rep/llm_wiki/raw/zhihu
+    --output-dir ~/rep/llm-wiki/raw/zhihu
   sleep 3  # polite delay
 done
 ```

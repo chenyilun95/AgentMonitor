@@ -191,6 +191,75 @@
   font-size: 14px;
 }
 
+/* --- Public Pages Tab --- */
+.wiki-public-section {
+  display: flex;
+  flex-direction: column;
+  gap: 24px;
+}
+
+.wiki-public-group-header {
+  font-size: 13px;
+  font-weight: 700;
+  color: var(--text-secondary);
+  margin-bottom: 8px;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.wiki-public-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 10px 14px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  margin-bottom: 6px;
+  background: var(--bg-card, var(--bg-secondary));
+  transition: background 0.12s;
+}
+
+.wiki-public-row:hover {
+  background: var(--bg-input, var(--bg-tertiary));
+}
+
+.wiki-public-row-private {
+  opacity: 0.6;
+}
+
+.wiki-public-row-name {
+  font-size: 14px;
+  font-weight: 500;
+  color: var(--text-primary);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  min-width: 0;
+}
+
+.wiki-public-row-dir {
+  font-size: 11px;
+  color: var(--text-muted);
+  margin-left: 6px;
+  font-weight: 400;
+}
+
+.wiki-public-row-actions {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-shrink: 0;
+  margin-left: 12px;
+}
+
+.wiki-public-empty {
+  text-align: center;
+  padding: 24px;
+  color: var(--text-muted);
+  font-size: 13px;
+}
+
 /* Mobile */
 @media (max-width: 768px) {
   .wiki-page {

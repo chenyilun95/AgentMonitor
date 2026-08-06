@@ -17,14 +17,7 @@ The complete workflow from YouTube URL to wiki document:
 ## Step 1: Download Audio
 
 ```bash
-# Linux — yt-dlp from system PATH or ~/.local/bin/yt-dlp
 python3 \
-  ~/.codex/skills/youtube-audio-funasr-raw/scripts/download_youtube_audio.py \
-  'https://www.youtube.com/watch?v=VIDEO_ID' \
-  --output-dir /tmp/youtube-audio
-
-# macOS
-/Users/ylchen/tmp/youtube-raw-venv/bin/python \
   ~/.codex/skills/youtube-audio-funasr-raw/scripts/download_youtube_audio.py \
   'https://www.youtube.com/watch?v=VIDEO_ID' \
   --output-dir /tmp/youtube-audio
@@ -48,20 +41,12 @@ python ~/.claude/skills/bilibili-youtube-video-download/scripts/download_youtube
 ## Step 2: Transcribe with FunASR
 
 ```bash
-# Linux
-/home/yilunchen/.venvs/funasr/bin/python \
+# Use the FunASR venv python (activate venv or use full path)
+python3 \
   ~/.codex/skills/youtube-audio-funasr-raw/scripts/transcribe_youtube_audio_to_raw.py \
   --audio /tmp/youtube-audio/audio.m4a \
   --metadata /tmp/youtube-audio/source-metadata.json \
   --language zh \
-  --raw-root ~/rep/llm_wiki/raw
-
-# macOS
-/Users/ylchen/tmp/funasr-venv/bin/python \
-  ~/.codex/skills/youtube-audio-funasr-raw/scripts/transcribe_youtube_audio_to_raw.py \
-  --audio /tmp/youtube-audio/audio.m4a \
-  --metadata /tmp/youtube-audio/source-metadata.json \
-  --language en \
   --raw-root ~/rep/llm-wiki/raw
 ```
 
@@ -80,16 +65,7 @@ Output in `raw/youtube/<title>/`:
 Use when the YouTube video has chapters. Downloads a temporary low-res video, extracts representative frames per chapter, and downloads timed English captions.
 
 ```bash
-# Linux
 python3 \
-  ~/.codex/skills/youtube-audio-funasr-raw/scripts/build_youtube_slide_notes.py \
-  'https://www.youtube.com/watch?v=VIDEO_ID' \
-  --output-dir ~/rep/llm_wiki/raw/youtube/<title> \
-  --work-dir /tmp/youtube-slide-work \
-  --html --pdf
-
-# macOS
-/Users/ylchen/tmp/youtube-raw-venv/bin/python \
   ~/.codex/skills/youtube-audio-funasr-raw/scripts/build_youtube_slide_notes.py \
   'https://www.youtube.com/watch?v=VIDEO_ID' \
   --output-dir ~/rep/llm-wiki/raw/youtube/<title> \
@@ -121,10 +97,10 @@ Extract one frame every 60 seconds from the downloaded video:
 
 ```bash
 TITLE="Video Title"
-mkdir -p ~/rep/llm_wiki/raw/youtube/"$TITLE"/frames
+mkdir -p ~/rep/llm-wiki/raw/youtube/"$TITLE"/frames
 ffmpeg -y -i /tmp/youtube-audio/video.mp4 \
   -vf "fps=1/60,scale=1280:-1" -q:v 3 \
-  ~/rep/llm_wiki/raw/youtube/"$TITLE"/frames/slide_%02d.jpg
+  ~/rep/llm-wiki/raw/youtube/"$TITLE"/frames/slide_%02d.jpg
 ```
 
 Adjust `fps=1/60` for different intervals (`fps=1/30` = every 30s, `fps=1/120` = every 2min).
@@ -173,24 +149,13 @@ Key guidelines:
 - Include quantitative results in tables where possible
 - After creating wiki doc, add entry to `wiki/index.md`
 
-## Platform-Specific Defaults
+## Dependencies
 
-### Linux
-- yt-dlp: `~/.local/bin/yt-dlp` or system PATH
-- Python/FunASR: `/home/yilunchen/.venvs/funasr/bin/python`
-- ffmpeg/ffprobe: system PATH
-- Repo root: `~/rep/llm_wiki`
-
-### macOS
-- yt-dlp Python environment: `/Users/ylchen/tmp/youtube-raw-venv/bin/python`
-- Python/FunASR: `/Users/ylchen/tmp/funasr-venv/bin/python`
-- ffmpeg: `/opt/homebrew/bin/ffmpeg`
-- ffprobe: `/opt/homebrew/bin/ffprobe`
-- Repo root: `~/rep/llm-wiki`
-
-### Common
-- ASR model: `iic/SenseVoiceSmall`
-- VAD model: `fsmn-vad`
+All tools must be available in `PATH`:
+- `yt-dlp`: YouTube downloader
+- `ffmpeg` / `ffprobe`: media processing
+- Python 3.10+ with FunASR venv (activate before running transcription scripts)
+- ASR model: `iic/SenseVoiceSmall`, VAD model: `fsmn-vad`
 - Output namespace: `raw/youtube/<safe-title>/`
 - Chunk size: `600` seconds
 - Language: `en` for English talks, `zh` for Chinese talks
@@ -232,10 +197,10 @@ Key options for `build_youtube_slide_notes.py`:
 After transcription:
 
 ```bash
-ls -lh ~/rep/llm_wiki/raw/youtube/<title>
-ls -lh ~/rep/llm_wiki/raw/youtube/<title>/frames/  # or slides/
-wc -m ~/rep/llm_wiki/raw/youtube/<title>/transcript.txt
-head -80 ~/rep/llm_wiki/raw/youtube/<title>/transcript.md
+ls -lh ~/rep/llm-wiki/raw/youtube/<title>
+ls -lh ~/rep/llm-wiki/raw/youtube/<title>/frames/  # or slides/
+wc -m ~/rep/llm-wiki/raw/youtube/<title>/transcript.txt
+head -80 ~/rep/llm-wiki/raw/youtube/<title>/transcript.md
 ```
 
 SenseVoice may misspell names, acronyms, and domain terms. Keep `transcript.json` for raw data and do a correction pass when generating wiki documents.
