@@ -3,6 +3,7 @@ import fs from 'fs';
 import path from 'path';
 import os from 'os';
 import type { AgentStore } from '../store/AgentStore.js';
+import { config } from '../config.js';
 
 function getPublicPagesPath(wikiDir: string): string {
   return path.join(wikiDir, 'public.json');
@@ -234,7 +235,7 @@ export function publicWikiRoutes(store: AgentStore): Router {
 
     if (!rawPath) {
       const host = req.get('host') || '';
-      if (!host.includes('yilunchen.com')) { next(); return; }
+      if (config.wikiPublicDomain && !host.includes(config.wikiPublicDomain)) { next(); return; }
 
       const items = publicPages.map(p => {
         const slug = path.posix.basename(p, '.md');

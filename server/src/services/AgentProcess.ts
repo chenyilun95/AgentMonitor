@@ -124,7 +124,11 @@ export class AgentProcess extends EventEmitter {
   }
 
   get isRunning(): boolean {
-    return this.process !== null && !this.process.killed;
+    return this.process !== null
+      && this._pid !== undefined
+      && !this.process.killed
+      && this.process.exitCode === null
+      && this.process.signalCode === null;
   }
 
   start(opts: ProcessStartOpts): void {
@@ -173,11 +177,20 @@ export class AgentProcess extends EventEmitter {
       this.emit('terminal', { stream: 'stderr', data: data.toString('base64') });
     });
 
-    this.process.on('close', (code) => {
+    let exitHandled = false;
+    const handleExit = (code: number | null) => {
+      if (exitHandled) return;
+      exitHandled = true;
       this.process = null;
       this._pid = undefined;
       this.emit('exit', code);
-    });
+    };
+
+    // `close` waits for inherited stdio handles to close. A background process
+    // can keep those handles open after the CLI has exited, so use `exit` as
+    // the primary lifecycle signal and retain `close` as a fallback.
+    this.process.once('exit', handleExit);
+    this.process.once('close', handleExit);
 
     this.process.on('error', (err) => {
       this.emit('error', err);

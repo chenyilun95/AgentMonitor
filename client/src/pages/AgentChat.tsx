@@ -871,7 +871,7 @@ export function AgentChat() {
       Math.max(0, visibleStartIndex - firstItemIndex),
       displayMessages.length - 1,
     );
-    for (let i = arrayStart - 1; i >= 0; i--) {
+    for (let i = arrayStart; i >= 0; i--) {
       if (displayMessages[i].role === 'user') {
         return { index: i, content: displayMessages[i].content };
       }

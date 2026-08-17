@@ -558,9 +558,25 @@ export class AgentManager extends EventEmitter {
     });
 
     proc.on('exit', (code: number | null) => {
+      // A previous process may exit after a replacement has already started.
+      // Its callback must not stop the new turn or remove the new mapping.
+      if (this.processes.get(agent.id) !== proc) {
+        this.appendAgentLog(agent.id, {
+          level: 'info',
+          source: 'process',
+          message: `Superseded agent process exited with code ${code}`,
+          payload: { code },
+        });
+        return;
+      }
+
       // A completed result marks the agent stopped before AgentManager closes
       // the transport. SSH-backed runners commonly report 255 in that case.
       const current = this.store.getAgent(agent.id);
+      if (current) {
+        current.pid = undefined;
+        this.store.saveAgent(current);
+      }
       const expectedTransportClose = current?.status === 'stopped' || current?.status === 'error';
       const turnCompleted = this.completedTurns.has(agent.id);
       this.completedTurns.delete(agent.id);
@@ -1865,7 +1881,22 @@ export class AgentManager extends EventEmitter {
     if (!agent) return undefined;
     const processText = this.wrapPlanModeMessage(agent, text);
 
-    const proc = this.processes.get(agentId);
+    let proc = this.processes.get(agentId);
+    if (proc?.pid !== undefined && !proc.isRunning) {
+      this.processes.delete(agentId);
+      proc = undefined;
+      agent.pid = undefined;
+      if (agent.status === 'running' || agent.status === 'waiting_input') {
+        agent.status = 'stopped';
+        agent.runOutcome = 'interrupted';
+      }
+      this.appendAgentLog(agentId, {
+        level: 'warn',
+        source: 'process',
+        message: 'Discarded stale agent process before sending message',
+      });
+      this.store.saveAgent(agent);
+    }
     if (!proc && agent.queuePaused && agent.queuedMessages?.length) {
       const queuedMessage = this.enqueueUserMessage(agent, text, queueMessageId);
       agent.lastActivity = Date.now();
@@ -2259,7 +2290,11 @@ export class AgentManager extends EventEmitter {
 
     if (proc) {
       await proc.stop();
+      if (this.processes.get(agentId) === proc) {
+        this.processes.delete(agentId);
+      }
     }
+    if (agent) agent.pid = undefined;
     this.updateAgentStatus(agentId, 'stopped');
   }
 

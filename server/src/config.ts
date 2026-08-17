@@ -38,6 +38,8 @@ export const config = {
   },
   /** Password for dashboard login (if empty, auth is disabled) */
   password: process.env.DASHBOARD_PASSWORD || '',
+  /** Domain for public wiki pages (if empty, index page is served on all hosts) */
+  wikiPublicDomain: process.env.WIKI_PUBLIC_DOMAIN || '',
   telegram: {
     token: process.env.TELEGRAM_TOKEN || '',
     chatId: process.env.TELEGRAM_CHAT_ID || '',
