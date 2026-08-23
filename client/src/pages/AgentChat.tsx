@@ -861,7 +861,50 @@ export function AgentChat() {
     [agent?.messages, localMessages],
   );
 
+  // Absolute index (in firstItemIndex coordinates) of the item at the true top
+  // edge of the viewport. Derived from the DOM rather than Virtuoso's
+  // rangeChanged, whose startIndex reflects the first *rendered* item — which
+  // sits ~overscan px above the visible top and made the sticky header lag
+  // asymmetrically (updated early scrolling up, late/stale scrolling down).
   const [visibleStartIndex, setVisibleStartIndex] = useState(0);
+  const scrollerElRef = useRef<HTMLElement | null>(null);
+  const stickyRafRef = useRef<number | null>(null);
+
+  const recomputeStickyTop = useCallback(() => {
+    const scroller = scrollerElRef.current;
+    if (!scroller) return;
+    const topEdge = scroller.getBoundingClientRect().top;
+    const items = scroller.querySelectorAll<HTMLElement>('[data-item-index]');
+    for (const el of items) {
+      if (el.getBoundingClientRect().bottom > topEdge + 1) {
+        const idx = Number(el.getAttribute('data-item-index'));
+        if (!Number.isNaN(idx)) setVisibleStartIndex(idx);
+        return;
+      }
+    }
+  }, []);
+
+  const scheduleStickyRecompute = useCallback(() => {
+    if (stickyRafRef.current != null) return;
+    stickyRafRef.current = requestAnimationFrame(() => {
+      stickyRafRef.current = null;
+      recomputeStickyTop();
+    });
+  }, [recomputeStickyTop]);
+
+  const setScrollerRef = useCallback((el: HTMLElement | Window | null) => {
+    if (scrollerElRef.current) {
+      scrollerElRef.current.removeEventListener('scroll', scheduleStickyRecompute);
+    }
+    scrollerElRef.current = el && el !== window ? (el as HTMLElement) : null;
+    if (scrollerElRef.current) {
+      scrollerElRef.current.addEventListener('scroll', scheduleStickyRecompute, { passive: true });
+    }
+  }, [scheduleStickyRecompute]);
+
+  useEffect(() => () => {
+    if (stickyRafRef.current != null) cancelAnimationFrame(stickyRafRef.current);
+  }, []);
 
   const firstItemIndex = Math.max(0, (agent?.messagePage?.total ?? displayMessages.length) - displayMessages.length);
 
@@ -1138,6 +1181,7 @@ export function AgentChat() {
       <div className="chat-messages-wrapper" style={{ display: showTerminal || showFiles ? 'none' : undefined }}>
         <Virtuoso
           ref={virtuosoRef}
+          scrollerRef={setScrollerRef}
           className="chat-messages"
           style={{ height: 'auto', flex: 1, minHeight: 0 }}
           data={displayMessages}
@@ -1146,7 +1190,7 @@ export function AgentChat() {
           followOutput={(isAtBottom) => isAtBottom ? 'smooth' : false}
           atBottomThreshold={50}
           atBottomStateChange={setAtBottom}
-          rangeChanged={({ startIndex }) => setVisibleStartIndex(startIndex)}
+          rangeChanged={scheduleStickyRecompute}
           startReached={handleStartReached}
           overscan={200}
           increaseViewportBy={200}
