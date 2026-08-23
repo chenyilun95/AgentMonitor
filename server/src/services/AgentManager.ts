@@ -155,10 +155,16 @@ export class AgentManager extends EventEmitter {
         agent.status = 'stopped';
         agent.runOutcome = 'interrupted';
         agent.pid = undefined;
+        // Queued follow-ups must not auto-fire after a restart — pause them so the
+        // user explicitly resumes, rather than replaying work against a fresh process.
+        const hasQueued = !!agent.queuedMessages?.length;
+        if (hasQueued) agent.queuePaused = true;
         agent.messages.push({
           id: uuid(),
           role: 'system',
-          content: '[Incomplete output] Agent was interrupted by a server restart.',
+          content: hasQueued
+            ? '[Incomplete output] Agent was interrupted because the server restarted. Queued messages are paused until you resume them.'
+            : '[Incomplete output] Agent was interrupted by a server restart.',
           timestamp: Date.now(),
         });
         this.store.saveAgent(agent);
@@ -203,17 +209,8 @@ export class AgentManager extends EventEmitter {
       this.store.saveAgent(agent);
     }
 
-    // Auto-resume agents with queued messages after server restart
-    const agentsToResume = this.store.getAllAgents()
-      .filter(a => a.source !== 'external' && a.queuedMessages?.length && !a.queuePaused);
-    if (agentsToResume.length) {
-      setTimeout(() => {
-        for (const a of agentsToResume) {
-          console.log(`[AgentManager] Auto-resuming queued messages for agent ${a.id} after restart`);
-          this.startNextQueuedMessage(a.id);
-        }
-      }, 3000);
-    }
+    // Note: queued messages are intentionally NOT auto-resumed after a restart.
+    // Interrupted agents are marked queuePaused above; the user resumes explicitly.
 
     this.resumeBackgroundChecks();
   }
