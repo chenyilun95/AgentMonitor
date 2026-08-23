@@ -48,6 +48,8 @@ vi.mock('../src/api/client', async () => {
       getAgent: vi.fn(),
       getAgents: vi.fn(),
       getRuntimeCapabilities: vi.fn(),
+      getWikiConfig: vi.fn().mockResolvedValue({ exists: false }),
+      getWikiPublicPages: vi.fn().mockResolvedValue({ pages: [] }),
     },
   };
 });

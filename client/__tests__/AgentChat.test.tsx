@@ -44,6 +44,8 @@ vi.mock('../src/api/client', async (importOriginal) => {
       sendMessage: vi.fn(),
       restoreConversation: vi.fn(),
       setReasoningEffort: vi.fn(),
+      getWikiConfig: vi.fn().mockResolvedValue({ exists: false }),
+      getWikiPublicPages: vi.fn().mockResolvedValue({ pages: [] }),
     },
   };
 });
@@ -111,7 +113,7 @@ describe('AgentChat', () => {
         expect(screen.getByText('Chat Bot')).toBeInTheDocument();
       });
 
-      expect(screen.getByText('What is 2+2?')).toBeInTheDocument();
+      expect(screen.getAllByText('What is 2+2?').length).toBeGreaterThan(0);
       expect(screen.getByText('The answer is 4.')).toBeInTheDocument();
     });
 

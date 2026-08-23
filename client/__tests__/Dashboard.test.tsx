@@ -380,7 +380,7 @@ describe('Dashboard', () => {
     ));
   });
 
-  it('blocks deletion when a Worktree has unintegrated changes', async () => {
+  it('requires force-delete when a Worktree has unintegrated changes', async () => {
     const agent = {
       ...makeAgent('agent-delete', 'Unsafe worktree', 1000, 'stopped'),
       workspaceMode: 'worktree' as const,
@@ -412,9 +412,10 @@ describe('Dashboard', () => {
 
     expect(screen.getByText(agent.worktreePath)).toBeInTheDocument();
     expect(screen.getByText(agent.worktreeBranch)).toBeInTheDocument();
-    const deleteButtons = screen.getAllByRole('button', { name: /^Delete$|^删除$/ });
-    const confirm = deleteButtons[deleteButtons.length - 1];
-    expect(confirm).toBeDisabled();
+    // Unintegrated worktrees warn and require an explicit force-delete rather than a plain delete.
+    expect(screen.getByText(/Uncommitted files or unmerged commits|检测到未提交文件/)).toBeInTheDocument();
+    const forceButton = screen.getByRole('button', { name: /Force Delete|强制删除/ });
+    expect(forceButton).toBeEnabled();
     expect(screen.queryByLabelText(
       /Discard all uncommitted files|放弃所有未提交文件/,
     )).not.toBeInTheDocument();
