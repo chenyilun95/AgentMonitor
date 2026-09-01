@@ -62,6 +62,14 @@ export interface ProcessStartOpts {
   reasoningEffort?: ReasoningEffort;
 }
 
+/**
+ * How often to poll the OS for process liveness. A safety net for cases where
+ * Node never delivers 'exit'/'close' (e.g. a detached shell child that gets
+ * reparented, or a missed SIGCHLD). Without this, a dead process can leave the
+ * agent wedged in "running" forever.
+ */
+const LIVENESS_POLL_MS = 20_000;
+
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const serverRoot = path.resolve(__dirname, '..', '..');
 const projectRoot = path.resolve(serverRoot, '..');
@@ -114,6 +122,7 @@ export class AgentProcess extends EventEmitter {
   private _pid: number | undefined;
   private _provider: AgentProvider = 'claude';
   private runner: AgentRunner = claudeRunner;
+  private livenessTimer: ReturnType<typeof setInterval> | null = null;
 
   get pid(): number | undefined {
     return this._pid;
@@ -128,7 +137,19 @@ export class AgentProcess extends EventEmitter {
       && this._pid !== undefined
       && !this.process.killed
       && this.process.exitCode === null
-      && this.process.signalCode === null;
+      && this.process.signalCode === null
+      // Node's cached state can lie if it missed the exit event; confirm the
+      // OS process still exists before reporting it as running.
+      && this.isPidAlive(this._pid);
+  }
+
+  private isPidAlive(pid: number): boolean {
+    try {
+      process.kill(pid, 0);
+      return true;
+    } catch {
+      return false;
+    }
   }
 
   start(opts: ProcessStartOpts): void {
@@ -181,6 +202,10 @@ export class AgentProcess extends EventEmitter {
     const handleExit = (code: number | null) => {
       if (exitHandled) return;
       exitHandled = true;
+      if (this.livenessTimer) {
+        clearInterval(this.livenessTimer);
+        this.livenessTimer = null;
+      }
       this.process = null;
       this._pid = undefined;
       this.emit('exit', code);
@@ -191,6 +216,19 @@ export class AgentProcess extends EventEmitter {
     // the primary lifecycle signal and retain `close` as a fallback.
     this.process.once('exit', handleExit);
     this.process.once('close', handleExit);
+
+    // Safety net: if neither event ever fires (missed SIGCHLD, reparented
+    // detached child), poll the OS so a dead process still runs the normal exit
+    // path instead of wedging the agent as "running". handleExit is idempotent,
+    // so this never double-fires against a real exit event.
+    this.livenessTimer = setInterval(() => {
+      const pid = this._pid;
+      if (pid === undefined) return;
+      if (!this.isPidAlive(pid)) {
+        handleExit(this.process?.exitCode ?? null);
+      }
+    }, LIVENESS_POLL_MS);
+    this.livenessTimer.unref?.();
 
     this.process.on('error', (err) => {
       this.emit('error', err);

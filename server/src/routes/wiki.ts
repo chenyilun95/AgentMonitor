@@ -233,41 +233,10 @@ export function publicWikiRoutes(store: AgentStore): Router {
     const wikiDir = resolveWikiPath(store);
     const publicPages = readPublicPages(wikiDir);
 
+    // Bare /wiki no longer lists all public pages (avoids leaking the full
+    // index). The listing lives at /public-wiki instead. Fall through to SPA.
     if (!rawPath) {
-      const host = req.get('host') || '';
-      if (config.wikiPublicDomain && !host.includes(config.wikiPublicDomain)) { next(); return; }
-
-      const items = publicPages.map(p => {
-        const slug = path.posix.basename(p, '.md');
-        const href = `/wiki/${slug}`;
-        return `<li><a href="${href}">${slug}</a></li>`;
-      }).join('\n');
-
-      res.send(`<!DOCTYPE html>
-<html lang="zh-CN">
-<head>
-<meta charset="utf-8">
-<meta name="viewport" content="width=device-width, initial-scale=1">
-<title>LLM Wiki</title>
-<style>
-  * { margin: 0; padding: 0; box-sizing: border-box; }
-  body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif; line-height: 1.7; color: #1a1a2e; background: #fafbfc; }
-  .container { max-width: 820px; margin: 0 auto; padding: 2rem 1.5rem; }
-  h1 { font-size: 1.6rem; font-weight: 700; margin-bottom: 1.5rem; border-bottom: 1px solid #eaecef; padding-bottom: 0.5rem; }
-  ul { list-style: none; }
-  li { padding: 8px 0; border-bottom: 1px solid #f0f0f0; }
-  a { color: #0366d6; text-decoration: none; font-size: 1rem; }
-  a:hover { text-decoration: underline; }
-  .empty { color: #6a737d; padding: 2rem 0; }
-</style>
-</head>
-<body>
-<div class="container">
-  <h1>LLM Wiki</h1>
-  ${publicPages.length > 0 ? `<ul>${items}</ul>` : '<p class="empty">No public pages yet.</p>'}
-</div>
-</body>
-</html>`);
+      next();
       return;
     }
 
@@ -346,7 +315,7 @@ export function publicWikiRoutes(store: AgentStore): Router {
 <div class="container">
   <div class="header">
     <h1>LLM Wiki</h1>
-    <a href="/wiki/">Index</a>
+    <a href="/public-wiki">Index</a>
   </div>
   <div id="content"></div>
 </div>
@@ -373,6 +342,57 @@ export function publicWikiRoutes(store: AgentStore): Router {
     ],
   });
 <\/script>
+</body>
+</html>`);
+  });
+
+  return router;
+}
+
+/**
+ * Serves the public wiki index (list of all public pages) at a less-guessable
+ * path so bare /wiki does not leak the full page list. Individual pages remain
+ * at /wiki/:slug via publicWikiRoutes.
+ */
+export function publicWikiIndexRoutes(store: AgentStore): Router {
+  const router = Router();
+
+  router.get('/', (req, res, next) => {
+    const host = req.get('host') || '';
+    if (config.wikiPublicDomain && !host.includes(config.wikiPublicDomain)) { next(); return; }
+
+    const wikiDir = resolveWikiPath(store);
+    const publicPages = readPublicPages(wikiDir);
+
+    const items = publicPages.map(p => {
+      const slug = path.posix.basename(p, '.md');
+      const href = `/wiki/${slug}`;
+      return `<li><a href="${href}">${slug}</a></li>`;
+    }).join('\n');
+
+    res.send(`<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>LLM Wiki</title>
+<style>
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif; line-height: 1.7; color: #1a1a2e; background: #fafbfc; }
+  .container { max-width: 820px; margin: 0 auto; padding: 2rem 1.5rem; }
+  h1 { font-size: 1.6rem; font-weight: 700; margin-bottom: 1.5rem; border-bottom: 1px solid #eaecef; padding-bottom: 0.5rem; }
+  ul { list-style: none; }
+  li { padding: 8px 0; border-bottom: 1px solid #f0f0f0; }
+  a { color: #0366d6; text-decoration: none; font-size: 1rem; }
+  a:hover { text-decoration: underline; }
+  .empty { color: #6a737d; padding: 2rem 0; }
+</style>
+</head>
+<body>
+<div class="container">
+  <h1>LLM Wiki</h1>
+  ${publicPages.length > 0 ? `<ul>${items}</ul>` : '<p class="empty">No public pages yet.</p>'}
+</div>
 </body>
 </html>`);
   });

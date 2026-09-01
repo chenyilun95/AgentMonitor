@@ -74,6 +74,39 @@ describe('AgentManager process lifecycle', () => {
     });
   });
 
+  it('treats a process whose OS pid is dead as not running even when Node reports no exit', () => {
+    // Reproduces the wedge: Node never delivered exit/close, so exitCode stays
+    // null and the cached state looks alive — but the OS process is gone.
+    const staleProcess = new AgentProcess();
+    const staleInternals = staleProcess as unknown as {
+      _pid: number;
+      process: {
+        killed: boolean;
+        exitCode: number | null;
+        signalCode: NodeJS.Signals | null;
+      };
+    };
+    staleInternals._pid = 999_999; // not a live pid
+    staleInternals.process = { killed: false, exitCode: null, signalCode: null };
+
+    expect(staleProcess.isRunning).toBe(false);
+
+    const processes = (manager as unknown as {
+      processes: Map<string, AgentProcess>;
+    }).processes;
+    processes.set(agent.id, staleProcess);
+    const startSpy = vi.spyOn(
+      manager as unknown as { startProcess: (value: Agent) => void },
+      'startProcess',
+    ).mockImplementation(() => {});
+
+    const result = manager.sendMessage(agent.id, 'continue');
+
+    expect(result?.disposition).toBe('started');
+    expect(startSpy).toHaveBeenCalledOnce();
+    expect(processes.has(agent.id)).toBe(false);
+  });
+
   it('does not let an old exit callback delete a replacement process', () => {
     vi.spyOn(AgentProcess.prototype, 'start').mockImplementation(() => {});
     const startProcess = (manager as unknown as {
@@ -92,5 +125,42 @@ describe('AgentManager process lifecycle', () => {
 
     expect(processes.get(agent.id)).toBe(replacement);
     expect(store.getAgent(agent.id)?.status).toBe('running');
+  });
+
+  it('resumes a phantom-running agent (status running, no tracked process) instead of hanging', () => {
+    // The wedge users hit: the process died without an exit event, so status
+    // stays 'running' but the processes map has no entry. Sending a message
+    // must resume a fresh process, not append to history and start nothing.
+    const processes = (manager as unknown as {
+      processes: Map<string, AgentProcess>;
+    }).processes;
+    expect(processes.has(agent.id)).toBe(false);
+    expect(store.getAgent(agent.id)?.status).toBe('running');
+
+    const startSpy = vi.spyOn(
+      manager as unknown as { startProcess: (value: Agent) => void },
+      'startProcess',
+    ).mockImplementation(() => {});
+
+    const result = manager.sendMessage(agent.id, 'continue');
+
+    expect(result?.disposition).toBe('started');
+    expect(startSpy).toHaveBeenCalledOnce();
+    expect(store.getAgent(agent.id)?.messages.at(-1)).toMatchObject({
+      role: 'user',
+      content: 'continue',
+    });
+  });
+
+  it('reconciles an orphaned running agent to stopped when no process is tracked', () => {
+    expect(store.getAgent(agent.id)?.status).toBe('running');
+
+    (manager as unknown as { reconcileOrphanedRunning: () => void })
+      .reconcileOrphanedRunning();
+
+    const healed = store.getAgent(agent.id);
+    expect(healed?.status).toBe('stopped');
+    expect(healed?.messages.at(-1)?.role).toBe('system');
+    expect(healed?.messages.at(-1)?.content).toContain('Recovered');
   });
 });

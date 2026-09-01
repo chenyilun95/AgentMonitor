@@ -219,6 +219,7 @@ export class AgentManager extends EventEmitter {
     if (this.stuckCheckInterval) return;
     // Periodically check for stuck agents (sent user message but no response).
     this.stuckCheckInterval = setInterval(() => {
+      this.reconcileOrphanedRunning();
       this.checkStuckAgents();
     }, STUCK_CHECK_INTERVAL_MS);
   }
@@ -227,6 +228,37 @@ export class AgentManager extends EventEmitter {
     if (!this.stuckCheckInterval) return;
     clearInterval(this.stuckCheckInterval);
     this.stuckCheckInterval = null;
+  }
+
+  /**
+   * Heal agents wedged at 'running' with no live process. A process can vanish
+   * without emitting 'exit'/'close' (missed SIGCHLD, upstream proxy drop, OOM),
+   * leaving the agent stuck at 'running'. Every subsequent user message is then
+   * appended to history and written to a dead stdin, so the UI hangs forever.
+   * Reset such agents to 'stopped' so the next message resumes a fresh process.
+   */
+  private reconcileOrphanedRunning(): void {
+    for (const agent of this.store.getAllAgents()) {
+      if (agent.status !== 'running') continue;
+      const proc = this.processes.get(agent.id);
+      if (proc && proc.isRunning) continue; // genuinely running a task
+      if (proc) this.processes.delete(agent.id);
+      this.pendingUserMessage.delete(agent.id);
+
+      const current = this.store.getAgent(agent.id);
+      if (!current || current.status !== 'running') continue;
+      current.pid = undefined;
+      current.runOutcome = 'interrupted';
+      current.messages.push({
+        id: uuid(),
+        role: 'system',
+        content: '[Recovered] The agent process ended without completing a response (crash or upstream/proxy drop). Status was reset — send your message again to continue.',
+        timestamp: Date.now(),
+      });
+      this.store.saveAgent(current);
+      this.updateAgentStatus(agent.id, 'stopped');
+      console.warn(`[AgentManager] Reconciled orphaned running agent ${agent.id} (no live process)`);
+    }
   }
 
   private checkStuckAgents(): void {
@@ -1934,7 +1966,14 @@ export class AgentManager extends EventEmitter {
     } else if (agent.status === 'waiting_input') {
       agent.originalPrompt = text;
       this.resumeAgent(agent, processText);
-    } else if (agent.status === 'stopped' || agent.status === 'error') {
+    } else {
+      // No live process backing this agent. Covers 'stopped', 'error', and a
+      // phantom 'running' left behind when a process died without an exit event
+      // (missed SIGCHLD, upstream proxy drop, OOM). Resume with a fresh process
+      // instead of silently dropping the message — otherwise the message is
+      // appended to history, nothing starts, and the UI hangs forever waiting
+      // for a reply. A genuinely running agent (proc alive) was already queued
+      // above, so reaching here always means there is no process to talk to.
       this.resumeAgent(agent, processText);
     }
     return { disposition: 'started' };
@@ -2192,6 +2231,23 @@ export class AgentManager extends EventEmitter {
       if (agent && agent.status === 'running') {
         agent.runOutcome = 'interrupted';
         this.updateAgentStatus(agentId, 'waiting_input');
+      }
+    } else {
+      // No live process to signal — the process already died (crash, upstream
+      // proxy drop) but the agent is still wedged at 'running'/'waiting_input'.
+      // Esc must still reconcile the status so the UI unsticks; otherwise the
+      // interrupt is a silent no-op and the agent stays frozen.
+      const agent = this.store.getAgent(agentId);
+      if (agent && (agent.status === 'running' || agent.status === 'waiting_input')) {
+        this.appendAgentLog(agentId, {
+          level: 'warn',
+          source: 'operator',
+          message: 'Interrupted agent with no live process; reset status to stopped',
+        });
+        agent.runOutcome = 'interrupted';
+        agent.pid = undefined;
+        this.pendingUserMessage.delete(agentId);
+        this.updateAgentStatus(agentId, 'stopped');
       }
     }
   }

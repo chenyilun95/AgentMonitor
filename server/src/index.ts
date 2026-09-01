@@ -36,7 +36,7 @@ import { FeishuNotifier } from './services/FeishuNotifier.js';
 import { TelegramService } from './services/TelegramService.js';
 import { GpuMonitorService } from './services/GpuMonitorService.js';
 import { gpuMonitorRoutes } from './routes/gpu-monitor.js';
-import { wikiRoutes, publicWikiRoutes } from './routes/wiki.js';
+import { wikiRoutes, publicWikiRoutes, publicWikiIndexRoutes } from './routes/wiki.js';
 import type { Agent } from './models/Agent.js';
 import { sanitizeAgentListSnapshot } from './utils/agentSnapshot.js';
 
@@ -74,8 +74,10 @@ export function createApp() {
 
   const store = new AgentStore();
 
-  // Public wiki pages (no auth required) - /wiki/:path serves rendered markdown
-  // Bare /wiki falls through to SPA (wiki panel dashboard)
+  // Public wiki pages (no auth required) - /wiki/:path serves rendered markdown.
+  // Bare /wiki falls through to SPA; the public page index lives at /public-wiki
+  // so bare /wiki does not leak the full list of public pages.
+  app.use('/public-wiki', publicWikiIndexRoutes(store));
   app.use('/wiki', publicWikiRoutes(store));
   const skillManager = new SkillManager();
   const emailNotifier = new EmailNotifier();
